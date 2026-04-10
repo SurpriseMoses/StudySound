@@ -14,7 +14,346 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      character_sheets: {
+        Row: {
+          character_name: string
+          created_at: string
+          description: string
+          id: string
+          lesson_id: string
+          reference_image_url: string | null
+          user_id: string
+        }
+        Insert: {
+          character_name: string
+          created_at?: string
+          description: string
+          id?: string
+          lesson_id: string
+          reference_image_url?: string | null
+          user_id: string
+        }
+        Update: {
+          character_name?: string
+          created_at?: string
+          description?: string
+          id?: string
+          lesson_id?: string
+          reference_image_url?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "character_sheets_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lessons: {
+        Row: {
+          audio_duration_seconds: number | null
+          audio_url: string | null
+          content_text: string
+          created_at: string
+          id: string
+          is_downloaded: boolean | null
+          language: string | null
+          progress: number | null
+          subject: string
+          title: string
+          updated_at: string
+          upload_id: string
+          user_id: string
+        }
+        Insert: {
+          audio_duration_seconds?: number | null
+          audio_url?: string | null
+          content_text: string
+          created_at?: string
+          id?: string
+          is_downloaded?: boolean | null
+          language?: string | null
+          progress?: number | null
+          subject: string
+          title: string
+          updated_at?: string
+          upload_id: string
+          user_id: string
+        }
+        Update: {
+          audio_duration_seconds?: number | null
+          audio_url?: string | null
+          content_text?: string
+          created_at?: string
+          id?: string
+          is_downloaded?: boolean | null
+          language?: string | null
+          progress?: number | null
+          subject?: string
+          title?: string
+          updated_at?: string
+          upload_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lessons_upload_id_fkey"
+            columns: ["upload_id"]
+            isOneToOne: false
+            referencedRelation: "uploads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          onboarding_completed: boolean | null
+          plan: Database["public"]["Enums"]["subscription_plan"] | null
+          preferred_language: string | null
+          selected_subjects: string[] | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          onboarding_completed?: boolean | null
+          plan?: Database["public"]["Enums"]["subscription_plan"] | null
+          preferred_language?: string | null
+          selected_subjects?: string[] | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          onboarding_completed?: boolean | null
+          plan?: Database["public"]["Enums"]["subscription_plan"] | null
+          preferred_language?: string | null
+          selected_subjects?: string[] | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      quiz_attempts: {
+        Row: {
+          created_at: string
+          id: string
+          is_correct: boolean
+          quiz_id: string
+          selected_answer: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_correct: boolean
+          quiz_id: string
+          selected_answer: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_correct?: boolean
+          quiz_id?: string
+          selected_answer?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_attempts_quiz_id_fkey"
+            columns: ["quiz_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quizzes: {
+        Row: {
+          correct_answer: string
+          created_at: string
+          difficulty: string | null
+          explanation: string | null
+          id: string
+          lesson_id: string
+          options: Json | null
+          question_text: string
+          question_type: string
+          user_id: string
+        }
+        Insert: {
+          correct_answer: string
+          created_at?: string
+          difficulty?: string | null
+          explanation?: string | null
+          id?: string
+          lesson_id: string
+          options?: Json | null
+          question_text: string
+          question_type: string
+          user_id: string
+        }
+        Update: {
+          correct_answer?: string
+          created_at?: string
+          difficulty?: string | null
+          explanation?: string | null
+          id?: string
+          lesson_id?: string
+          options?: Json | null
+          question_text?: string
+          question_type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quizzes_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      uploads: {
+        Row: {
+          created_at: string
+          extracted_text: string | null
+          file_name: string
+          file_size_bytes: number
+          file_type: string
+          id: string
+          page_count: number | null
+          status: string
+          storage_path: string
+          subject: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          extracted_text?: string | null
+          file_name: string
+          file_size_bytes: number
+          file_type: string
+          id?: string
+          page_count?: number | null
+          status?: string
+          storage_path: string
+          subject: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          extracted_text?: string | null
+          file_name?: string
+          file_size_bytes?: number
+          file_type?: string
+          id?: string
+          page_count?: number | null
+          status?: string
+          storage_path?: string
+          subject?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      usage_tracking: {
+        Row: {
+          audio_minutes_used: number | null
+          created_at: string
+          id: string
+          lessons_downloaded: number | null
+          period_start: string
+          quiz_questions_generated: number | null
+          updated_at: string
+          uploads_count: number | null
+          user_id: string
+          visual_scenes_generated: number | null
+        }
+        Insert: {
+          audio_minutes_used?: number | null
+          created_at?: string
+          id?: string
+          lessons_downloaded?: number | null
+          period_start?: string
+          quiz_questions_generated?: number | null
+          updated_at?: string
+          uploads_count?: number | null
+          user_id: string
+          visual_scenes_generated?: number | null
+        }
+        Update: {
+          audio_minutes_used?: number | null
+          created_at?: string
+          id?: string
+          lessons_downloaded?: number | null
+          period_start?: string
+          quiz_questions_generated?: number | null
+          updated_at?: string
+          uploads_count?: number | null
+          user_id?: string
+          visual_scenes_generated?: number | null
+        }
+        Relationships: []
+      }
+      visual_scenes: {
+        Row: {
+          created_at: string
+          id: string
+          image_url: string | null
+          lesson_id: string
+          paragraph_index: number
+          prompt_text: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          lesson_id: string
+          paragraph_index: number
+          prompt_text: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          lesson_id?: string
+          paragraph_index?: number
+          prompt_text?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "visual_scenes_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +362,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      subscription_plan: "free" | "essential" | "premium"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +489,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      subscription_plan: ["free", "essential", "premium"],
+    },
   },
 } as const
