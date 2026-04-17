@@ -14,6 +14,50 @@ export type Database = {
   }
   public: {
     Tables: {
+      audio_assets: {
+        Row: {
+          char_count: number
+          chunk_index: number
+          created_at: string
+          document_id: string
+          duration_seconds: number | null
+          id: string
+          language: string
+          storage_path: string
+          voice_provider: Database["public"]["Enums"]["voice_provider"]
+        }
+        Insert: {
+          char_count?: number
+          chunk_index: number
+          created_at?: string
+          document_id: string
+          duration_seconds?: number | null
+          id?: string
+          language: string
+          storage_path: string
+          voice_provider: Database["public"]["Enums"]["voice_provider"]
+        }
+        Update: {
+          char_count?: number
+          chunk_index?: number
+          created_at?: string
+          document_id?: string
+          duration_seconds?: number | null
+          id?: string
+          language?: string
+          storage_path?: string
+          voice_provider?: Database["public"]["Enums"]["voice_provider"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audio_assets_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       character_sheets: {
         Row: {
           character_name: string
@@ -52,12 +96,87 @@ export type Database = {
           },
         ]
       }
+      documents: {
+        Row: {
+          char_count: number
+          clean_text: string
+          content_hash: string
+          created_at: string
+          id: string
+          language: string
+          page_count: number | null
+          subject_type: Database["public"]["Enums"]["subject_type"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          char_count?: number
+          clean_text: string
+          content_hash: string
+          created_at?: string
+          id?: string
+          language?: string
+          page_count?: number | null
+          subject_type?: Database["public"]["Enums"]["subject_type"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          char_count?: number
+          clean_text?: string
+          content_hash?: string
+          created_at?: string
+          id?: string
+          language?: string
+          page_count?: number | null
+          subject_type?: Database["public"]["Enums"]["subject_type"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      image_assets: {
+        Row: {
+          created_at: string
+          document_id: string
+          id: string
+          prompt_text: string
+          scene_index: number
+          storage_path: string
+        }
+        Insert: {
+          created_at?: string
+          document_id: string
+          id?: string
+          prompt_text: string
+          scene_index: number
+          storage_path: string
+        }
+        Update: {
+          created_at?: string
+          document_id?: string
+          id?: string
+          prompt_text?: string
+          scene_index?: number
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "image_assets_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lessons: {
         Row: {
           audio_duration_seconds: number | null
           audio_url: string | null
           content_text: string
           created_at: string
+          document_id: string | null
           id: string
           is_downloaded: boolean | null
           language: string | null
@@ -73,6 +192,7 @@ export type Database = {
           audio_url?: string | null
           content_text: string
           created_at?: string
+          document_id?: string | null
           id?: string
           is_downloaded?: boolean | null
           language?: string | null
@@ -88,6 +208,7 @@ export type Database = {
           audio_url?: string | null
           content_text?: string
           created_at?: string
+          document_id?: string | null
           id?: string
           is_downloaded?: boolean | null
           language?: string | null
@@ -99,6 +220,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "lessons_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "lessons_upload_id_fkey"
             columns: ["upload_id"]
@@ -112,6 +240,7 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string
+          credits_balance: number
           display_name: string | null
           id: string
           onboarding_completed: boolean | null
@@ -124,6 +253,7 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           created_at?: string
+          credits_balance?: number
           display_name?: string | null
           id?: string
           onboarding_completed?: boolean | null
@@ -136,6 +266,7 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           created_at?: string
+          credits_balance?: number
           display_name?: string | null
           id?: string
           onboarding_completed?: boolean | null
@@ -146,6 +277,38 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      quiz_assets: {
+        Row: {
+          created_at: string
+          difficulty: string
+          document_id: string
+          id: string
+          quiz_json: Json
+        }
+        Insert: {
+          created_at?: string
+          difficulty?: string
+          document_id: string
+          id?: string
+          quiz_json: Json
+        }
+        Update: {
+          created_at?: string
+          difficulty?: string
+          document_id?: string
+          id?: string
+          quiz_json?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_assets_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quiz_attempts: {
         Row: {
@@ -313,6 +476,79 @@ export type Database = {
         }
         Relationships: []
       }
+      user_asset_access: {
+        Row: {
+          asset_type: Database["public"]["Enums"]["asset_type"]
+          created_at: string
+          credits_charged: number
+          document_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          asset_type: Database["public"]["Enums"]["asset_type"]
+          created_at?: string
+          credits_charged?: number
+          document_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          asset_type?: Database["public"]["Enums"]["asset_type"]
+          created_at?: string
+          credits_charged?: number
+          document_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_asset_access_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_usage: {
+        Row: {
+          action_type: Database["public"]["Enums"]["asset_type"]
+          created_at: string
+          credits_used: number
+          document_id: string | null
+          id: string
+          request_id: string | null
+          user_id: string
+        }
+        Insert: {
+          action_type: Database["public"]["Enums"]["asset_type"]
+          created_at?: string
+          credits_used?: number
+          document_id?: string | null
+          id?: string
+          request_id?: string | null
+          user_id: string
+        }
+        Update: {
+          action_type?: Database["public"]["Enums"]["asset_type"]
+          created_at?: string
+          credits_used?: number
+          document_id?: string | null
+          id?: string
+          request_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_usage_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       visual_scenes: {
         Row: {
           created_at: string
@@ -362,7 +598,10 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      asset_type: "audio" | "image" | "quiz"
+      subject_type: "novel" | "history" | "science" | "other"
       subscription_plan: "free" | "essential" | "premium"
+      voice_provider: "azure" | "elevenlabs"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -490,7 +729,10 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      asset_type: ["audio", "image", "quiz"],
+      subject_type: ["novel", "history", "science", "other"],
       subscription_plan: ["free", "essential", "premium"],
+      voice_provider: ["azure", "elevenlabs"],
     },
   },
 } as const
