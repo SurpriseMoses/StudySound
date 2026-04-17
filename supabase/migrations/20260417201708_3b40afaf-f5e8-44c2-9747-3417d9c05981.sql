@@ -1,0 +1,1 @@
+ALTER TABLE public.lessons DROP COLUMN IF EXISTS narration_style;
