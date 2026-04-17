@@ -82,10 +82,11 @@ export default function Listen() {
       setAudioUrl(data.audio_url);
       setChunkText(data.text);
       setTotalChunks(data.total_chunks);
+      setChunkAlreadyPaid(data.credits_charged === 0);
       if (data.credits_charged > 0) {
-        toast({ title: `1 credit charged`, description: "Audio for this lesson is now unlocked — replays are free." });
-      } else if (data.reused) {
-        // silently reuse
+        toast({ title: `1 credit charged`, description: `Section ${index + 1} unlocked — replays free.` });
+        // refresh preview so balance + paid count update
+        fetchCostPreview(lang);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load audio";
