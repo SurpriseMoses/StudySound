@@ -1,9 +1,9 @@
 // Generate audio for a single chunk of a document.
-// Strategy: On-demand chunking. Client requests (lesson_id, chunk_index, narration_style).
+// Strategy: On-demand chunking. Client requests (lesson_id, chunk_index).
 // We chunk the document deterministically server-side (~1800 chars at sentence boundaries),
-// route to Azure (zu/af/xh) or ElevenLabs (others), cache globally in audio_assets per
-// (document, chunk, language, provider, style), and charge 1 credit ONCE per user per
-// (document, chunk, language, style).
+// route to Azure (zu/af/xh) or ElevenLabs (others), cache globally in audio_assets,
+// and charge 1 credit ONCE per user per (document, chunk, language).
+// Narration tone is decided automatically by subject_type (novel → story, else → study).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -34,20 +34,6 @@ const AZURE_LANG_LOCALE: Record<string, string> = {
 };
 const AZURE_REGION = "southafricanorth";
 
-// Style presets → Azure express-as style + prosody rate + styledegree
-type StyleKey = "auto" | "calm" | "dramatic" | "cheerful" | "serious";
-const STYLE_PRESETS: Record<Exclude<StyleKey, "auto">, { style: string; rate: string; degree: string }> = {
-  calm:     { style: "narration-relaxed", rate: "0.85", degree: "1.3" },
-  dramatic: { style: "narration",         rate: "0.85", degree: "1.8" },
-  cheerful: { style: "cheerful",          rate: "0.95", degree: "1.4" },
-  serious:  { style: "general",           rate: "0.90", degree: "1.0" },
-};
-function resolveStyle(narrationStyle: string | null | undefined, mode: "story" | "study"): Exclude<StyleKey, "auto"> {
-  const s = (narrationStyle ?? "auto").toLowerCase() as StyleKey;
-  if (s === "calm" || s === "dramatic" || s === "cheerful" || s === "serious") return s;
-  return mode === "story" ? "dramatic" : "serious";
-}
-
 function addNaturalPauses(text: string): string {
   return text
     .replace(/\.(?!\s)/g, ". ")
@@ -62,13 +48,15 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
-function buildSSML(text: string, voice: string, locale: string, style: Exclude<StyleKey, "auto">): string {
+function buildSSML(text: string, voice: string, locale: string, mode: "story" | "study"): string {
   const processed = escapeXml(addNaturalPauses(text));
-  const preset = STYLE_PRESETS[style];
+  const rate = mode === "story" ? "0.85" : "0.90";
+  const style = mode === "story" ? "narration-relaxed" : "general";
+  const styleDegree = mode === "story" ? "1.5" : "1.0";
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">
   <voice name="${voice}">
-    <mstts:express-as style="${preset.style}" styledegree="${preset.degree}">
-      <prosody rate="${preset.rate}">${processed}</prosody>
+    <mstts:express-as style="${style}" styledegree="${styleDegree}">
+      <prosody rate="${rate}">${processed}</prosody>
     </mstts:express-as>
   </voice>
 </speak>`;
@@ -108,10 +96,10 @@ async function ttsElevenLabs(text: string, apiKey: string): Promise<ArrayBuffer>
   return res.arrayBuffer();
 }
 
-async function ttsAzure(text: string, lang: string, apiKey: string, style: Exclude<StyleKey, "auto">): Promise<ArrayBuffer> {
+async function ttsAzure(text: string, lang: string, apiKey: string, mode: "story" | "study"): Promise<ArrayBuffer> {
   const voice = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
   const locale = AZURE_LANG_LOCALE[lang] ?? "en-GB";
-  const ssml = buildSSML(text, voice, locale, style);
+  const ssml = buildSSML(text, voice, locale, mode);
   const res = await fetch(`https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
     method: "POST",
     headers: {
@@ -149,7 +137,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { lesson_id, chunk_index = 0, language, preview_only = false, narration_style } = body ?? {};
+    const { lesson_id, chunk_index = 0, language, preview_only = false } = body ?? {};
     if (!lesson_id) {
       return new Response(JSON.stringify({ error: "lesson_id required" }), {
         status: 400,
@@ -161,7 +149,7 @@ Deno.serve(async (req) => {
 
     const { data: lesson, error: lessonErr } = await admin
       .from("lessons")
-      .select("id, user_id, document_id, content_text, language, narration_style")
+      .select("id, user_id, document_id, content_text, language")
       .eq("id", lesson_id)
       .maybeSingle();
     if (lessonErr || !lesson) throw new Error("Lesson not found");
@@ -175,7 +163,6 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
     const mode: "story" | "study" = doc.subject_type === "novel" ? "story" : "study";
-    const styleKey = resolveStyle(narration_style ?? lesson.narration_style, mode);
 
     const lang = (language ?? lesson.language ?? doc.language ?? "en").toLowerCase();
     const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
@@ -183,16 +170,13 @@ Deno.serve(async (req) => {
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
 
-    // Encode style into language key so cache + access are per-style
-    const langKey = `${lang}:${styleKey}`;
-
     if (preview_only) {
       const { data: paidChunks } = await admin
         .from("user_chunk_access")
         .select("chunk_index")
         .eq("user_id", user.id)
         .eq("document_id", doc.id)
-        .eq("language", langKey)
+        .eq("language", lang)
         .eq("asset_type", "audio");
       const paidSet = new Set((paidChunks ?? []).map((r) => r.chunk_index));
       const remainingChunks = Array.from({ length: totalChunks }, (_, i) => i).filter((i) => !paidSet.has(i));
@@ -210,7 +194,6 @@ Deno.serve(async (req) => {
           remaining_credits_for_full_book: remainingChunks.length,
           credits_balance: profile?.credits_balance ?? 0,
           language: lang,
-          narration_style: styleKey,
           provider,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -229,7 +212,7 @@ Deno.serve(async (req) => {
       .select("storage_path")
       .eq("document_id", doc.id)
       .eq("chunk_index", chunk_index)
-      .eq("language", langKey)
+      .eq("language", lang)
       .eq("voice_provider", provider)
       .maybeSingle();
 
@@ -239,7 +222,7 @@ Deno.serve(async (req) => {
       .eq("user_id", user.id)
       .eq("document_id", doc.id)
       .eq("chunk_index", chunk_index)
-      .eq("language", langKey)
+      .eq("language", lang)
       .eq("asset_type", "audio")
       .maybeSingle();
 
@@ -266,7 +249,7 @@ Deno.serve(async (req) => {
         user_id: user.id,
         document_id: doc.id,
         chunk_index,
-        language: langKey,
+        language: lang,
         asset_type: "audio",
         credits_charged: 1,
       });
@@ -275,7 +258,7 @@ Deno.serve(async (req) => {
         document_id: doc.id,
         action_type: "audio",
         credits_used: 1,
-        request_id: `audio-${doc.id}-${langKey}-${chunk_index}-${user.id}`,
+        request_id: `audio-${doc.id}-${lang}-${chunk_index}-${user.id}`,
       });
       chargedCredits = 1;
     }
@@ -291,9 +274,9 @@ Deno.serve(async (req) => {
       if (!apiKey) throw new Error(`${provider} API key not configured`);
       const audio =
         provider === "azure"
-          ? await ttsAzure(text, lang, apiKey, styleKey)
+          ? await ttsAzure(text, lang, apiKey, mode)
           : await ttsElevenLabs(text, apiKey);
-      storagePath = `audio/${doc.id}/${lang}/${styleKey}/${provider}/${chunk_index}.mp3`;
+      storagePath = `audio/${doc.id}/${lang}/${provider}/${chunk_index}.mp3`;
       const { error: upErr } = await admin.storage
         .from("assets")
         .upload(storagePath, new Uint8Array(audio), { contentType: "audio/mpeg", upsert: true });
@@ -301,7 +284,7 @@ Deno.serve(async (req) => {
       await admin.from("audio_assets").insert({
         document_id: doc.id,
         chunk_index,
-        language: langKey,
+        language: lang,
         voice_provider: provider,
         storage_path: storagePath,
         char_count: text.length,
@@ -321,7 +304,6 @@ Deno.serve(async (req) => {
         total_chunks: totalChunks,
         text: chunks[chunk_index],
         language: lang,
-        narration_style: styleKey,
         provider,
         reused,
         credits_charged: chargedCredits,

@@ -189,7 +189,6 @@ export type Database = {
           id: string
           is_downloaded: boolean | null
           language: string | null
-          narration_style: string
           progress: number | null
           subject: string
           title: string
@@ -206,7 +205,6 @@ export type Database = {
           id?: string
           is_downloaded?: boolean | null
           language?: string | null
-          narration_style?: string
           progress?: number | null
           subject: string
           title: string
@@ -223,7 +221,6 @@ export type Database = {
           id?: string
           is_downloaded?: boolean | null
           language?: string | null
-          narration_style?: string
           progress?: number | null
           subject?: string
           title?: string
