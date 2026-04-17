@@ -40,6 +40,7 @@ export default function Listen() {
 
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [language, setLanguage] = useState("en");
+  const [narrationStyle, setNarrationStyle] = useState<NarrationStyle>("auto");
   const [chunkIndex, setChunkIndex] = useState(0);
   const [totalChunks, setTotalChunks] = useState(1);
   const [chunkText, setChunkText] = useState("");
@@ -64,7 +65,7 @@ export default function Listen() {
     (async () => {
       const { data, error } = await supabase
         .from("lessons")
-        .select("id, title, subject, language")
+        .select("id, title, subject, language, narration_style")
         .eq("id", lessonId)
         .maybeSingle();
       if (error || !data) {
@@ -72,8 +73,9 @@ export default function Listen() {
         navigate("/library");
         return;
       }
-      setLesson(data);
+      setLesson(data as Lesson);
       setLanguage(data.language ?? "en");
+      setNarrationStyle((data.narration_style as NarrationStyle) ?? "auto");
     })();
   }, [lessonId, user, navigate, toast]);
 
