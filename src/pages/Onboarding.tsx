@@ -147,7 +147,11 @@ export default function Onboarding() {
         </AnimatePresence>
 
         <div className="flex justify-between mt-6">
-          <Button variant="ghost" onClick={() => setStep(s => s - 1)} disabled={step === 0} className="gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => (step === 0 ? navigate("/") : setStep(s => s - 1))}
+            className="gap-2"
+          >
             <ArrowLeft className="w-4 h-4" /> Back
           </Button>
           {step < 2 ? (

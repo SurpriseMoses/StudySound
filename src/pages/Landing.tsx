@@ -53,7 +53,7 @@ export default function Landing() {
             <Link to="/preview" className="hover:text-foreground transition-colors">Free Trial</Link>
           </div>
           <div className="flex items-center gap-2">
-            <Link to="/onboarding">
+            <Link to="/auth">
               <Button variant="ghost" size="sm">Log in</Button>
             </Link>
             <Link to="/onboarding">
