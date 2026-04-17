@@ -68,6 +68,26 @@ export default function Listen() {
     })();
   }, [lessonId, user, navigate, toast]);
 
+  // Fetch cost preview (no charge, no generation)
+  const fetchCostPreview = async (lang: string) => {
+    if (!lessonId) return;
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-audio", {
+        body: { lesson_id: lessonId, language: lang, preview_only: true },
+      });
+      if (error || !data?.success) return;
+      setCostPreview({
+        total: data.total_chunks,
+        paid: data.paid_chunks,
+        remaining: data.remaining_credits_for_full_book,
+        balance: data.credits_balance,
+      });
+      setTotalChunks(data.total_chunks);
+    } catch {
+      // silent
+    }
+  };
+
   // Fetch audio for current chunk
   const loadChunk = async (index: number, lang: string) => {
     if (!lessonId) return;
@@ -85,7 +105,6 @@ export default function Listen() {
       setChunkAlreadyPaid(data.credits_charged === 0);
       if (data.credits_charged > 0) {
         toast({ title: `1 credit charged`, description: `Section ${index + 1} unlocked — replays free.` });
-        // refresh preview so balance + paid count update
         fetchCostPreview(lang);
       }
     } catch (e) {
@@ -96,13 +115,23 @@ export default function Listen() {
     }
   };
 
-  // Load first chunk when lesson ready or language changes
+  // Load preview when lesson ready or language changes
   useEffect(() => {
     if (!lesson) return;
     setChunkIndex(0);
-    loadChunk(0, language);
+    setHasConfirmed(false);
+    setAudioUrl(null);
+    setChunkText("");
+    fetchCostPreview(language);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lesson?.id, language]);
+
+  // Once user confirms, load the first chunk
+  useEffect(() => {
+    if (!lesson || !hasConfirmed) return;
+    loadChunk(0, language);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasConfirmed]);
 
   // Audio element handlers
   useEffect(() => {
