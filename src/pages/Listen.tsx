@@ -167,7 +167,7 @@ export default function Listen() {
       if (chunkIndex + 1 < totalChunks) {
         const next = chunkIndex + 1;
         setChunkIndex(next);
-        loadChunk(next, language).then(() => {
+        loadChunk(next, language, narrationStyle).then(() => {
           setTimeout(() => audioRef.current?.play(), 200);
           setIsPlaying(true);
         });
@@ -181,7 +181,7 @@ export default function Listen() {
       audio.removeEventListener("loadedmetadata", onLoad);
       audio.removeEventListener("ended", onEnd);
     };
-  }, [audioUrl, chunkIndex, totalChunks, language]);
+  }, [audioUrl, chunkIndex, totalChunks, language, narrationStyle]);
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -200,7 +200,7 @@ export default function Listen() {
     if (next === chunkIndex) return;
     setChunkIndex(next);
     setIsPlaying(false);
-    loadChunk(next, language);
+    loadChunk(next, language, narrationStyle);
   };
 
   const onSeek = (val: number[]) => {
