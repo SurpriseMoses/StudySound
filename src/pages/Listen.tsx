@@ -214,6 +214,27 @@ export default function Listen() {
     return `${m}:${sec}`;
   };
 
+  // Admin: clear cached audio for current chunk and re-render
+  const regenerateChunk = async () => {
+    if (!lessonId || !isAdmin) return;
+    setIsRegenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("regenerate-audio-chunk", {
+        body: { lesson_id: lessonId, chunk_index: chunkIndex, language },
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.success) throw new Error(data?.error ?? "Failed");
+      toast({ title: "Cache cleared", description: `${data.deleted_rows} row(s) removed. Reloading…` });
+      setIsPlaying(false);
+      await loadChunk(chunkIndex, language);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to regenerate";
+      toast({ title: "Regenerate failed", description: msg, variant: "destructive" });
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
   const subjectName = subjects.find((s) => s.id === lesson?.subject)?.name ?? lesson?.subject;
 
   return (
@@ -290,10 +311,28 @@ export default function Listen() {
                 <h3 className="font-display font-semibold text-sm">
                   Section {chunkIndex + 1} of {totalChunks}
                 </h3>
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Coins className="w-3 h-3" />
-                  {chunkAlreadyPaid ? "Free replay" : "1 credit"}
-                </span>
+                <div className="flex items-center gap-3">
+                  {isAdmin && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={regenerateChunk}
+                      disabled={isRegenerating || isLoading}
+                      className="h-7 text-xs"
+                    >
+                      {isRegenerating ? (
+                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                      ) : (
+                        <RefreshCw className="w-3 h-3 mr-1" />
+                      )}
+                      Regenerate
+                    </Button>
+                  )}
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Coins className="w-3 h-3" />
+                    {chunkAlreadyPaid ? "Free replay" : "1 credit"}
+                  </span>
+                </div>
               </div>
               {isLoading ? (
                 <div className="flex items-center justify-center py-10 text-muted-foreground">
