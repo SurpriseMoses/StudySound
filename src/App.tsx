@@ -47,7 +47,7 @@ const App = () => (
             <Route path="/dashboard" element={protect(<Dashboard />)} />
             <Route path="/subjects" element={protect(<Subjects />)} />
             <Route path="/upload" element={protect(<UploadPage />)} />
-            <Route path="/listen" element={protect(<Listen />)} />
+            <Route path="/listen/:lessonId" element={protect(<Listen />)} />
             <Route path="/visuals" element={protect(<Visuals />)} />
             <Route path="/quiz" element={protect(<Quiz />)} />
             <Route path="/library" element={protect(<LibraryPage />)} />
