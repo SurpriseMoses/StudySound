@@ -5,7 +5,7 @@
 // Also creates a per-user `lessons` row linking to that shared document.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
-import * as pdfjs from "https://esm.sh/pdfjs-serverless@0.4.2";
+import { extractText, getDocumentProxy } from "https://esm.sh/unpdf@0.12.1";
 import mammoth from "https://esm.sh/mammoth@1.8.0";
 
 const corsHeaders = {
@@ -44,16 +44,9 @@ function inferSubjectType(subject: string): "novel" | "history" | "science" | "o
 }
 
 async function extractPdf(bytes: Uint8Array): Promise<{ text: string; pageCount: number }> {
-  const doc = await pdfjs.getDocument({ data: bytes, useSystemFonts: true }).promise;
-  let out = "";
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    // deno-lint-ignore no-explicit-any
-    const strings = content.items.map((it: any) => it.str ?? "").join(" ");
-    out += strings + "\n\n";
-  }
-  return { text: out, pageCount: doc.numPages };
+  const pdf = await getDocumentProxy(bytes);
+  const { text, totalPages } = await extractText(pdf, { mergePages: true });
+  return { text: Array.isArray(text) ? text.join("\n\n") : text, pageCount: totalPages };
 }
 
 async function extractDocx(bytes: Uint8Array): Promise<{ text: string; pageCount: number }> {
@@ -134,8 +127,9 @@ Deno.serve(async (req) => {
         });
       }
     } catch (e) {
-      console.error("extraction error", e);
-      return new Response(JSON.stringify({ error: "Failed to extract text from file" }), {
+      const detail = e instanceof Error ? e.message : String(e);
+      console.error("extraction error", detail, e);
+      return new Response(JSON.stringify({ error: `Failed to extract text: ${detail}` }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
