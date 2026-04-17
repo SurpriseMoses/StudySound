@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins, RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -48,6 +48,22 @@ export default function Listen() {
   } | null>(null);
   const [hasConfirmed, setHasConfirmed] = useState(false);
   const [chunkAlreadyPaid, setChunkAlreadyPaid] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  // Check admin role
+  useEffect(() => {
+    if (!user) { setIsAdmin(false); return; }
+    (async () => {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      setIsAdmin(!!data);
+    })();
+  }, [user]);
 
   // Load lesson metadata
   useEffect(() => {
@@ -198,6 +214,27 @@ export default function Listen() {
     return `${m}:${sec}`;
   };
 
+  // Admin: clear cached audio for current chunk and re-render
+  const regenerateChunk = async () => {
+    if (!lessonId || !isAdmin) return;
+    setIsRegenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("regenerate-audio-chunk", {
+        body: { lesson_id: lessonId, chunk_index: chunkIndex, language },
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.success) throw new Error(data?.error ?? "Failed");
+      toast({ title: "Cache cleared", description: `${data.deleted_rows} row(s) removed. Reloading…` });
+      setIsPlaying(false);
+      await loadChunk(chunkIndex, language);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to regenerate";
+      toast({ title: "Regenerate failed", description: msg, variant: "destructive" });
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
   const subjectName = subjects.find((s) => s.id === lesson?.subject)?.name ?? lesson?.subject;
 
   return (
@@ -274,10 +311,28 @@ export default function Listen() {
                 <h3 className="font-display font-semibold text-sm">
                   Section {chunkIndex + 1} of {totalChunks}
                 </h3>
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Coins className="w-3 h-3" />
-                  {chunkAlreadyPaid ? "Free replay" : "1 credit"}
-                </span>
+                <div className="flex items-center gap-3">
+                  {isAdmin && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={regenerateChunk}
+                      disabled={isRegenerating || isLoading}
+                      className="h-7 text-xs"
+                    >
+                      {isRegenerating ? (
+                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                      ) : (
+                        <RefreshCw className="w-3 h-3 mr-1" />
+                      )}
+                      Regenerate
+                    </Button>
+                  )}
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Coins className="w-3 h-3" />
+                    {chunkAlreadyPaid ? "Free replay" : "1 credit"}
+                  </span>
+                </div>
               </div>
               {isLoading ? (
                 <div className="flex items-center justify-center py-10 text-muted-foreground">
