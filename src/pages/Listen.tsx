@@ -290,39 +290,41 @@ export default function Listen() {
           </Card>
         )}
 
-        <Card className="sticky bottom-4 border-primary/20 shadow-lg">
-          <CardContent className="p-4">
-            {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
-            <Slider value={progress} onValueChange={onSeek} max={100} step={0.5} className="mb-2" />
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-              <span>{fmt(currentTime)}</span>
-              <span>{fmt(duration)}</span>
-            </div>
-            <div className="flex items-center justify-center gap-4">
-              <button
-                onClick={() => goChunk(-1)}
-                disabled={chunkIndex === 0 || isLoading}
-                className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-              >
-                <SkipBack className="w-5 h-5" />
-              </button>
-              <button
-                onClick={togglePlay}
-                disabled={!audioUrl || isLoading}
-                className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-50"
-              >
-                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
-              </button>
-              <button
-                onClick={() => goChunk(1)}
-                disabled={chunkIndex >= totalChunks - 1 || isLoading}
-                className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-              >
-                <SkipForward className="w-5 h-5" />
-              </button>
-            </div>
-          </CardContent>
-        </Card>
+        {hasConfirmed && (
+          <Card className="sticky bottom-4 border-primary/20 shadow-lg">
+            <CardContent className="p-4">
+              {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
+              <Slider value={progress} onValueChange={onSeek} max={100} step={0.5} className="mb-2" />
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+                <span>{fmt(currentTime)}</span>
+                <span>{fmt(duration)}</span>
+              </div>
+              <div className="flex items-center justify-center gap-4">
+                <button
+                  onClick={() => goChunk(-1)}
+                  disabled={chunkIndex === 0 || isLoading}
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
+                  <SkipBack className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={togglePlay}
+                  disabled={!audioUrl || isLoading}
+                  className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+                </button>
+                <button
+                  onClick={() => goChunk(1)}
+                  disabled={chunkIndex >= totalChunks - 1 || isLoading}
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
+                  <SkipForward className="w-5 h-5" />
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </motion.div>
     </AppLayout>
   );
