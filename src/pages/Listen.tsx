@@ -85,7 +85,7 @@ export default function Listen() {
         navigate("/library");
         return;
       }
-      setLesson(data);
+      setLesson(data as Lesson);
       setLanguage(data.language ?? "en");
     })();
   }, [lessonId, user, navigate, toast]);
