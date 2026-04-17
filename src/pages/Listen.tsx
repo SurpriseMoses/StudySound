@@ -80,11 +80,11 @@ export default function Listen() {
   }, [lessonId, user, navigate, toast]);
 
   // Fetch cost preview (no charge, no generation)
-  const fetchCostPreview = async (lang: string) => {
+  const fetchCostPreview = async (lang: string, style: NarrationStyle) => {
     if (!lessonId) return;
     try {
       const { data, error } = await supabase.functions.invoke("generate-audio", {
-        body: { lesson_id: lessonId, language: lang, preview_only: true },
+        body: { lesson_id: lessonId, language: lang, narration_style: style, preview_only: true },
       });
       if (error || !data?.success) return;
       setCostPreview({
@@ -100,13 +100,13 @@ export default function Listen() {
   };
 
   // Fetch audio for current chunk
-  const loadChunk = async (index: number, lang: string) => {
+  const loadChunk = async (index: number, lang: string, style: NarrationStyle) => {
     if (!lessonId) return;
     setIsLoading(true);
     setAudioUrl(null);
     try {
       const { data, error } = await supabase.functions.invoke("generate-audio", {
-        body: { lesson_id: lessonId, chunk_index: index, language: lang },
+        body: { lesson_id: lessonId, chunk_index: index, language: lang, narration_style: style },
       });
       if (error) throw new Error(error.message);
       if (!data?.success) throw new Error(data?.error ?? "Failed");
@@ -116,7 +116,7 @@ export default function Listen() {
       setChunkAlreadyPaid(data.credits_charged === 0);
       if (data.credits_charged > 0) {
         toast({ title: `1 credit charged`, description: `Section ${index + 1} unlocked — replays free.` });
-        fetchCostPreview(lang);
+        fetchCostPreview(lang, style);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load audio";
@@ -126,21 +126,29 @@ export default function Listen() {
     }
   };
 
-  // Load preview when lesson ready or language changes
+  // Persist style change to lesson
+  const handleStyleChange = async (next: NarrationStyle) => {
+    setNarrationStyle(next);
+    if (lessonId) {
+      await supabase.from("lessons").update({ narration_style: next }).eq("id", lessonId);
+    }
+  };
+
+  // Load preview when lesson ready or language/style changes
   useEffect(() => {
     if (!lesson) return;
     setChunkIndex(0);
     setHasConfirmed(false);
     setAudioUrl(null);
     setChunkText("");
-    fetchCostPreview(language);
+    fetchCostPreview(language, narrationStyle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lesson?.id, language]);
+  }, [lesson?.id, language, narrationStyle]);
 
   // Once user confirms, load the first chunk
   useEffect(() => {
     if (!lesson || !hasConfirmed) return;
-    loadChunk(0, language);
+    loadChunk(0, language, narrationStyle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasConfirmed]);
 
