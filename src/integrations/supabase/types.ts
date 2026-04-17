@@ -102,9 +102,12 @@ export type Database = {
           clean_text: string
           content_hash: string
           created_at: string
+          grade_level: string | null
           id: string
+          is_seeded: boolean
           language: string
           page_count: number | null
+          source_url: string | null
           subject_type: Database["public"]["Enums"]["subject_type"]
           title: string
           updated_at: string
@@ -114,9 +117,12 @@ export type Database = {
           clean_text: string
           content_hash: string
           created_at?: string
+          grade_level?: string | null
           id?: string
+          is_seeded?: boolean
           language?: string
           page_count?: number | null
+          source_url?: string | null
           subject_type?: Database["public"]["Enums"]["subject_type"]
           title: string
           updated_at?: string
@@ -126,9 +132,12 @@ export type Database = {
           clean_text?: string
           content_hash?: string
           created_at?: string
+          grade_level?: string | null
           id?: string
+          is_seeded?: boolean
           language?: string
           page_count?: number | null
+          source_url?: string | null
           subject_type?: Database["public"]["Enums"]["subject_type"]
           title?: string
           updated_at?: string
