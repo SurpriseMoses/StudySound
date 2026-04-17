@@ -22,18 +22,47 @@ const ELEVEN_MODEL = "eleven_multilingual_v2";
 const AZURE_VOICES: Record<string, string> = {
   zu: "zu-ZA-ThandoNeural",
   af: "af-ZA-AdriNeural",
-  xh: "en-ZA-LeahNeural", // Azure has limited Xhosa; fallback to South African English
-  en: "en-ZA-LeahNeural",
+  xh: "en-GB-LibbyNeural",
+  en: "en-GB-LibbyNeural",
   fr: "fr-FR-DeniseNeural",
 };
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
   af: "af-ZA",
-  xh: "en-ZA",
-  en: "en-ZA",
+  xh: "en-GB",
+  en: "en-GB",
   fr: "fr-FR",
 };
 const AZURE_REGION = "southafricanorth";
+
+// Add natural pauses by ensuring whitespace after punctuation
+function addNaturalPauses(text: string): string {
+  return text
+    .replace(/\.(?!\s)/g, ". ")
+    .replace(/,(?!\s)/g, ", ")
+    .replace(/\?(?!\s)/g, "? ")
+    .replace(/!(?!\s)/g, "! ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+function buildSSML(text: string, voice: string, locale: string, mode: "story" | "study"): string {
+  const processed = escapeXml(addNaturalPauses(text));
+  const rate = mode === "story" ? "0.85" : "0.90";
+  const style = mode === "story" ? "narration-relaxed" : "general";
+  const styleDegree = mode === "story" ? "1.5" : "1.0";
+  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">
+  <voice name="${voice}">
+    <mstts:express-as style="${style}" styledegree="${styleDegree}">
+      <prosody rate="${rate}">${processed}</prosody>
+    </mstts:express-as>
+  </voice>
+</speak>`;
+}
 
 function chunkText(text: string, size = CHUNK_SIZE): string[] {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -69,13 +98,10 @@ async function ttsElevenLabs(text: string, apiKey: string): Promise<ArrayBuffer>
   return res.arrayBuffer();
 }
 
-async function ttsAzure(text: string, lang: string, apiKey: string): Promise<ArrayBuffer> {
+async function ttsAzure(text: string, lang: string, apiKey: string, mode: "story" | "study"): Promise<ArrayBuffer> {
   const voice = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
-  const locale = AZURE_LANG_LOCALE[lang] ?? "en-ZA";
-  const ssml = `<speak version='1.0' xml:lang='${locale}'><voice name='${voice}'>${text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")}</voice></speak>`;
+  const locale = AZURE_LANG_LOCALE[lang] ?? "en-GB";
+  const ssml = buildSSML(text, voice, locale, mode);
   const res = await fetch(`https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
     method: "POST",
     headers: {
