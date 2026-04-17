@@ -1,0 +1,1 @@
+ALTER TABLE public.lessons ADD COLUMN IF NOT EXISTS narration_style text NOT NULL DEFAULT 'auto';
