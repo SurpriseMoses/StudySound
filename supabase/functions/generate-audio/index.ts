@@ -12,7 +12,8 @@ const corsHeaders = {
 };
 
 const CHUNK_SIZE = 1800;
-const AZURE_LANGS = new Set(["zu", "af", "xh"]);
+// Route everything through Azure for now (ElevenLabs free tier blocked).
+const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr"]);
 
 // Default voices
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL"; // Sarah
@@ -22,6 +23,15 @@ const AZURE_VOICES: Record<string, string> = {
   zu: "zu-ZA-ThandoNeural",
   af: "af-ZA-AdriNeural",
   xh: "en-ZA-LeahNeural", // Azure has limited Xhosa; fallback to South African English
+  en: "en-ZA-LeahNeural",
+  fr: "fr-FR-DeniseNeural",
+};
+const AZURE_LANG_LOCALE: Record<string, string> = {
+  zu: "zu-ZA",
+  af: "af-ZA",
+  xh: "en-ZA",
+  en: "en-ZA",
+  fr: "fr-FR",
 };
 const AZURE_REGION = "southafricanorth";
 
@@ -60,8 +70,9 @@ async function ttsElevenLabs(text: string, apiKey: string): Promise<ArrayBuffer>
 }
 
 async function ttsAzure(text: string, lang: string, apiKey: string): Promise<ArrayBuffer> {
-  const voice = AZURE_VOICES[lang] ?? AZURE_VOICES.zu;
-  const ssml = `<speak version='1.0' xml:lang='${lang}-ZA'><voice name='${voice}'>${text
+  const voice = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+  const locale = AZURE_LANG_LOCALE[lang] ?? "en-ZA";
+  const ssml = `<speak version='1.0' xml:lang='${locale}'><voice name='${voice}'>${text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")}</voice></speak>`;
