@@ -1,127 +1,241 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Play, Pause, SkipBack, SkipForward, Volume2, Download, Globe } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import AppLayout from "@/components/AppLayout";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
+import { subjects } from "@/lib/subjects";
 
-const sampleChapters = [
-  { id: 1, title: "Chapter 1 — The Period", duration: "6:48", active: true },
-  { id: 2, title: "Chapter 2 — The Mail", duration: "8:12", active: false },
-  { id: 3, title: "Chapter 3 — The Night Shadows", duration: "5:34", active: false },
+type Lesson = { id: string; title: string; subject: string; language: string | null };
+
+const LANGS = [
+  { code: "en", label: "English" },
+  { code: "af", label: "Afrikaans" },
+  { code: "zu", label: "isiZulu" },
+  { code: "xh", label: "isiXhosa" },
+  { code: "fr", label: "French" },
 ];
 
-const sampleText = `It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness, it was the epoch of belief, it was the epoch of incredulity.
-
-There were a king with a large jaw and a queen with a plain face, on the throne of England; there were a king with a large jaw and a queen with a fair face, on the throne of France. In both countries it was clearer than crystal to the lords of the State preserves of loaves and fishes, that things in general were settled for ever.`;
-
 export default function Listen() {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState([25]);
-  const [speed, setSpeed] = useState("1");
+  const { lessonId } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const [lesson, setLesson] = useState<Lesson | null>(null);
   const [language, setLanguage] = useState("en");
+  const [chunkIndex, setChunkIndex] = useState(0);
+  const [totalChunks, setTotalChunks] = useState(1);
+  const [chunkText, setChunkText] = useState("");
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState([0]);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  // Load lesson metadata
+  useEffect(() => {
+    if (!lessonId || !user) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from("lessons")
+        .select("id, title, subject, language")
+        .eq("id", lessonId)
+        .maybeSingle();
+      if (error || !data) {
+        toast({ title: "Lesson not found", variant: "destructive" });
+        navigate("/library");
+        return;
+      }
+      setLesson(data);
+      setLanguage(data.language ?? "en");
+    })();
+  }, [lessonId, user, navigate, toast]);
+
+  // Fetch audio for current chunk
+  const loadChunk = async (index: number, lang: string) => {
+    if (!lessonId) return;
+    setIsLoading(true);
+    setAudioUrl(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-audio", {
+        body: { lesson_id: lessonId, chunk_index: index, language: lang },
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.success) throw new Error(data?.error ?? "Failed");
+      setAudioUrl(data.audio_url);
+      setChunkText(data.text);
+      setTotalChunks(data.total_chunks);
+      if (data.credits_charged > 0) {
+        toast({ title: `1 credit charged`, description: "Audio for this lesson is now unlocked — replays are free." });
+      } else if (data.reused) {
+        // silently reuse
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load audio";
+      toast({ title: "Audio failed", description: msg, variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load first chunk when lesson ready or language changes
+  useEffect(() => {
+    if (!lesson) return;
+    setChunkIndex(0);
+    loadChunk(0, language);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson?.id, language]);
+
+  // Audio element handlers
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !audioUrl) return;
+    const onTime = () => {
+      setCurrentTime(audio.currentTime);
+      if (audio.duration) setProgress([(audio.currentTime / audio.duration) * 100]);
+    };
+    const onLoad = () => setDuration(audio.duration);
+    const onEnd = () => {
+      setIsPlaying(false);
+      // Auto-advance
+      if (chunkIndex + 1 < totalChunks) {
+        const next = chunkIndex + 1;
+        setChunkIndex(next);
+        loadChunk(next, language).then(() => {
+          setTimeout(() => audioRef.current?.play(), 200);
+          setIsPlaying(true);
+        });
+      }
+    };
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("loadedmetadata", onLoad);
+    audio.addEventListener("ended", onEnd);
+    return () => {
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("loadedmetadata", onLoad);
+      audio.removeEventListener("ended", onEnd);
+    };
+  }, [audioUrl, chunkIndex, totalChunks, language]);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      audio.play();
+      setIsPlaying(true);
+    }
+  };
+
+  const goChunk = (delta: number) => {
+    const next = Math.max(0, Math.min(totalChunks - 1, chunkIndex + delta));
+    if (next === chunkIndex) return;
+    setChunkIndex(next);
+    setIsPlaying(false);
+    loadChunk(next, language);
+  };
+
+  const onSeek = (val: number[]) => {
+    const audio = audioRef.current;
+    if (!audio || !audio.duration) return;
+    audio.currentTime = (val[0] / 100) * audio.duration;
+    setProgress(val);
+  };
+
+  const fmt = (s: number) => {
+    if (!isFinite(s)) return "0:00";
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60).toString().padStart(2, "0");
+    return `${m}:${sec}`;
+  };
+
+  const subjectName = subjects.find((s) => s.id === lesson?.subject)?.name ?? lesson?.subject;
 
   return (
     <AppLayout>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+        <Link to="/library" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4">
+          <ArrowLeft className="w-4 h-4 mr-1" /> Library
+        </Link>
+
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-3">
           <div>
-            <h1 className="text-2xl font-display font-bold">A Tale of Two Cities</h1>
-            <p className="text-muted-foreground text-sm">English — Charles Dickens</p>
+            <h1 className="text-2xl font-display font-bold">{lesson?.title ?? "Loading…"}</h1>
+            <p className="text-muted-foreground text-sm">{subjectName}</p>
           </div>
-          <div className="flex gap-2">
-            <Select value={language} onValueChange={setLanguage}>
-              <SelectTrigger className="w-36">
-                <Globe className="w-4 h-4 mr-1" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="af">Afrikaans</SelectItem>
-                <SelectItem value="zu">isiZulu</SelectItem>
-                <SelectItem value="fr">French</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="icon">
-              <Download className="w-4 h-4" />
-            </Button>
-          </div>
+          <Select value={language} onValueChange={setLanguage}>
+            <SelectTrigger className="w-40">
+              <Globe className="w-4 h-4 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LANGS.map((l) => (
+                <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-5">
-          {/* Chapter list */}
-          <div className="space-y-2">
-            <h3 className="font-semibold text-sm mb-3">Chapters</h3>
-            {sampleChapters.map(ch => (
-              <Card key={ch.id} className={`cursor-pointer transition-all ${ch.active ? "border-primary bg-primary/5" : "hover:shadow-sm"}`}>
-                <CardContent className="p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {ch.active ? (
-                      <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                        <Play className="w-3 h-3 ml-0.5" />
-                      </div>
-                    ) : (
-                      <div className="w-6 h-6 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-medium">{ch.id}</div>
-                    )}
-                    <span className="text-sm font-medium">{ch.title}</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{ch.duration}</span>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+        <Card className="mb-4">
+          <CardContent className="p-5 min-h-[200px]">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display font-semibold text-sm">
+                Section {chunkIndex + 1} of {totalChunks}
+              </h3>
+            </div>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-10 text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Generating audio…
+              </div>
+            ) : (
+              <p className="text-foreground/80 leading-relaxed text-sm whitespace-pre-line">{chunkText}</p>
+            )}
+          </CardContent>
+        </Card>
 
-          {/* Text + Player */}
-          <div className="lg:col-span-2 space-y-4">
-            <Card>
-              <CardContent className="p-5">
-                <h3 className="font-display font-semibold mb-3">Chapter 1 — The Period</h3>
-                <div className="prose prose-sm max-w-none text-foreground/80 leading-relaxed whitespace-pre-line">
-                  {sampleText}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Player */}
-            <Card className="sticky bottom-4 border-primary/20 shadow-lg">
-              <CardContent className="p-4">
-                <Slider value={progress} onValueChange={setProgress} max={100} step={1} className="mb-2" />
-                <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-                  <span>1:42</span>
-                  <span>6:48</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Select value={speed} onValueChange={setSpeed}>
-                      <SelectTrigger className="w-16 h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["0.5", "0.75", "1", "1.25", "1.5", "2"].map(s => (
-                          <SelectItem key={s} value={s}>{s}x</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Volume2 className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button className="text-muted-foreground hover:text-foreground"><SkipBack className="w-5 h-5" /></button>
-                    <button
-                      onClick={() => setIsPlaying(!isPlaying)}
-                      className="w-11 h-11 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90"
-                    >
-                      {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
-                    </button>
-                    <button className="text-muted-foreground hover:text-foreground"><SkipForward className="w-5 h-5" /></button>
-                  </div>
-                  <div className="w-20" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+        <Card className="sticky bottom-4 border-primary/20 shadow-lg">
+          <CardContent className="p-4">
+            {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
+            <Slider value={progress} onValueChange={onSeek} max={100} step={0.5} className="mb-2" />
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+              <span>{fmt(currentTime)}</span>
+              <span>{fmt(duration)}</span>
+            </div>
+            <div className="flex items-center justify-center gap-4">
+              <button
+                onClick={() => goChunk(-1)}
+                disabled={chunkIndex === 0 || isLoading}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+              >
+                <SkipBack className="w-5 h-5" />
+              </button>
+              <button
+                onClick={togglePlay}
+                disabled={!audioUrl || isLoading}
+                className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-50"
+              >
+                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+              </button>
+              <button
+                onClick={() => goChunk(1)}
+                disabled={chunkIndex >= totalChunks - 1 || isLoading}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+              >
+                <SkipForward className="w-5 h-5" />
+              </button>
+            </div>
+          </CardContent>
+        </Card>
       </motion.div>
     </AppLayout>
   );
