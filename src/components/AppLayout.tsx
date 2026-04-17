@@ -2,10 +2,11 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   BookOpen, Upload, Headphones, Image, Brain, Library,
-  CreditCard, User, Menu, X, Home, Sparkles
+  CreditCard, User, Menu, X, Home, Sparkles, Shield
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: Home },
@@ -22,6 +23,7 @@ const navItems = [
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const { isAdmin } = useIsAdmin();
 
   return (
     <div className="min-h-screen flex">
@@ -65,6 +67,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+          {isAdmin && (
+            <Link
+              to="/admin"
+              onClick={() => setSidebarOpen(false)}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mt-2 border-t border-sidebar-border pt-3",
+                location.pathname.startsWith("/admin")
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+              )}
+            >
+              <Shield className="w-4.5 h-4.5" />
+              Admin
+            </Link>
+          )}
         </nav>
 
         <div className="p-4 border-t border-sidebar-border">

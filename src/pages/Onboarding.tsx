@@ -5,6 +5,7 @@ import { Sparkles, BookOpen, Upload, CreditCard, ArrowRight, ArrowLeft, Check } 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { subjects } from "@/lib/subjects";
 
@@ -71,7 +72,7 @@ export default function Onboarding() {
                     </div>
                     <div>
                       <Label>Password</Label>
-                      <Input type="password" placeholder="Create a password" className="mt-1" />
+                      <PasswordInput placeholder="Create a password" className="mt-1" />
                     </div>
                     <div>
                       <Label>Grade</Label>

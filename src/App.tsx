@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import AdminRoute from "@/components/AdminRoute";
 import Index from "./pages/Index";
 import Preview from "./pages/Preview";
 import Onboarding from "./pages/Onboarding";
@@ -20,6 +21,11 @@ import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import AdminLayout from "./pages/admin/AdminLayout";
+import AdminOverview from "./pages/admin/AdminOverview";
+import AdminDocuments from "./pages/admin/AdminDocuments";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminErrors from "./pages/admin/AdminErrors";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +58,17 @@ const App = () => (
             <Route path="/quiz" element={protect(<Quiz />)} />
             <Route path="/library" element={protect(<LibraryPage />)} />
             <Route path="/profile" element={protect(<Profile />)} />
+
+            {/* Admin */}
+            <Route
+              path="/admin"
+              element={protect(<AdminRoute><AdminLayout /></AdminRoute>)}
+            >
+              <Route index element={<AdminOverview />} />
+              <Route path="documents" element={<AdminDocuments />} />
+              <Route path="users" element={<AdminUsers />} />
+              <Route path="errors" element={<AdminErrors />} />
+            </Route>
 
             <Route path="*" element={<NotFound />} />
           </Routes>
