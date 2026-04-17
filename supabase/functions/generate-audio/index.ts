@@ -283,7 +283,7 @@ Deno.serve(async (req) => {
       if (!apiKey) throw new Error(`${provider} API key not configured`);
       const audio =
         provider === "azure"
-          ? await ttsAzure(text, lang, apiKey)
+          ? await ttsAzure(text, lang, apiKey, mode)
           : await ttsElevenLabs(text, apiKey);
       storagePath = `audio/${doc.id}/${lang}/${provider}/${chunk_index}.mp3`;
       const { error: upErr } = await admin.storage
