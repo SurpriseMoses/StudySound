@@ -253,7 +253,28 @@ export default function Listen() {
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-3">
           <div>
             <h1 className="text-2xl font-display font-bold">{lesson?.title ?? "Loading…"}</h1>
-            <p className="text-muted-foreground text-sm">{subjectName}</p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <p className="text-muted-foreground text-sm">{subjectName}</p>
+              {lesson?.documents?.subject_type && (
+                (() => {
+                  const isStory = lesson.documents.subject_type === "novel";
+                  return (
+                    <span
+                      className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ${
+                        isStory
+                          ? "bg-primary/10 text-primary border-primary/30"
+                          : "bg-muted text-foreground/70 border-border"
+                      }`}
+                      title={isStory
+                        ? "Story Mode: slower, expressive narration for novels"
+                        : "Study Mode: clear, focused narration for textbooks & notes"}
+                    >
+                      {isStory ? "📖 Story Mode" : "🎓 Study Mode"}
+                    </span>
+                  );
+                })()
+              )}
+            </div>
           </div>
           <Select value={language} onValueChange={setLanguage}>
             <SelectTrigger className="w-40">
