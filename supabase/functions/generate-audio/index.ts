@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { lesson_id, chunk_index = 0, language } = body ?? {};
+    const { lesson_id, chunk_index = 0, language, preview_only = false } = body ?? {};
     if (!lesson_id) {
       return new Response(JSON.stringify({ error: "lesson_id required" }), {
         status: 400,
@@ -146,6 +146,38 @@ Deno.serve(async (req) => {
     // 2. Determine chunks
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
+
+    // PREVIEW MODE: report cost without generating/charging
+    if (preview_only) {
+      const { data: paidChunks } = await admin
+        .from("user_chunk_access")
+        .select("chunk_index")
+        .eq("user_id", user.id)
+        .eq("document_id", doc.id)
+        .eq("language", lang)
+        .eq("asset_type", "audio");
+      const paidSet = new Set((paidChunks ?? []).map((r) => r.chunk_index));
+      const remainingChunks = Array.from({ length: totalChunks }, (_, i) => i).filter((i) => !paidSet.has(i));
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("credits_balance")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      return new Response(
+        JSON.stringify({
+          success: true,
+          preview: true,
+          total_chunks: totalChunks,
+          paid_chunks: paidSet.size,
+          remaining_credits_for_full_book: remainingChunks.length,
+          credits_balance: profile?.credits_balance ?? 0,
+          language: lang,
+          provider,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     if (chunk_index < 0 || chunk_index >= totalChunks) {
       return new Response(JSON.stringify({ error: "chunk_index out of range", total_chunks: totalChunks }), {
         status: 400,
@@ -153,7 +185,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 3. Check cache
+    // 3. Check global audio cache
     const { data: cached } = await admin
       .from("audio_assets")
       .select("storage_path")
@@ -163,29 +195,74 @@ Deno.serve(async (req) => {
       .eq("voice_provider", provider)
       .maybeSingle();
 
+    // 4. Check if THIS USER has already paid for THIS chunk
+    const { data: userPaid } = await admin
+      .from("user_chunk_access")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("document_id", doc.id)
+      .eq("chunk_index", chunk_index)
+      .eq("language", lang)
+      .eq("asset_type", "audio")
+      .maybeSingle();
+
+    let chargedCredits = 0;
+
+    // 5. Charge 1 credit if user hasn't paid for this chunk yet
+    if (!userPaid) {
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("credits_balance")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const balance = profile?.credits_balance ?? 0;
+      if (balance < 1) {
+        return new Response(JSON.stringify({ error: "Insufficient credits", credits_balance: balance }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      await admin
+        .from("profiles")
+        .update({ credits_balance: balance - 1 })
+        .eq("user_id", user.id);
+      await admin.from("user_chunk_access").insert({
+        user_id: user.id,
+        document_id: doc.id,
+        chunk_index,
+        language: lang,
+        asset_type: "audio",
+        credits_charged: 1,
+      });
+      await admin.from("user_usage").insert({
+        user_id: user.id,
+        document_id: doc.id,
+        action_type: "audio",
+        credits_used: 1,
+        request_id: `audio-${doc.id}-${lang}-${chunk_index}-${user.id}`,
+      });
+      chargedCredits = 1;
+    }
+
+    // 6. Generate audio if not cached globally
     let storagePath: string;
     let reused = false;
-
     if (cached) {
       storagePath = cached.storage_path;
       reused = true;
     } else {
-      // 4. Generate
       const text = chunks[chunk_index];
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
       if (!apiKey) throw new Error(`${provider} API key not configured`);
-
       const audio =
         provider === "azure"
           ? await ttsAzure(text, lang, apiKey)
           : await ttsElevenLabs(text, apiKey);
-
       storagePath = `audio/${doc.id}/${lang}/${provider}/${chunk_index}.mp3`;
       const { error: upErr } = await admin.storage
         .from("assets")
         .upload(storagePath, new Uint8Array(audio), { contentType: "audio/mpeg", upsert: true });
       if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
-
       await admin.from("audio_assets").insert({
         document_id: doc.id,
         chunk_index,
@@ -196,54 +273,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 5. Charge credit ONCE per user per document for audio
-    const { data: existingAccess } = await admin
-      .from("user_asset_access")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("document_id", doc.id)
-      .eq("asset_type", "audio")
-      .maybeSingle();
-
-    let chargedCredits = 0;
-    if (!existingAccess) {
-      // Check balance
-      const { data: profile } = await admin
-        .from("profiles")
-        .select("credits_balance")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      const balance = profile?.credits_balance ?? 0;
-      if (balance < 1) {
-        return new Response(JSON.stringify({ error: "Insufficient credits" }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      await admin.from("user_asset_access").insert({
-        user_id: user.id,
-        document_id: doc.id,
-        asset_type: "audio",
-        credits_charged: 1,
-      });
-      await admin.from("user_usage").insert({
-        user_id: user.id,
-        document_id: doc.id,
-        action_type: "audio",
-        credits_used: 1,
-        request_id: `audio-${doc.id}-${user.id}`,
-      });
-      await admin
-        .from("profiles")
-        .update({ credits_balance: balance - 1 })
-        .eq("user_id", user.id);
-      chargedCredits = 1;
-    }
-
-    // 6. Signed URL
+    // 7. Signed URL
     const { data: signed, error: signErr } = await admin.storage
       .from("assets")
-      .createSignedUrl(storagePath, 60 * 60 * 6); // 6h
+      .createSignedUrl(storagePath, 60 * 60 * 6);
     if (signErr || !signed) throw new Error(`Signed URL: ${signErr?.message}`);
 
     return new Response(

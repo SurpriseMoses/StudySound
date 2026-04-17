@@ -511,6 +511,47 @@ export type Database = {
           },
         ]
       }
+      user_chunk_access: {
+        Row: {
+          asset_type: Database["public"]["Enums"]["asset_type"]
+          chunk_index: number
+          created_at: string
+          credits_charged: number
+          document_id: string
+          id: string
+          language: string
+          user_id: string
+        }
+        Insert: {
+          asset_type?: Database["public"]["Enums"]["asset_type"]
+          chunk_index: number
+          created_at?: string
+          credits_charged?: number
+          document_id: string
+          id?: string
+          language: string
+          user_id: string
+        }
+        Update: {
+          asset_type?: Database["public"]["Enums"]["asset_type"]
+          chunk_index?: number
+          created_at?: string
+          credits_charged?: number
+          document_id?: string
+          id?: string
+          language?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_chunk_access_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_usage: {
         Row: {
           action_type: Database["public"]["Enums"]["asset_type"]
