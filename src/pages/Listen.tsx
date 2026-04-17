@@ -12,7 +12,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { subjects } from "@/lib/subjects";
 
-type Lesson = { id: string; title: string; subject: string; language: string | null };
+type NarrationStyle = "auto" | "calm" | "dramatic" | "cheerful" | "serious";
+type Lesson = { id: string; title: string; subject: string; language: string | null; narration_style: NarrationStyle | null };
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -20,6 +21,14 @@ const LANGS = [
   { code: "zu", label: "isiZulu" },
   { code: "xh", label: "isiXhosa" },
   { code: "fr", label: "French" },
+];
+
+const STYLES: { code: NarrationStyle; label: string; hint: string }[] = [
+  { code: "auto", label: "Auto", hint: "Match the subject" },
+  { code: "calm", label: "Calm", hint: "Relaxed, slow" },
+  { code: "dramatic", label: "Dramatic", hint: "Expressive storytelling" },
+  { code: "cheerful", label: "Cheerful", hint: "Bright and warm" },
+  { code: "serious", label: "Serious", hint: "Clear and focused" },
 ];
 
 export default function Listen() {
