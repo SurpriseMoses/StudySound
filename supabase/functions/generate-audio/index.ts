@@ -1,0 +1,260 @@
+// Generate audio for a single chunk of a document.
+// Strategy: On-demand chunking. Client requests (lesson_id, chunk_index).
+// We chunk the document deterministically server-side (~1800 chars at sentence boundaries),
+// route to Azure (zu/af/xh) or ElevenLabs (others), cache globally in audio_assets,
+// and charge 1 credit ONCE per user per document (first chunk ever requested).
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+const CHUNK_SIZE = 1800;
+const AZURE_LANGS = new Set(["zu", "af", "xh"]);
+
+// Default voices
+const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL"; // Sarah
+const ELEVEN_MODEL = "eleven_multilingual_v2";
+
+const AZURE_VOICES: Record<string, string> = {
+  zu: "zu-ZA-ThandoNeural",
+  af: "af-ZA-AdriNeural",
+  xh: "en-ZA-LeahNeural", // Azure has limited Xhosa; fallback to South African English
+};
+const AZURE_REGION = "southafricanorth";
+
+function chunkText(text: string, size = CHUNK_SIZE): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
+  const sentences = clean.match(/[^.!?]+[.!?]+|\S+$/g) ?? [clean];
+  const chunks: string[] = [];
+  let buf = "";
+  for (const s of sentences) {
+    if ((buf + " " + s).length > size && buf.length > 0) {
+      chunks.push(buf.trim());
+      buf = s;
+    } else {
+      buf = buf ? buf + " " + s : s;
+    }
+  }
+  if (buf.trim()) chunks.push(buf.trim());
+  return chunks;
+}
+
+async function ttsElevenLabs(text: string, apiKey: string): Promise<ArrayBuffer> {
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        model_id: ELEVEN_MODEL,
+        voice_settings: { stability: 0.55, similarity_boost: 0.75, style: 0.3, use_speaker_boost: true },
+      }),
+    },
+  );
+  if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${await res.text()}`);
+  return res.arrayBuffer();
+}
+
+async function ttsAzure(text: string, lang: string, apiKey: string): Promise<ArrayBuffer> {
+  const voice = AZURE_VOICES[lang] ?? AZURE_VOICES.zu;
+  const ssml = `<speak version='1.0' xml:lang='${lang}-ZA'><voice name='${voice}'>${text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")}</voice></speak>`;
+  const res = await fetch(`https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+    method: "POST",
+    headers: {
+      "Ocp-Apim-Subscription-Key": apiKey,
+      "Content-Type": "application/ssml+xml",
+      "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+      "User-Agent": "studysound",
+    },
+    body: ssml,
+  });
+  if (!res.ok) throw new Error(`Azure ${res.status}: ${await res.text()}`);
+  return res.arrayBuffer();
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const ELEVEN_KEY = Deno.env.get("ElevenLabs_Secret_Key_TTS");
+    const AZURE_KEY = Deno.env.get("Azure_Secret_Key_SpeechServices");
+
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: userData } = await userClient.auth.getUser();
+    const user = userData?.user;
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const body = await req.json();
+    const { lesson_id, chunk_index = 0, language } = body ?? {};
+    if (!lesson_id) {
+      return new Response(JSON.stringify({ error: "lesson_id required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+
+    // 1. Load lesson + document
+    const { data: lesson, error: lessonErr } = await admin
+      .from("lessons")
+      .select("id, user_id, document_id, content_text, language")
+      .eq("id", lesson_id)
+      .maybeSingle();
+    if (lessonErr || !lesson) throw new Error("Lesson not found");
+    if (lesson.user_id !== user.id) throw new Error("Forbidden");
+    if (!lesson.document_id) throw new Error("Lesson has no linked document");
+
+    const { data: doc } = await admin
+      .from("documents")
+      .select("id, clean_text, language")
+      .eq("id", lesson.document_id)
+      .maybeSingle();
+    if (!doc) throw new Error("Document not found");
+
+    const lang = (language ?? lesson.language ?? doc.language ?? "en").toLowerCase();
+    const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
+
+    // 2. Determine chunks
+    const chunks = chunkText(doc.clean_text);
+    const totalChunks = chunks.length;
+    if (chunk_index < 0 || chunk_index >= totalChunks) {
+      return new Response(JSON.stringify({ error: "chunk_index out of range", total_chunks: totalChunks }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 3. Check cache
+    const { data: cached } = await admin
+      .from("audio_assets")
+      .select("storage_path")
+      .eq("document_id", doc.id)
+      .eq("chunk_index", chunk_index)
+      .eq("language", lang)
+      .eq("voice_provider", provider)
+      .maybeSingle();
+
+    let storagePath: string;
+    let reused = false;
+
+    if (cached) {
+      storagePath = cached.storage_path;
+      reused = true;
+    } else {
+      // 4. Generate
+      const text = chunks[chunk_index];
+      const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
+      if (!apiKey) throw new Error(`${provider} API key not configured`);
+
+      const audio =
+        provider === "azure"
+          ? await ttsAzure(text, lang, apiKey)
+          : await ttsElevenLabs(text, apiKey);
+
+      storagePath = `audio/${doc.id}/${lang}/${provider}/${chunk_index}.mp3`;
+      const { error: upErr } = await admin.storage
+        .from("assets")
+        .upload(storagePath, new Uint8Array(audio), { contentType: "audio/mpeg", upsert: true });
+      if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
+
+      await admin.from("audio_assets").insert({
+        document_id: doc.id,
+        chunk_index,
+        language: lang,
+        voice_provider: provider,
+        storage_path: storagePath,
+        char_count: text.length,
+      });
+    }
+
+    // 5. Charge credit ONCE per user per document for audio
+    const { data: existingAccess } = await admin
+      .from("user_asset_access")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("document_id", doc.id)
+      .eq("asset_type", "audio")
+      .maybeSingle();
+
+    let chargedCredits = 0;
+    if (!existingAccess) {
+      // Check balance
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("credits_balance")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const balance = profile?.credits_balance ?? 0;
+      if (balance < 1) {
+        return new Response(JSON.stringify({ error: "Insufficient credits" }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      await admin.from("user_asset_access").insert({
+        user_id: user.id,
+        document_id: doc.id,
+        asset_type: "audio",
+        credits_charged: 1,
+      });
+      await admin.from("user_usage").insert({
+        user_id: user.id,
+        document_id: doc.id,
+        action_type: "audio",
+        credits_used: 1,
+        request_id: `audio-${doc.id}-${user.id}`,
+      });
+      await admin
+        .from("profiles")
+        .update({ credits_balance: balance - 1 })
+        .eq("user_id", user.id);
+      chargedCredits = 1;
+    }
+
+    // 6. Signed URL
+    const { data: signed, error: signErr } = await admin.storage
+      .from("assets")
+      .createSignedUrl(storagePath, 60 * 60 * 6); // 6h
+    if (signErr || !signed) throw new Error(`Signed URL: ${signErr?.message}`);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        audio_url: signed.signedUrl,
+        chunk_index,
+        total_chunks: totalChunks,
+        text: chunks[chunk_index],
+        language: lang,
+        provider,
+        reused,
+        credits_charged: chargedCredits,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown error";
+    console.error("generate-audio error:", msg);
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
