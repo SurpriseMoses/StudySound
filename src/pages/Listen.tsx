@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import AppLayout from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -39,6 +40,14 @@ export default function Listen() {
   const [progress, setProgress] = useState([0]);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [costPreview, setCostPreview] = useState<{
+    total: number;
+    paid: number;
+    remaining: number;
+    balance: number;
+  } | null>(null);
+  const [hasConfirmed, setHasConfirmed] = useState(false);
+  const [chunkAlreadyPaid, setChunkAlreadyPaid] = useState(false);
 
   // Load lesson metadata
   useEffect(() => {
