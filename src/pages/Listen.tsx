@@ -231,17 +231,33 @@ export default function Listen() {
             <h1 className="text-2xl font-display font-bold">{lesson?.title ?? "Loading…"}</h1>
             <p className="text-muted-foreground text-sm">{subjectName}</p>
           </div>
-          <Select value={language} onValueChange={setLanguage}>
-            <SelectTrigger className="w-40">
-              <Globe className="w-4 h-4 mr-1" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LANGS.map((l) => (
-                <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap gap-2">
+            <Select value={narrationStyle} onValueChange={(v) => handleStyleChange(v as NarrationStyle)}>
+              <SelectTrigger className="w-44">
+                <Mic2 className="w-4 h-4 mr-1" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STYLES.map((s) => (
+                  <SelectItem key={s.code} value={s.code}>
+                    <span className="font-medium">{s.label}</span>
+                    <span className="text-xs text-muted-foreground ml-2">{s.hint}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={language} onValueChange={setLanguage}>
+              <SelectTrigger className="w-40">
+                <Globe className="w-4 h-4 mr-1" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGS.map((l) => (
+                  <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* Cost preview gate — shown until user confirms first play */}
