@@ -161,10 +161,11 @@ Deno.serve(async (req) => {
 
     const { data: doc } = await admin
       .from("documents")
-      .select("id, clean_text, language")
+      .select("id, clean_text, language, subject_type")
       .eq("id", lesson.document_id)
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
+    const mode: "story" | "study" = doc.subject_type === "novel" ? "story" : "study";
 
     const lang = (language ?? lesson.language ?? doc.language ?? "en").toLowerCase();
     const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
