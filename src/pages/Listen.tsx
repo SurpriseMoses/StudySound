@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins, Mic2 } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,8 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { subjects } from "@/lib/subjects";
 
-type NarrationStyle = "auto" | "calm" | "dramatic" | "cheerful" | "serious";
-type Lesson = { id: string; title: string; subject: string; language: string | null; narration_style: NarrationStyle | null };
+type Lesson = { id: string; title: string; subject: string; language: string | null };
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -21,14 +20,6 @@ const LANGS = [
   { code: "zu", label: "isiZulu" },
   { code: "xh", label: "isiXhosa" },
   { code: "fr", label: "French" },
-];
-
-const STYLES: { code: NarrationStyle; label: string; hint: string }[] = [
-  { code: "auto", label: "Auto", hint: "Match the subject" },
-  { code: "calm", label: "Calm", hint: "Relaxed, slow" },
-  { code: "dramatic", label: "Dramatic", hint: "Expressive storytelling" },
-  { code: "cheerful", label: "Cheerful", hint: "Bright and warm" },
-  { code: "serious", label: "Serious", hint: "Clear and focused" },
 ];
 
 export default function Listen() {
@@ -40,7 +31,6 @@ export default function Listen() {
 
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [language, setLanguage] = useState("en");
-  const [narrationStyle, setNarrationStyle] = useState<NarrationStyle>("auto");
   const [chunkIndex, setChunkIndex] = useState(0);
   const [totalChunks, setTotalChunks] = useState(1);
   const [chunkText, setChunkText] = useState("");
@@ -65,7 +55,7 @@ export default function Listen() {
     (async () => {
       const { data, error } = await supabase
         .from("lessons")
-        .select("id, title, subject, language, narration_style")
+        .select("id, title, subject, language")
         .eq("id", lessonId)
         .maybeSingle();
       if (error || !data) {
@@ -73,18 +63,17 @@ export default function Listen() {
         navigate("/library");
         return;
       }
-      setLesson(data as Lesson);
+      setLesson(data);
       setLanguage(data.language ?? "en");
-      setNarrationStyle((data.narration_style as NarrationStyle) ?? "auto");
     })();
   }, [lessonId, user, navigate, toast]);
 
   // Fetch cost preview (no charge, no generation)
-  const fetchCostPreview = async (lang: string, style: NarrationStyle) => {
+  const fetchCostPreview = async (lang: string) => {
     if (!lessonId) return;
     try {
       const { data, error } = await supabase.functions.invoke("generate-audio", {
-        body: { lesson_id: lessonId, language: lang, narration_style: style, preview_only: true },
+        body: { lesson_id: lessonId, language: lang, preview_only: true },
       });
       if (error || !data?.success) return;
       setCostPreview({
@@ -100,13 +89,13 @@ export default function Listen() {
   };
 
   // Fetch audio for current chunk
-  const loadChunk = async (index: number, lang: string, style: NarrationStyle) => {
+  const loadChunk = async (index: number, lang: string) => {
     if (!lessonId) return;
     setIsLoading(true);
     setAudioUrl(null);
     try {
       const { data, error } = await supabase.functions.invoke("generate-audio", {
-        body: { lesson_id: lessonId, chunk_index: index, language: lang, narration_style: style },
+        body: { lesson_id: lessonId, chunk_index: index, language: lang },
       });
       if (error) throw new Error(error.message);
       if (!data?.success) throw new Error(data?.error ?? "Failed");
@@ -116,7 +105,7 @@ export default function Listen() {
       setChunkAlreadyPaid(data.credits_charged === 0);
       if (data.credits_charged > 0) {
         toast({ title: `1 credit charged`, description: `Section ${index + 1} unlocked — replays free.` });
-        fetchCostPreview(lang, style);
+        fetchCostPreview(lang);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load audio";
@@ -126,29 +115,21 @@ export default function Listen() {
     }
   };
 
-  // Persist style change to lesson
-  const handleStyleChange = async (next: NarrationStyle) => {
-    setNarrationStyle(next);
-    if (lessonId) {
-      await supabase.from("lessons").update({ narration_style: next }).eq("id", lessonId);
-    }
-  };
-
-  // Load preview when lesson ready or language/style changes
+  // Load preview when lesson ready or language changes
   useEffect(() => {
     if (!lesson) return;
     setChunkIndex(0);
     setHasConfirmed(false);
     setAudioUrl(null);
     setChunkText("");
-    fetchCostPreview(language, narrationStyle);
+    fetchCostPreview(language);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lesson?.id, language, narrationStyle]);
+  }, [lesson?.id, language]);
 
   // Once user confirms, load the first chunk
   useEffect(() => {
     if (!lesson || !hasConfirmed) return;
-    loadChunk(0, language, narrationStyle);
+    loadChunk(0, language);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasConfirmed]);
 
@@ -167,7 +148,7 @@ export default function Listen() {
       if (chunkIndex + 1 < totalChunks) {
         const next = chunkIndex + 1;
         setChunkIndex(next);
-        loadChunk(next, language, narrationStyle).then(() => {
+        loadChunk(next, language).then(() => {
           setTimeout(() => audioRef.current?.play(), 200);
           setIsPlaying(true);
         });
@@ -181,7 +162,7 @@ export default function Listen() {
       audio.removeEventListener("loadedmetadata", onLoad);
       audio.removeEventListener("ended", onEnd);
     };
-  }, [audioUrl, chunkIndex, totalChunks, language, narrationStyle]);
+  }, [audioUrl, chunkIndex, totalChunks, language]);
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -200,7 +181,7 @@ export default function Listen() {
     if (next === chunkIndex) return;
     setChunkIndex(next);
     setIsPlaying(false);
-    loadChunk(next, language, narrationStyle);
+    loadChunk(next, language);
   };
 
   const onSeek = (val: number[]) => {
@@ -231,33 +212,17 @@ export default function Listen() {
             <h1 className="text-2xl font-display font-bold">{lesson?.title ?? "Loading…"}</h1>
             <p className="text-muted-foreground text-sm">{subjectName}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Select value={narrationStyle} onValueChange={(v) => handleStyleChange(v as NarrationStyle)}>
-              <SelectTrigger className="w-44">
-                <Mic2 className="w-4 h-4 mr-1" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {STYLES.map((s) => (
-                  <SelectItem key={s.code} value={s.code}>
-                    <span className="font-medium">{s.label}</span>
-                    <span className="text-xs text-muted-foreground ml-2">{s.hint}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={language} onValueChange={setLanguage}>
-              <SelectTrigger className="w-40">
-                <Globe className="w-4 h-4 mr-1" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {LANGS.map((l) => (
-                  <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={language} onValueChange={setLanguage}>
+            <SelectTrigger className="w-40">
+              <Globe className="w-4 h-4 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LANGS.map((l) => (
+                <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Cost preview gate — shown until user confirms first play */}
