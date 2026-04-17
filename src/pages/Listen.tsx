@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins, RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -48,6 +48,22 @@ export default function Listen() {
   } | null>(null);
   const [hasConfirmed, setHasConfirmed] = useState(false);
   const [chunkAlreadyPaid, setChunkAlreadyPaid] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  // Check admin role
+  useEffect(() => {
+    if (!user) { setIsAdmin(false); return; }
+    (async () => {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      setIsAdmin(!!data);
+    })();
+  }, [user]);
 
   // Load lesson metadata
   useEffect(() => {
