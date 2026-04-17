@@ -225,22 +225,70 @@ export default function Listen() {
           </Select>
         </div>
 
-        <Card className="mb-4">
-          <CardContent className="p-5 min-h-[200px]">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-display font-semibold text-sm">
-                Section {chunkIndex + 1} of {totalChunks}
-              </h3>
-            </div>
-            {isLoading ? (
-              <div className="flex items-center justify-center py-10 text-muted-foreground">
-                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Generating audio…
+        {/* Cost preview gate — shown until user confirms first play */}
+        {!hasConfirmed && costPreview && (
+          <Card className="mb-4 border-primary/30 bg-primary/5">
+            <CardContent className="p-5">
+              <div className="flex items-start gap-3">
+                <Coins className="w-6 h-6 text-primary mt-0.5 shrink-0" />
+                <div className="flex-1">
+                  <h3 className="font-display font-semibold text-base mb-1">Ready to listen</h3>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    This lesson has <strong className="text-foreground">{costPreview.total} sections</strong>.{" "}
+                    {costPreview.paid > 0 && (
+                      <>You've already unlocked <strong className="text-foreground">{costPreview.paid}</strong>. </>
+                    )}
+                    Each new section costs <strong className="text-foreground">1 credit</strong> and is free on replay.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    <span className="px-2 py-1 rounded-md bg-background border">
+                      Full lesson: <strong>{costPreview.remaining} credits</strong>
+                    </span>
+                    <span className="px-2 py-1 rounded-md bg-background border">
+                      Your balance: <strong>{costPreview.balance}</strong>
+                    </span>
+                  </div>
+                  <Button
+                    onClick={() => setHasConfirmed(true)}
+                    disabled={costPreview.balance < 1 && costPreview.paid === 0}
+                    className="mt-4"
+                  >
+                    <Play className="w-4 h-4 mr-1" />
+                    {costPreview.paid > 0 ? "Resume listening" : "Start listening (1 credit)"}
+                  </Button>
+                  {costPreview.balance < 1 && costPreview.paid === 0 && (
+                    <p className="text-xs text-destructive mt-2">
+                      Insufficient credits. <Link to="/plans" className="underline">Top up</Link>
+                    </p>
+                  )}
+                </div>
               </div>
-            ) : (
-              <p className="text-foreground/80 leading-relaxed text-sm whitespace-pre-line">{chunkText}</p>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
+
+        {hasConfirmed && (
+          <Card className="mb-4">
+            <CardContent className="p-5 min-h-[200px]">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-display font-semibold text-sm">
+                  Section {chunkIndex + 1} of {totalChunks}
+                </h3>
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Coins className="w-3 h-3" />
+                  {chunkAlreadyPaid ? "Free replay" : "1 credit"}
+                </span>
+              </div>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-10 text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> Generating audio…
+                </div>
+              ) : (
+                <p className="text-foreground/80 leading-relaxed text-sm whitespace-pre-line">{chunkText}</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="sticky bottom-4 border-primary/20 shadow-lg">
           <CardContent className="p-4">
