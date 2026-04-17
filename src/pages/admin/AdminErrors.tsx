@@ -1,4 +1,4 @@
-import { ExternalLink, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 export default function AdminErrors() {
@@ -11,24 +11,19 @@ export default function AdminErrors() {
       <Card>
         <CardContent className="p-6 space-y-3">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5" />
+            <AlertTriangle className="w-5 h-5 text-primary mt-0.5" />
             <div>
-              <p className="font-medium">Edge function logs are stored in Lovable Cloud.</p>
+              <p className="font-medium">Backend function logs</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Open the backend to view recent failures from <code>generate-audio</code>,
-                <code> regenerate-audio-chunk</code>, <code>extract-document</code>, and other functions.
-                Filter by status code <code>5xx</code> or search the function name.
+                Recent failures from <code>generate-audio</code>, <code>regenerate-audio-chunk</code>,
+                <code> extract-document</code>, and other backend functions are kept in your Lovable Cloud backend.
+                Open the backend panel and filter by status code <code>5xx</code> or search by function name.
               </p>
             </div>
           </div>
-          <a
-            href="https://supabase.com/dashboard/project/_/functions"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-          >
-            Open backend logs <ExternalLink className="w-3 h-3" />
-          </a>
+          <p className="text-xs text-muted-foreground">
+            Tip: from the project settings, open the Backend panel to view real-time logs and recent invocations.
+          </p>
         </CardContent>
       </Card>
     </div>
