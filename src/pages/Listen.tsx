@@ -12,7 +12,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { subjects } from "@/lib/subjects";
 
-type Lesson = { id: string; title: string; subject: string; language: string | null };
+type Lesson = {
+  id: string;
+  title: string;
+  subject: string;
+  language: string | null;
+  documents: { subject_type: string | null } | null;
+};
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -71,7 +77,7 @@ export default function Listen() {
     (async () => {
       const { data, error } = await supabase
         .from("lessons")
-        .select("id, title, subject, language")
+        .select("id, title, subject, language, documents(subject_type)")
         .eq("id", lessonId)
         .maybeSingle();
       if (error || !data) {
