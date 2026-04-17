@@ -137,5 +137,6 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
         </div>
       </CardContent>
     </Card>
+    </Link>
   );
 }
