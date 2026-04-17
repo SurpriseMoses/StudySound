@@ -4,6 +4,7 @@ import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -75,11 +76,11 @@ export default function ResetPassword() {
               <form onSubmit={handleSubmit} className="space-y-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="password">New password</Label>
-                  <Input id="password" name="password" type="password" autoComplete="new-password" minLength={8} required />
+                  <PasswordInput id="password" name="password" autoComplete="new-password" minLength={8} required />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="confirm">Confirm password</Label>
-                  <Input id="confirm" name="confirm" type="password" autoComplete="new-password" minLength={8} required />
+                  <PasswordInput id="confirm" name="confirm" autoComplete="new-password" minLength={8} required />
                 </div>
                 <Button type="submit" className="w-full" disabled={submitting}>
                   {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}

@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -58,6 +59,12 @@ export default function Auth() {
     const name = String(fd.get("name") ?? "");
     const email = String(fd.get("email") ?? "");
     const password = String(fd.get("password") ?? "");
+    const confirm = String(fd.get("confirm") ?? "");
+
+    if (password !== confirm) {
+      toast({ title: "Passwords don't match", description: "Please re-enter the same password in both fields.", variant: "destructive" });
+      return;
+    }
 
     const nameRes = nameSchema.safeParse(name);
     const emailRes = emailSchema.safeParse(email);
@@ -131,7 +138,7 @@ export default function Auth() {
                       <Label htmlFor="signin-password">Password</Label>
                       <Link to="/forgot-password" className="text-xs text-primary hover:underline">Forgot?</Link>
                     </div>
-                    <Input id="signin-password" name="password" type="password" autoComplete="current-password" required />
+                    <PasswordInput id="signin-password" name="password" autoComplete="current-password" required />
                   </div>
                   <Button type="submit" className="w-full" disabled={submitting}>
                     {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
@@ -154,8 +161,12 @@ export default function Auth() {
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="signup-password">Password</Label>
-                    <Input id="signup-password" name="password" type="password" autoComplete="new-password" minLength={8} required />
+                    <PasswordInput id="signup-password" name="password" autoComplete="new-password" minLength={8} required />
                     <p className="text-xs text-muted-foreground">At least 8 characters. Leaked passwords blocked.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="signup-confirm">Confirm password</Label>
+                    <PasswordInput id="signup-confirm" name="confirm" autoComplete="new-password" minLength={8} required />
                   </div>
                   <Button type="submit" className="w-full" disabled={submitting}>
                     {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
