@@ -22,6 +22,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { subjects } from "@/lib/subjects";
 import { CreditEstimator } from "@/components/CreditEstimator";
+import { LowCreditNudge, HardCreditBlock } from "@/components/LowCreditNudge";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -161,6 +162,7 @@ export default function LessonPlayer() {
   } | null>(null);
   const [hasConfirmed, setHasConfirmed] = useState(false);
   const [chunkAlreadyPaid, setChunkAlreadyPaid] = useState(false);
+  const [nudgeOpen, setNudgeOpen] = useState(false);
 
   // Translation
   const [translatedText, setTranslatedText] = useState<string | null>(null);
@@ -240,6 +242,14 @@ export default function LessonPlayer() {
     const onEnd = () => {
       setIsPlaying(false);
       if (chunkIndex + 1 < totalChunks) {
+        // Smart nudge: section just completed — best moment to convert.
+        // Trigger if balance is below 30% of remaining audio cost (Level 1/2 threshold).
+        const remainingNeeded = costPreview ? costPreview.remaining : 0;
+        const balance = costPreview?.balance ?? 0;
+        if (remainingNeeded > 0 && balance < Math.max(1, Math.ceil(remainingNeeded * 0.3))) {
+          setNudgeOpen(true);
+          return; // pause auto-advance until user decides
+        }
         const next = chunkIndex + 1;
         setChunkIndex(next);
         loadChunk(next, language).then(() => {
@@ -256,7 +266,7 @@ export default function LessonPlayer() {
       audio.removeEventListener("loadedmetadata", onLoad);
       audio.removeEventListener("ended", onEnd);
     };
-  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate]);
+  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview]);
 
   // Keep playbackRate in sync
   useEffect(() => {
@@ -273,6 +283,11 @@ export default function LessonPlayer() {
   const goChunk = (delta: number) => {
     const next = Math.max(0, Math.min(totalChunks - 1, chunkIndex + delta));
     if (next === chunkIndex) return;
+    // Level 2: block forward into a locked section when balance can't cover it
+    if (delta > 0 && costPreview && next >= costPreview.paid && costPreview.balance < 1) {
+      setNudgeOpen(true);
+      return;
+    }
     setChunkIndex(next);
     setIsPlaying(false);
     loadChunk(next, language);
@@ -437,6 +452,14 @@ export default function LessonPlayer() {
           </AnimatePresence>
         </Tabs>
 
+        {/* Smart nudge — bottom sheet */}
+        <LowCreditNudge
+          open={nudgeOpen}
+          onClose={() => setNudgeOpen(false)}
+          documentId={lesson.document_id}
+          fromContext="audio"
+        />
+
         {/* Persistent audio player */}
         {hasConfirmed && (
           <div className="fixed bottom-0 left-0 right-0 lg:left-64 z-30 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -533,10 +556,43 @@ function ListenTab(props: {
     </div>
   ) : null;
 
+  // Level 3: Hard block when out of credits and nothing unlocked yet
+  if (!hasConfirmed && costPreview && costPreview.balance < 1 && costPreview.paid === 0) {
+    return (
+      <>
+        {estimator}
+        <HardCreditBlock documentId={documentId} fromContext="audio" />
+      </>
+    );
+  }
+
+  // Level 1: Soft warning — balance covers <30% of remaining cost
+  const showSoftWarning =
+    costPreview &&
+    costPreview.remaining > 0 &&
+    costPreview.balance > 0 &&
+    costPreview.balance < Math.max(1, Math.ceil(costPreview.remaining * 0.3));
+
+  const softWarning = showSoftWarning ? (
+    <div className="mb-4 flex items-center gap-2 text-xs px-3 py-2 rounded-lg border border-primary/40 bg-primary/5">
+      <Coins className="w-3.5 h-3.5 text-primary shrink-0" />
+      <span className="text-foreground/80 flex-1">
+        Low credits — you may run out before finishing this book.
+      </span>
+      <Link
+        to={`/topup?from=audio${documentId ? `&doc=${documentId}` : ""}`}
+        className="text-primary font-semibold hover:underline"
+      >
+        Top up →
+      </Link>
+    </div>
+  ) : null;
+
   if (!hasConfirmed && costPreview) {
     return (
       <>
         {estimator}
+        {softWarning}
       <Card className="border-primary/30 bg-primary/5">
         <CardContent className="p-5">
           <div className="flex items-start gap-3">
@@ -566,11 +622,6 @@ function ListenTab(props: {
                 <Play className="w-4 h-4 mr-1" />
                 {costPreview.paid > 0 ? "Resume listening" : "Start listening (1 credit)"}
               </Button>
-              {costPreview.balance < 1 && costPreview.paid === 0 && (
-                <p className="text-xs text-destructive mt-2">
-                  Insufficient credits. <Link to={`/topup?from=audio${documentId ? `&doc=${documentId}` : ""}`} className="underline">Top up</Link>
-                </p>
-              )}
             </div>
           </div>
         </CardContent>
@@ -582,6 +633,7 @@ function ListenTab(props: {
   return (
     <>
       {estimator}
+      {softWarning}
       <Card>
       <CardContent className="p-6 min-h-[320px]">
         <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
