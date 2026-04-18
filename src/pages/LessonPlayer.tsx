@@ -568,7 +568,7 @@ function ListenTab(props: {
               </Button>
               {costPreview.balance < 1 && costPreview.paid === 0 && (
                 <p className="text-xs text-destructive mt-2">
-                  Insufficient credits. <Link to="/plans" className="underline">Top up</Link>
+                  Insufficient credits. <Link to={`/topup?from=audio${documentId ? `&doc=${documentId}` : ""}`} className="underline">Top up</Link>
                 </p>
               )}
             </div>
