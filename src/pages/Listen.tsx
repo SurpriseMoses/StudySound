@@ -24,8 +24,8 @@ const LANGS = [
   { code: "en", label: "English" },
   { code: "af", label: "Afrikaans" },
   { code: "zu", label: "isiZulu" },
-  { code: "xh", label: "isiXhosa" },
-  { code: "fr", label: "French" },
+  { code: "ts", label: "Xitsonga" },
+  { code: "nso", label: "Sepedi" },
 ];
 
 export default function Listen() {
