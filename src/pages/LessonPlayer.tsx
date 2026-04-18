@@ -21,6 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { subjects } from "@/lib/subjects";
+import { CreditEstimator } from "@/components/CreditEstimator";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -412,6 +413,7 @@ export default function LessonPlayer() {
             >
               {activeTab === "listen" && (
                 <ListenTab
+                  documentId={lesson.document_id}
                   hasConfirmed={hasConfirmed}
                   setHasConfirmed={setHasConfirmed}
                   costPreview={costPreview}
@@ -507,6 +509,7 @@ export default function LessonPlayer() {
 
 // ===================== Listen Tab =====================
 function ListenTab(props: {
+  documentId: string | null;
   hasConfirmed: boolean;
   setHasConfirmed: (v: boolean) => void;
   costPreview: { total: number; paid: number; remaining: number; balance: number } | null;
@@ -520,12 +523,20 @@ function ListenTab(props: {
   chunkAlreadyPaid: boolean;
 }) {
   const {
-    hasConfirmed, setHasConfirmed, costPreview, chunkIndex, totalChunks, chunkText,
+    documentId, hasConfirmed, setHasConfirmed, costPreview, chunkIndex, totalChunks, chunkText,
     isLoadingAudio, isTranslating, translatedText, language, chunkAlreadyPaid,
   } = props;
 
+  const estimator = documentId ? (
+    <div className="mb-4">
+      <CreditEstimator documentId={documentId} variant="inline" fromContext="audio" />
+    </div>
+  ) : null;
+
   if (!hasConfirmed && costPreview) {
     return (
+      <>
+        {estimator}
       <Card className="border-primary/30 bg-primary/5">
         <CardContent className="p-5">
           <div className="flex items-start gap-3">
@@ -557,18 +568,21 @@ function ListenTab(props: {
               </Button>
               {costPreview.balance < 1 && costPreview.paid === 0 && (
                 <p className="text-xs text-destructive mt-2">
-                  Insufficient credits. <Link to="/plans" className="underline">Top up</Link>
+                  Insufficient credits. <Link to={`/topup?from=audio${documentId ? `&doc=${documentId}` : ""}`} className="underline">Top up</Link>
                 </p>
               )}
             </div>
           </div>
         </CardContent>
       </Card>
+      </>
     );
   }
 
   return (
-    <Card>
+    <>
+      {estimator}
+      <Card>
       <CardContent className="p-6 min-h-[320px]">
         <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
           <h3 className="font-display font-semibold text-sm">
@@ -594,6 +608,7 @@ function ListenTab(props: {
         )}
       </CardContent>
     </Card>
+    </>
   );
 }
 

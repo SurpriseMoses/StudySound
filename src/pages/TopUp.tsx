@@ -9,6 +9,7 @@ import AppLayout from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { CreditEstimator } from "@/components/CreditEstimator";
 
 type Pack = {
   id: string;
@@ -106,6 +107,13 @@ export default function TopUp() {
             Most lessons cost 20–40 credits
           </p>
         </div>
+
+        {/* Per-document estimator */}
+        {params.get("doc") && (
+          <div className="mb-6">
+            <CreditEstimator documentId={params.get("doc")} variant="card" />
+          </div>
+        )}
 
         {/* Packs */}
         <div className="grid md:grid-cols-3 gap-4">
