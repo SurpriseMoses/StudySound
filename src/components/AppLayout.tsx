@@ -94,7 +94,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           )}
         </nav>
 
-        <div className="p-4 border-t border-sidebar-border">
+        <div className="p-4 border-t border-sidebar-border space-y-2">
           <div className="bg-sidebar-accent rounded-lg p-3">
             <p className="text-xs font-medium text-sidebar-foreground/80">Free Trial</p>
             <p className="text-xs text-sidebar-foreground/50 mt-1">Upgrade for full access</p>
@@ -104,6 +104,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </Button>
             </Link>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleSignOut}
+            className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign out
+          </Button>
         </div>
       </aside>
 
