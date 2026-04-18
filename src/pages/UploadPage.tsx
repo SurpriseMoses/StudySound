@@ -1,8 +1,9 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Upload, FileText, X, CheckCircle, AlertCircle, Loader2, Sparkles } from "lucide-react";
+import { Upload, FileText, X, CheckCircle, AlertCircle, Loader2, Search, BookOpen } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import AppLayout from "@/components/AppLayout";
@@ -12,7 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 
-type Status = "uploading" | "extracting" | "done" | "error" | "duplicate";
+type Status = "uploading" | "extracting" | "done" | "error";
 
 interface UploadFile {
   id: string;
@@ -26,6 +27,13 @@ interface UploadFile {
   lessonId?: string;
 }
 
+interface LibraryMatch {
+  id: string;
+  title: string;
+  subject_type: string;
+  char_count: number;
+}
+
 const MAX_BYTES = 20 * 1024 * 1024;
 
 export default function UploadPage() {
@@ -36,13 +44,40 @@ export default function UploadPage() {
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // Library search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [matches, setMatches] = useState<LibraryMatch[] | null>(null);
+
+  // Search library on debounce
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setMatches(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      const { data, error } = await supabase
+        .from("documents")
+        .select("id, title, subject_type, char_count")
+        .ilike("title", `%${q}%`)
+        .limit(5);
+      setSearching(false);
+      if (!error) setMatches(data ?? []);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const hasMatch = !!matches && matches.length > 0;
+  const uploadDisabled = hasMatch;
+
   const updateFile = (id: string, patch: Partial<UploadFile>) =>
     setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
 
   const processFile = useCallback(async (uf: UploadFile, subject: string) => {
     if (!user) return;
     try {
-      // 1. Upload to private storage
       const ext = uf.file.name.split(".").pop()?.toLowerCase() ?? "bin";
       const storagePath = `${user.id}/${crypto.randomUUID()}.${ext}`;
       updateFile(uf.id, { status: "uploading", progress: 10 });
@@ -54,7 +89,6 @@ export default function UploadPage() {
 
       updateFile(uf.id, { status: "extracting", progress: 50, message: "Extracting text…" });
 
-      // 2. Call extract-document
       const { data, error } = await supabase.functions.invoke("extract-document", {
         body: {
           storage_path: storagePath,
@@ -67,11 +101,9 @@ export default function UploadPage() {
       if (!data?.success) throw new Error(data?.error ?? "Extraction failed");
 
       updateFile(uf.id, {
-        status: data.reused ? "duplicate" : "done",
+        status: "done",
         progress: 100,
-        message: data.reused
-          ? "Already processed — reusing shared content (no AI cost)"
-          : `Ready · ${data.char_count.toLocaleString()} chars`,
+        message: `Ready · ${data.char_count.toLocaleString()} chars`,
         documentId: data.document_id,
         lessonId: data.lesson_id,
       });
@@ -84,6 +116,10 @@ export default function UploadPage() {
 
   const addFiles = useCallback((fileList: FileList | null) => {
     if (!fileList || !user) return;
+    if (uploadDisabled) {
+      toast({ title: "Book already in library", description: "Open it instantly instead of uploading.", variant: "destructive" });
+      return;
+    }
     if (!selectedSubject) {
       toast({ title: "Pick a subject first", variant: "destructive" });
       return;
@@ -105,61 +141,118 @@ export default function UploadPage() {
     });
     setFiles((prev) => [...prev, ...accepted]);
     accepted.forEach((uf) => processFile(uf, selectedSubject));
-  }, [user, selectedSubject, processFile, toast]);
+  }, [user, selectedSubject, processFile, toast, uploadDisabled]);
 
   const removeFile = (id: string) => setFiles((prev) => prev.filter((f) => f.id !== id));
 
-  const completed = files.filter((f) => f.status === "done" || f.status === "duplicate");
+  const completed = files.filter((f) => f.status === "done");
   const goToLibrary = () => navigate("/library");
+
+  const openInstantly = (docId: string) => {
+    navigate(`/listen?document=${docId}`);
+  };
 
   return (
     <AppLayout>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-2xl font-display font-bold mb-1">Upload Content</h1>
         <p className="text-muted-foreground text-sm mb-6">
-          Upload textbooks or novels (PDF, DOCX, TXT — max 20MB). We'll extract the text and dedupe globally.
+          Search our library first — if your book is already here, you get instant access.
         </p>
 
         <div className="max-w-2xl space-y-5">
+          {/* Library search */}
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Subject</label>
-            <Select value={selectedSubject} onValueChange={setSelectedSubject}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select subject for this upload" />
-              </SelectTrigger>
-              <SelectContent>
-                {subjects.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.icon} {s.name}
-                  </SelectItem>
+            <label className="text-sm font-medium mb-1.5 block">Search your book first</label>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="e.g. Macbeth, Great Expectations, World War II…"
+                className="pl-9"
+              />
+              {searching && (
+                <Loader2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin" />
+              )}
+            </div>
+
+            {hasMatch && (
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-success">
+                  <CheckCircle className="w-3.5 h-3.5" /> Available in library
+                </div>
+                {matches!.map((m) => (
+                  <Card key={m.id} className="border-success/30 bg-success/5">
+                    <CardContent className="p-3 flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-success/10 flex items-center justify-center">
+                        <BookOpen className="w-4 h-4 text-success" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">{m.title}</p>
+                        <p className="text-xs text-muted-foreground capitalize">
+                          {m.subject_type} · {m.char_count.toLocaleString()} chars
+                        </p>
+                      </div>
+                      <Button size="sm" onClick={() => openInstantly(m.id)}>
+                        Open instantly
+                      </Button>
+                    </CardContent>
+                  </Card>
                 ))}
-              </SelectContent>
-            </Select>
+              </div>
+            )}
+
+            {matches && matches.length === 0 && searchQuery.trim().length >= 2 && (
+              <p className="text-xs text-muted-foreground mt-2">
+                No match found — upload your file below.
+              </p>
+            )}
           </div>
 
-          <div
-            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-            onDragLeave={() => setIsDragOver(false)}
-            onDrop={(e) => { e.preventDefault(); setIsDragOver(false); addFiles(e.dataTransfer.files); }}
-            className={`border-2 border-dashed rounded-xl p-10 text-center transition-colors ${
-              isDragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
-            }`}
-          >
-            <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-            <p className="font-medium text-sm">Drag & drop files here</p>
-            <p className="text-xs text-muted-foreground mt-1 mb-4">PDF, DOCX, or TXT — up to 20MB</p>
-            <label>
-              <Button variant="outline" size="sm" className="cursor-pointer" asChild>
-                <span>Browse Files</span>
-              </Button>
-              <input
-                type="file"
-                accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                multiple
-                className="hidden"
-                onChange={(e) => addFiles(e.target.files)}
-              />
-            </label>
+          {/* Upload section — disabled when match found */}
+          <div className={uploadDisabled ? "opacity-50 pointer-events-none" : ""}>
+            <div className="border-t pt-5">
+              <label className="text-sm font-medium mb-1.5 block">Subject</label>
+              <Select value={selectedSubject} onValueChange={setSelectedSubject} disabled={uploadDisabled}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select subject for this upload" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.icon} {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div
+              onDragOver={(e) => { if (!uploadDisabled) { e.preventDefault(); setIsDragOver(true); } }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={(e) => { if (!uploadDisabled) { e.preventDefault(); setIsDragOver(false); addFiles(e.dataTransfer.files); } }}
+              className={`mt-4 border-2 border-dashed rounded-xl p-10 text-center transition-colors ${
+                isDragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
+              }`}
+            >
+              <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+              <p className="font-medium text-sm">Drag & drop files here</p>
+              <p className="text-xs text-muted-foreground mt-1 mb-4">PDF, DOCX, or TXT — up to 20MB</p>
+              <label>
+                <Button variant="outline" size="sm" className="cursor-pointer" asChild disabled={uploadDisabled}>
+                  <span>Browse Files</span>
+                </Button>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  multiple
+                  className="hidden"
+                  disabled={uploadDisabled}
+                  onChange={(e) => addFiles(e.target.files)}
+                />
+              </label>
+            </div>
           </div>
 
           {files.length > 0 && (
@@ -188,19 +281,9 @@ export default function UploadPage() {
                           </>
                         )}
                         {file.status === "done" && <CheckCircle className="w-3.5 h-3.5 text-success" />}
-                        {file.status === "duplicate" && <Sparkles className="w-3.5 h-3.5 text-primary" />}
                         {file.status === "error" && <AlertCircle className="w-3.5 h-3.5 text-destructive" />}
                       </div>
-                      {file.status === "duplicate" && (
-                        <div className="mt-2 flex items-start gap-2 rounded-md bg-primary/10 border border-primary/20 px-2.5 py-2">
-                          <Sparkles className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                          <div className="text-xs">
-                            <p className="font-semibold text-primary">This book is already in our library — instant access, no wait!</p>
-                            <p className="text-muted-foreground mt-0.5">Skipped re-extraction. Audio chunks already generated by other students are free to replay.</p>
-                          </div>
-                        </div>
-                      )}
-                      {file.message && file.status !== "duplicate" && (
+                      {file.message && (
                         <p className={`text-xs mt-1 ${file.status === "error" ? "text-destructive" : "text-muted-foreground"}`}>
                           {file.message}
                         </p>
