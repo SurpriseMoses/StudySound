@@ -148,8 +148,8 @@ export default function UploadPage() {
   const completed = files.filter((f) => f.status === "done");
   const goToLibrary = () => navigate("/library");
 
-  const openInstantly = (docId: string) => {
-    navigate(`/listen?document=${docId}`);
+  const openInstantly = (_docId: string) => {
+    navigate(`/library`);
   };
 
   return (

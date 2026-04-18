@@ -28,8 +28,14 @@ const LANGS = [
   { code: "nso", label: "Sepedi" },
 ];
 
-export default function Listen() {
-  const { lessonId } = useParams();
+interface ListenProps {
+  lessonId?: string;
+  embedded?: boolean;
+}
+
+export default function Listen({ lessonId: lessonIdProp, embedded = false }: ListenProps = {}) {
+  const params = useParams();
+  const lessonId = lessonIdProp ?? params.lessonId;
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -293,16 +299,21 @@ export default function Listen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language, chunkIndex, chunkText, lessonId]);
 
+  const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =>
+    embedded ? <>{children}</> : <AppLayout>{children}</AppLayout>;
+
   return (
-    <AppLayout>
+    <Wrapper>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <Link to="/library" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4">
-          <ArrowLeft className="w-4 h-4 mr-1" /> Library
-        </Link>
+        {!embedded && (
+          <Link to="/library" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4">
+            <ArrowLeft className="w-4 h-4 mr-1" /> Library
+          </Link>
+        )}
 
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-3">
           <div>
-            <h1 className="text-2xl font-display font-bold">{lesson?.title ?? "Loading…"}</h1>
+            {!embedded && <h1 className="text-2xl font-display font-bold">{lesson?.title ?? "Loading…"}</h1>}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <p className="text-muted-foreground text-sm">{subjectName}</p>
               {lesson?.documents?.subject_type && (
@@ -470,6 +481,6 @@ export default function Listen() {
           </Card>
         )}
       </motion.div>
-    </AppLayout>
+    </Wrapper>
   );
 }

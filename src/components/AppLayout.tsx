@@ -15,8 +15,6 @@ const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: Home },
   { path: "/subjects", label: "Subjects", icon: BookOpen },
   { path: "/upload", label: "Upload", icon: Upload },
-  { path: "/visuals", label: "Visuals", icon: Image },
-  { path: "/quiz", label: "Quiz", icon: Brain },
   { path: "/library", label: "Library", icon: Library },
   { path: "/plans", label: "Plans", icon: CreditCard },
   { path: "/profile", label: "Profile", icon: User },

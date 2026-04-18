@@ -105,7 +105,7 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
   const progress = lesson.progress ?? 0;
   const hasAudio = !!lesson.audio_url;
   return (
-    <Link to={`/listen/${lesson.id}`} className="block">
+    <Link to={`/lesson/${lesson.id}`} className="block">
       <Card className="hover:shadow-sm hover:border-primary/40 transition-all cursor-pointer">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">

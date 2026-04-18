@@ -22,7 +22,12 @@ const sampleQuestions: Question[] = [
   { id: 5, text: "The story is set during the French Revolution.", type: "tf", answer: "True" },
 ];
 
-export default function Quiz() {
+interface QuizProps {
+  lessonId?: string;
+  embedded?: boolean;
+}
+
+export default function Quiz({ embedded = false }: QuizProps = {}) {
   const [currentQ, setCurrentQ] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [answered, setAnswered] = useState(false);
@@ -59,10 +64,13 @@ export default function Quiz() {
     setFillAnswer("");
   };
 
+  const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =>
+    embedded ? <>{children}</> : <AppLayout>{children}</AppLayout>;
+
   if (completed) {
     const pct = Math.round((score / sampleQuestions.length) * 100);
     return (
-      <AppLayout>
+      <Wrapper>
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-md mx-auto text-center py-16">
           <div className="text-5xl mb-4">{pct >= 80 ? "🎉" : pct >= 50 ? "👍" : "📚"}</div>
           <h2 className="text-3xl font-display font-bold">{pct}%</h2>
@@ -74,12 +82,12 @@ export default function Quiz() {
             <RotateCcw className="w-4 h-4" /> Try Again
           </Button>
         </motion.div>
-      </AppLayout>
+      </Wrapper>
     );
   }
 
   return (
-    <AppLayout>
+    <Wrapper>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center justify-between mb-4">
@@ -173,6 +181,6 @@ export default function Quiz() {
           </div>
         </div>
       </motion.div>
-    </AppLayout>
+    </Wrapper>
   );
 }
