@@ -401,6 +401,47 @@ export type Database = {
           },
         ]
       }
+      translation_assets: {
+        Row: {
+          char_count: number
+          chunk_index: number
+          created_at: string
+          document_id: string
+          id: string
+          source_language: string
+          target_language: string
+          translated_text: string
+        }
+        Insert: {
+          char_count?: number
+          chunk_index: number
+          created_at?: string
+          document_id: string
+          id?: string
+          source_language?: string
+          target_language: string
+          translated_text: string
+        }
+        Update: {
+          char_count?: number
+          chunk_index?: number
+          created_at?: string
+          document_id?: string
+          id?: string
+          source_language?: string
+          target_language?: string
+          translated_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "translation_assets_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       uploads: {
         Row: {
           created_at: string
@@ -581,6 +622,44 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_translation_access: {
+        Row: {
+          chunk_index: number
+          created_at: string
+          credits_charged: number
+          document_id: string
+          id: string
+          target_language: string
+          user_id: string
+        }
+        Insert: {
+          chunk_index: number
+          created_at?: string
+          credits_charged?: number
+          document_id: string
+          id?: string
+          target_language: string
+          user_id: string
+        }
+        Update: {
+          chunk_index?: number
+          created_at?: string
+          credits_charged?: number
+          document_id?: string
+          id?: string
+          target_language?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_translation_access_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_usage: {
         Row: {
