@@ -427,7 +427,7 @@ export default function Listen() {
                 </div>
               ) : (
                 <p className="text-foreground/80 leading-relaxed text-sm whitespace-pre-line">
-                  {readLang !== "en" && translatedText ? translatedText : chunkText}
+                  {language !== "en" && translatedText ? translatedText : chunkText}
                 </p>
               )}
             </CardContent>
