@@ -32,6 +32,7 @@ interface LibraryMatch {
   title: string;
   subject_type: string;
   char_count: number;
+  similarity?: number;
 }
 
 const MAX_BYTES = 20 * 1024 * 1024;
