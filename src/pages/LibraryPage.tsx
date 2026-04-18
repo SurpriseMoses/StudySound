@@ -18,6 +18,7 @@ type Lesson = {
   progress: number | null;
   is_downloaded: boolean | null;
   audio_url: string | null;
+  document_id: string | null;
   created_at: string;
 };
 
@@ -35,7 +36,7 @@ export default function LibraryPage() {
       setLoading(true);
       const { data } = await supabase
         .from("lessons")
-        .select("id, title, subject, progress, is_downloaded, audio_url, created_at")
+        .select("id, title, subject, progress, is_downloaded, audio_url, document_id, created_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
       setLessons(data ?? []);
@@ -105,7 +106,7 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
   const progress = lesson.progress ?? 0;
   const hasAudio = !!lesson.audio_url;
   return (
-    <Link to={`/lesson/${lesson.id}`} className="block">
+    <Link to={lesson.document_id ? `/lesson/${lesson.document_id}` : "#"} className="block">
       <Card className="hover:shadow-sm hover:border-primary/40 transition-all cursor-pointer">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">

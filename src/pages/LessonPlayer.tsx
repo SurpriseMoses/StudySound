@@ -426,7 +426,7 @@ export default function LessonPlayer() {
                 />
               )}
               {activeTab === "visuals" && lesson.document_id && (
-                <VisualsTab documentId={lesson.document_id} subjectType={lesson.documents?.subject_type ?? null} />
+                <VisualsTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />
               )}
               {activeTab === "quiz" && lesson.document_id && (
                 <QuizTab documentId={lesson.document_id} />
@@ -598,7 +598,7 @@ function ListenTab(props: {
 }
 
 // ===================== Visuals Tab =====================
-function VisualsTab({ documentId, subjectType }: { documentId: string; subjectType: string | null }) {
+function VisualsTab({ documentId, lessonId, subjectType }: { documentId: string; lessonId: string; subjectType: string | null }) {
   const { toast } = useToast();
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [active, setActive] = useState(0);
@@ -633,7 +633,7 @@ function VisualsTab({ documentId, subjectType }: { documentId: string; subjectTy
     setGenerating(true);
     try {
       const { data, error } = await supabase.functions.invoke("generate-visuals", {
-        body: { document_id: documentId },
+        body: { lesson_id: lessonId },
       });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
