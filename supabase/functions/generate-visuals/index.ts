@@ -179,16 +179,34 @@ Deno.serve(async (req) => {
 
     const plans = await planScenes(LOVABLE_API_KEY, lesson.title, subjectType, excerpts);
 
-    // Generate + upload each scene
+    // Generate + upload each scene (sequentially, verify upload before DB insert)
     const created: any[] = [];
     for (const plan of plans) {
       try {
         const bytes = await generateImage(LOVABLE_API_KEY, plan.prompt);
+        console.log(`Scene ${plan.scene_index}: generated ${bytes.length} bytes`);
+        if (bytes.length === 0) throw new Error("Empty image bytes");
+
         const storagePath = `visuals/${doc.id}/scene-${plan.scene_index}.png`;
+
+        // Upload as Blob (more reliable in Deno than raw Uint8Array)
+        const blob = new Blob([bytes], { type: "image/png" });
         const { error: upErr } = await admin.storage
           .from("assets")
-          .upload(storagePath, bytes, { contentType: "image/png", upsert: true });
-        if (upErr) throw upErr;
+          .upload(storagePath, blob, { contentType: "image/png", upsert: true });
+        if (upErr) {
+          console.error(`Scene ${plan.scene_index}: upload error`, upErr);
+          throw upErr;
+        }
+
+        // Verify the file actually exists by listing it
+        const { data: listData, error: listErr } = await admin.storage
+          .from("assets")
+          .list(`visuals/${doc.id}`, { search: `scene-${plan.scene_index}.png` });
+        if (listErr || !listData || listData.length === 0) {
+          throw new Error(`Upload verification failed for scene ${plan.scene_index}`);
+        }
+        console.log(`Scene ${plan.scene_index}: verified at ${storagePath}`);
 
         const { data: row, error: insErr } = await admin
           .from("image_assets")
@@ -203,8 +221,12 @@ Deno.serve(async (req) => {
         if (insErr) throw insErr;
         created.push({ ...row, paragraph: plan.paragraph });
       } catch (e) {
-        console.error("Scene failed", plan.scene_index, e);
+        console.error(`Scene ${plan.scene_index} failed:`, e instanceof Error ? e.message : e);
       }
+    }
+
+    if (created.length === 0) {
+      throw new Error("All scenes failed to generate. Check function logs.");
     }
 
     return new Response(JSON.stringify({ success: true, reused: false, scenes: created }), {

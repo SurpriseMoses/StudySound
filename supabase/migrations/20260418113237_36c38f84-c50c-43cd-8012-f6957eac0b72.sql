@@ -1,0 +1,1 @@
+DELETE FROM public.image_assets WHERE document_id = 'de000937-7d82-49a1-a3c1-9a102d6e68ef';
