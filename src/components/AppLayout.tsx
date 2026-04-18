@@ -2,11 +2,14 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   BookOpen, Upload, Headphones, Image, Brain, Library,
-  CreditCard, User, Menu, X, Home, Sparkles, Shield
+  CreditCard, User, Menu, X, Home, Sparkles, Shield, LogOut
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useIsAdmin } from "@/hooks/use-is-admin";
+import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: Home },
