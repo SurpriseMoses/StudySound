@@ -50,7 +50,7 @@ export default function UploadPage() {
   const [searching, setSearching] = useState(false);
   const [matches, setMatches] = useState<LibraryMatch[] | null>(null);
 
-  // Search library on debounce
+  // Search library on debounce — uses fuzzy/trigram matching server-side
   useEffect(() => {
     const q = searchQuery.trim();
     if (q.length < 2) {
@@ -59,13 +59,13 @@ export default function UploadPage() {
     }
     const timer = setTimeout(async () => {
       setSearching(true);
-      const { data, error } = await supabase
-        .from("documents")
-        .select("id, title, subject_type, char_count")
-        .ilike("title", `%${q}%`)
-        .limit(5);
+      const { data, error } = await supabase.rpc("search_documents_fuzzy", {
+        _query: q,
+        _threshold: 0.3,
+        _limit: 5,
+      });
       setSearching(false);
-      if (!error) setMatches(data ?? []);
+      if (!error) setMatches((data as LibraryMatch[]) ?? []);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
