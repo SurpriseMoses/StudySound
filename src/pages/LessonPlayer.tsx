@@ -21,6 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { subjects } from "@/lib/subjects";
+import { CreditEstimator } from "@/components/CreditEstimator";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -412,6 +413,7 @@ export default function LessonPlayer() {
             >
               {activeTab === "listen" && (
                 <ListenTab
+                  documentId={lesson.document_id}
                   hasConfirmed={hasConfirmed}
                   setHasConfirmed={setHasConfirmed}
                   costPreview={costPreview}
@@ -507,6 +509,7 @@ export default function LessonPlayer() {
 
 // ===================== Listen Tab =====================
 function ListenTab(props: {
+  documentId: string | null;
   hasConfirmed: boolean;
   setHasConfirmed: (v: boolean) => void;
   costPreview: { total: number; paid: number; remaining: number; balance: number } | null;
@@ -520,7 +523,7 @@ function ListenTab(props: {
   chunkAlreadyPaid: boolean;
 }) {
   const {
-    hasConfirmed, setHasConfirmed, costPreview, chunkIndex, totalChunks, chunkText,
+    documentId, hasConfirmed, setHasConfirmed, costPreview, chunkIndex, totalChunks, chunkText,
     isLoadingAudio, isTranslating, translatedText, language, chunkAlreadyPaid,
   } = props;
 
