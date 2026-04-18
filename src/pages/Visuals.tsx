@@ -29,11 +29,16 @@ type Scene = {
 
 const HUMANITIES = new Set(["novel", "history"]);
 
-export default function Visuals() {
+interface VisualsProps {
+  lessonId?: string;
+  embedded?: boolean;
+}
+
+export default function Visuals({ lessonId: initialLessonId, embedded = false }: VisualsProps = {}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [lessons, setLessons] = useState<LessonOpt[]>([]);
-  const [selectedLessonId, setSelectedLessonId] = useState<string>("");
+  const [selectedLessonId, setSelectedLessonId] = useState<string>(initialLessonId ?? "");
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -116,18 +121,23 @@ export default function Visuals() {
     }
   };
 
+  const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =>
+    embedded ? <>{children}</> : <AppLayout>{children}</AppLayout>;
+
   return (
-    <AppLayout>
+    <Wrapper>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-display font-bold">Visual Scenes</h1>
-            <p className="text-muted-foreground text-sm">AI-generated illustrations for your lessons</p>
+        {!embedded && (
+          <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
+            <div>
+              <h1 className="text-2xl font-display font-bold">Visual Scenes</h1>
+              <p className="text-muted-foreground text-sm">AI-generated illustrations for your lessons</p>
+            </div>
+            <Badge variant="secondary" className="gap-1 bg-secondary/10 text-secondary border-0">
+              <ImageIcon className="w-3 h-3" /> Premium Feature
+            </Badge>
           </div>
-          <Badge variant="secondary" className="gap-1 bg-secondary/10 text-secondary border-0">
-            <ImageIcon className="w-3 h-3" /> Premium Feature
-          </Badge>
-        </div>
+        )}
 
         <Card className="mb-6 border-warning/30 bg-warning/5">
           <CardContent className="p-4 flex items-start gap-3">
@@ -141,21 +151,23 @@ export default function Visuals() {
           </CardContent>
         </Card>
 
-        <div className="max-w-2xl mb-6">
-          <label className="text-sm font-medium mb-1.5 block">Choose a lesson</label>
-          <Select value={selectedLessonId} onValueChange={setSelectedLessonId}>
-            <SelectTrigger>
-              <SelectValue placeholder={lessons.length === 0 ? "No lessons yet — upload one first" : "Select a lesson"} />
-            </SelectTrigger>
-            <SelectContent>
-              {lessons.map((l) => (
-                <SelectItem key={l.id} value={l.id}>
-                  {l.title} — {l.subject}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {!embedded && (
+          <div className="max-w-2xl mb-6">
+            <label className="text-sm font-medium mb-1.5 block">Choose a lesson</label>
+            <Select value={selectedLessonId} onValueChange={setSelectedLessonId}>
+              <SelectTrigger>
+                <SelectValue placeholder={lessons.length === 0 ? "No lessons yet — upload one first" : "Select a lesson"} />
+              </SelectTrigger>
+              <SelectContent>
+                {lessons.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.title} — {l.subject}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {selectedLesson && (
           <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
