@@ -57,8 +57,7 @@ export default function Listen() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
 
-  // Translation (read-language) state — independent of audio voice language
-  const [readLang, setReadLang] = useState("en");
+  // Translation state — driven by the same `language` selector that drives audio
   const [translatedText, setTranslatedText] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationCache, setTranslationCache] = useState<Record<string, string>>({});
