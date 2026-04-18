@@ -108,6 +108,13 @@ export default function TopUp() {
           </p>
         </div>
 
+        {/* Per-document estimator */}
+        {params.get("doc") && (
+          <div className="mb-6">
+            <CreditEstimator documentId={params.get("doc")} variant="card" />
+          </div>
+        )}
+
         {/* Packs */}
         <div className="grid md:grid-cols-3 gap-4">
           {packs.map((pack) => {
