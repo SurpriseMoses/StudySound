@@ -556,10 +556,43 @@ function ListenTab(props: {
     </div>
   ) : null;
 
+  // Level 3: Hard block when out of credits and nothing unlocked yet
+  if (!hasConfirmed && costPreview && costPreview.balance < 1 && costPreview.paid === 0) {
+    return (
+      <>
+        {estimator}
+        <HardCreditBlock documentId={documentId} fromContext="audio" />
+      </>
+    );
+  }
+
+  // Level 1: Soft warning — balance covers <30% of remaining cost
+  const showSoftWarning =
+    costPreview &&
+    costPreview.remaining > 0 &&
+    costPreview.balance > 0 &&
+    costPreview.balance < Math.max(1, Math.ceil(costPreview.remaining * 0.3));
+
+  const softWarning = showSoftWarning ? (
+    <div className="mb-4 flex items-center gap-2 text-xs px-3 py-2 rounded-lg border border-primary/40 bg-primary/5">
+      <Coins className="w-3.5 h-3.5 text-primary shrink-0" />
+      <span className="text-foreground/80 flex-1">
+        Low credits — you may run out before finishing this book.
+      </span>
+      <Link
+        to={`/topup?from=audio${documentId ? `&doc=${documentId}` : ""}`}
+        className="text-primary font-semibold hover:underline"
+      >
+        Top up →
+      </Link>
+    </div>
+  ) : null;
+
   if (!hasConfirmed && costPreview) {
     return (
       <>
         {estimator}
+        {softWarning}
       <Card className="border-primary/30 bg-primary/5">
         <CardContent className="p-5">
           <div className="flex items-start gap-3">
@@ -589,11 +622,6 @@ function ListenTab(props: {
                 <Play className="w-4 h-4 mr-1" />
                 {costPreview.paid > 0 ? "Resume listening" : "Start listening (1 credit)"}
               </Button>
-              {costPreview.balance < 1 && costPreview.paid === 0 && (
-                <p className="text-xs text-destructive mt-2">
-                  Insufficient credits. <Link to={`/topup?from=audio${documentId ? `&doc=${documentId}` : ""}`} className="underline">Top up</Link>
-                </p>
-              )}
             </div>
           </div>
         </CardContent>
