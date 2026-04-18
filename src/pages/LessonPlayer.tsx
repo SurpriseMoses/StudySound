@@ -24,6 +24,8 @@ import { subjects } from "@/lib/subjects";
 import { CreditEstimator } from "@/components/CreditEstimator";
 import { LowCreditNudge, HardCreditBlock } from "@/components/LowCreditNudge";
 import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
+import { useProgressionContext } from "@/contexts/ProgressionContext";
+import QuizBonusCard from "@/components/QuizBonusCard";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -69,6 +71,7 @@ export default function LessonPlayer() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { claim: claimDailyReward } = useDailyRewardContext();
+  const { awardXp, flushLevelUp } = useProgressionContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const listenRewardFired = useRef(false);
