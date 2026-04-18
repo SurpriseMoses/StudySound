@@ -242,6 +242,14 @@ export default function LessonPlayer() {
     const onEnd = () => {
       setIsPlaying(false);
       if (chunkIndex + 1 < totalChunks) {
+        // Smart nudge: section just completed — best moment to convert.
+        // Trigger if balance is below 30% of remaining audio cost (Level 1/2 threshold).
+        const remainingNeeded = costPreview ? costPreview.remaining : 0;
+        const balance = costPreview?.balance ?? 0;
+        if (remainingNeeded > 0 && balance < Math.max(1, Math.ceil(remainingNeeded * 0.3))) {
+          setNudgeOpen(true);
+          return; // pause auto-advance until user decides
+        }
         const next = chunkIndex + 1;
         setChunkIndex(next);
         loadChunk(next, language).then(() => {
