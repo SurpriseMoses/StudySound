@@ -9,6 +9,7 @@ import AppLayout from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { CreditEstimator } from "@/components/CreditEstimator";
 
 type Pack = {
   id: string;
