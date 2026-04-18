@@ -101,13 +101,22 @@ export default function UploadPage() {
       if (error) throw new Error(error.message);
       if (!data?.success) throw new Error(data?.error ?? "Extraction failed");
 
+      const reused = !!data.reused;
       updateFile(uf.id, {
         status: "done",
         progress: 100,
-        message: `Ready · ${data.char_count.toLocaleString()} chars`,
+        message: reused
+          ? "This matches a book already in our library — linked for instant access."
+          : `Ready · ${data.char_count.toLocaleString()} chars`,
         documentId: data.document_id,
         lessonId: data.lesson_id,
       });
+      if (reused) {
+        toast({
+          title: "Matched a library book",
+          description: "We linked your upload to the existing version for instant access.",
+        });
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unknown error";
       updateFile(uf.id, { status: "error", progress: 100, message: msg });
