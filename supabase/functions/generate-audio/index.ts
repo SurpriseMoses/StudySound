@@ -19,14 +19,15 @@ const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "ts", "nso"]);
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
 
-// Xitsonga (ts) and Sepedi (nso) have no native Azure voice — fall back to the
-// isiZulu voice since they share Bantu phonetics and sound more natural than an English voice.
+// Languages with native Azure voices. Others (xh, ts, nso) fall back to the English
+// voice AND read the original English text (no translation lookup), so pronunciation stays correct.
+const NATIVE_VOICE_LANGS = new Set(["zu", "af", "en", "fr"]);
 const AZURE_VOICES: Record<string, string> = {
   zu: "zu-ZA-ThandoNeural",
   af: "af-ZA-AdriNeural",
   xh: "en-GB-LibbyNeural",
-  ts: "zu-ZA-ThandoNeural",
-  nso: "zu-ZA-ThandoNeural",
+  ts: "en-GB-LibbyNeural",
+  nso: "en-GB-LibbyNeural",
   en: "en-GB-LibbyNeural",
   fr: "fr-FR-DeniseNeural",
 };
@@ -34,8 +35,8 @@ const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
   af: "af-ZA",
   xh: "en-GB",
-  ts: "zu-ZA",
-  nso: "zu-ZA",
+  ts: "en-GB",
+  nso: "en-GB",
   en: "en-GB",
   fr: "fr-FR",
 };
@@ -277,9 +278,10 @@ Deno.serve(async (req) => {
       reused = true;
     } else {
       let text = chunks[chunk_index];
-      // If narrating in a non-source language, use the cached translation so the audio matches the language.
+      // If narrating in a non-source language WITH a native voice, use the cached translation.
+      // Languages without a native voice fall back to English voice + English text so pronunciation is correct.
       const sourceLang = (doc.language ?? "en").toLowerCase();
-      if (lang !== sourceLang) {
+      if (lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)) {
         const { data: tr } = await admin
           .from("translation_assets")
           .select("translated_text")
@@ -290,7 +292,6 @@ Deno.serve(async (req) => {
         if (tr?.translated_text) {
           text = tr.translated_text;
         } else {
-          // Auto-translate on demand via the generate-translation function (uses Azure Translator + cache).
           const { data: trData, error: trErr } = await admin.functions.invoke("generate-translation", {
             body: { lesson_id, chunk_index, target_language: lang },
             headers: { Authorization: authHeader },
