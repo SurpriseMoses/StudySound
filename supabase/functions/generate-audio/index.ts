@@ -23,6 +23,8 @@ const AZURE_VOICES: Record<string, string> = {
   zu: "zu-ZA-ThandoNeural",
   af: "af-ZA-AdriNeural",
   xh: "en-GB-LibbyNeural",
+  ts: "en-GB-LibbyNeural",
+  nso: "en-GB-LibbyNeural",
   en: "en-GB-LibbyNeural",
   fr: "fr-FR-DeniseNeural",
 };
@@ -30,6 +32,8 @@ const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
   af: "af-ZA",
   xh: "en-GB",
+  ts: "en-GB",
+  nso: "en-GB",
   en: "en-GB",
   fr: "fr-FR",
 };
