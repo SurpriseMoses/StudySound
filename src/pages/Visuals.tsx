@@ -58,12 +58,20 @@ export default function Visuals() {
   }, [user, toast]);
 
   const signScenes = async (raw: Scene[]): Promise<Scene[]> => {
-    const out: Scene[] = [];
-    for (const s of raw) {
-      const { data } = await supabase.storage.from("assets").createSignedUrl(s.storage_path, 3600);
-      out.push({ ...s, signedUrl: data?.signedUrl });
+    if (raw.length === 0) return [];
+    const paths = raw.map((s) => s.storage_path);
+    // Batch sign — single request, more reliable than sequential
+    const { data, error } = await supabase.storage.from("assets").createSignedUrls(paths, 3600);
+    if (error) {
+      console.error("[Visuals] createSignedUrls error:", error);
+      return raw;
     }
-    return out;
+    const byPath = new Map<string, string>();
+    (data ?? []).forEach((d) => {
+      if (d.signedUrl && !d.error) byPath.set(d.path ?? "", d.signedUrl);
+      else console.warn("[Visuals] sign failed for", d.path, d.error);
+    });
+    return raw.map((s) => ({ ...s, signedUrl: byPath.get(s.storage_path) }));
   };
 
   const loadCached = async (lesson: LessonOpt) => {
