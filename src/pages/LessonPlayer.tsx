@@ -452,6 +452,14 @@ export default function LessonPlayer() {
           </AnimatePresence>
         </Tabs>
 
+        {/* Smart nudge — bottom sheet */}
+        <LowCreditNudge
+          open={nudgeOpen}
+          onClose={() => setNudgeOpen(false)}
+          documentId={lesson.document_id}
+          fromContext="audio"
+        />
+
         {/* Persistent audio player */}
         {hasConfirmed && (
           <div className="fixed bottom-0 left-0 right-0 lg:left-64 z-30 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
