@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { DailyRewardProvider } from "@/contexts/DailyRewardContext";
 import DailyRewardModal from "@/components/DailyRewardModal";
 import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
+import StreakActivePill from "@/components/StreakActivePill";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: Home },
@@ -137,6 +138,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
       </main>
 
       <DailyRewardModal open={open} result={result} onClose={dismiss} />
+      <StreakActivePill />
     </div>
   );
 }
