@@ -387,11 +387,33 @@ export default function Listen() {
         {hasConfirmed && (
           <Card className="mb-4">
             <CardContent className="p-5 min-h-[200px]">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                 <h3 className="font-display font-semibold text-sm">
                   Section {chunkIndex + 1} of {totalChunks}
                 </h3>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Read-language toggle (translation, lazy per chunk) */}
+                  <div className="inline-flex items-center rounded-md border bg-background p-0.5 text-xs">
+                    <Languages className="w-3 h-3 mx-1.5 text-muted-foreground" />
+                    {[
+                      { code: "en", label: "EN" },
+                      { code: "zu", label: "isiZulu" },
+                      { code: "af", label: "Afrikaans" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.code}
+                        onClick={() => setReadLang(opt.code)}
+                        disabled={isTranslating && readLang !== opt.code}
+                        className={`px-2 py-1 rounded transition-colors ${
+                          readLang === opt.code
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                   {isAdmin && (
                     <Button
                       size="sm"
@@ -418,8 +440,14 @@ export default function Listen() {
                 <div className="flex items-center justify-center py-10 text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin mr-2" /> Generating audio…
                 </div>
+              ) : isTranslating ? (
+                <div className="flex items-center justify-center py-10 text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> Translating section…
+                </div>
               ) : (
-                <p className="text-foreground/80 leading-relaxed text-sm whitespace-pre-line">{chunkText}</p>
+                <p className="text-foreground/80 leading-relaxed text-sm whitespace-pre-line">
+                  {readLang !== "en" && translatedText ? translatedText : chunkText}
+                </p>
               )}
             </CardContent>
           </Card>
