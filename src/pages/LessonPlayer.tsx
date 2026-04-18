@@ -530,7 +530,11 @@ export default function LessonPlayer() {
                 <VisualsTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />
               )}
               {activeTab === "quiz" && lesson.document_id && (
-                <QuizTab documentId={lesson.document_id} onFirstAnswer={() => claimDailyReward("quiz")} />
+                <QuizTab
+                  documentId={lesson.document_id}
+                  lessonId={lesson.id}
+                  onFirstAnswer={() => claimDailyReward("quiz")}
+                />
               )}
             </motion.div>
           </AnimatePresence>
