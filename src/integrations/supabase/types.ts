@@ -284,6 +284,7 @@ export type Database = {
           display_name: string | null
           id: string
           last_reward_date: string | null
+          level: number
           onboarding_completed: boolean | null
           plan: Database["public"]["Enums"]["subscription_plan"] | null
           preferred_language: string | null
@@ -291,6 +292,7 @@ export type Database = {
           streak_grace_used: boolean
           updated_at: string
           user_id: string
+          xp: number
         }
         Insert: {
           avatar_url?: string | null
@@ -300,6 +302,7 @@ export type Database = {
           display_name?: string | null
           id?: string
           last_reward_date?: string | null
+          level?: number
           onboarding_completed?: boolean | null
           plan?: Database["public"]["Enums"]["subscription_plan"] | null
           preferred_language?: string | null
@@ -307,6 +310,7 @@ export type Database = {
           streak_grace_used?: boolean
           updated_at?: string
           user_id: string
+          xp?: number
         }
         Update: {
           avatar_url?: string | null
@@ -316,6 +320,7 @@ export type Database = {
           display_name?: string | null
           id?: string
           last_reward_date?: string | null
+          level?: number
           onboarding_completed?: boolean | null
           plan?: Database["public"]["Enums"]["subscription_plan"] | null
           preferred_language?: string | null
@@ -323,6 +328,7 @@ export type Database = {
           streak_grace_used?: boolean
           updated_at?: string
           user_id?: string
+          xp?: number
         }
         Relationships: []
       }
@@ -778,6 +784,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      xp_events: {
+        Row: {
+          created_at: string
+          credits_awarded: number
+          id: string
+          metadata: Json | null
+          source: string
+          source_key: string | null
+          user_id: string
+          xp_awarded: number
+        }
+        Insert: {
+          created_at?: string
+          credits_awarded?: number
+          id?: string
+          metadata?: Json | null
+          source: string
+          source_key?: string | null
+          user_id: string
+          xp_awarded: number
+        }
+        Update: {
+          created_at?: string
+          credits_awarded?: number
+          id?: string
+          metadata?: Json | null
+          source?: string
+          source_key?: string | null
+          user_id?: string
+          xp_awarded?: number
+        }
+        Relationships: []
       }
     }
     Views: {
