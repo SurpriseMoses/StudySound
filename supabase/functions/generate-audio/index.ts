@@ -13,7 +13,8 @@ const corsHeaders = {
 };
 
 const CHUNK_SIZE = 1800;
-const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr"]);
+// All languages route to Azure. Languages without a native voice fall back to English voice.
+const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "ts", "nso"]);
 
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
