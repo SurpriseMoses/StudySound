@@ -8,9 +8,9 @@ import AppLayout from "@/components/AppLayout";
 
 const startActions = [
   { icon: Upload, label: "Upload Content", desc: "Add a new document", path: "/upload", color: "bg-primary/10 text-primary" },
-  { icon: Headphones, label: "Listen", desc: "Play your lessons", path: "/listen", color: "bg-secondary/10 text-secondary" },
-  { icon: Brain, label: "Take Quiz", desc: "Test your knowledge", path: "/quiz", color: "bg-accent/10 text-accent" },
-  { icon: Image, label: "View Visuals", desc: "See generated scenes", path: "/visuals", color: "bg-success/10 text-success" },
+  { icon: Headphones, label: "My Library", desc: "Open your lessons", path: "/library", color: "bg-secondary/10 text-secondary" },
+  { icon: Brain, label: "Browse Subjects", desc: "Explore curriculum", path: "/subjects", color: "bg-accent/10 text-accent" },
+  { icon: Image, label: "Plans", desc: "Upgrade for more", path: "/plans", color: "bg-success/10 text-success" },
 ];
 
 const continueLesson = {
@@ -18,7 +18,7 @@ const continueLesson = {
   subject: "English",
   progress: 72,
   icon: "📖",
-  path: "/listen",
+  path: "/library",
 };
 
 const stats = [
