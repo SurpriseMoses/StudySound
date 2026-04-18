@@ -15,6 +15,7 @@ import UploadPage from "./pages/UploadPage";
 import LessonPlayer from "./pages/LessonPlayer";
 import LibraryPage from "./pages/LibraryPage";
 import Plans from "./pages/Plans";
+import TopUp from "./pages/TopUp";
 import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -54,6 +55,7 @@ const App = () => (
             <Route path="/lesson/:documentId" element={protect(<LessonPlayer />)} />
             <Route path="/library" element={protect(<LibraryPage />)} />
             <Route path="/profile" element={protect(<Profile />)} />
+            <Route path="/topup" element={protect(<TopUp />)} />
 
             {/* Admin */}
             <Route
