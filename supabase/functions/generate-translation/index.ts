@@ -21,6 +21,8 @@ const LANG_NAMES: Record<string, string> = {
   af: "Afrikaans",
   zu: "isiZulu",
   xh: "isiXhosa",
+  ts: "Xitsonga (Tsonga)",
+  nso: "Sepedi (Northern Sotho)",
   fr: "French",
 };
 
