@@ -162,6 +162,7 @@ export default function LessonPlayer() {
   } | null>(null);
   const [hasConfirmed, setHasConfirmed] = useState(false);
   const [chunkAlreadyPaid, setChunkAlreadyPaid] = useState(false);
+  const [nudgeOpen, setNudgeOpen] = useState(false);
 
   // Translation
   const [translatedText, setTranslatedText] = useState<string | null>(null);
