@@ -154,7 +154,33 @@ Deno.serve(async (req) => {
       throw insertErr;
     }
 
-    // Update profile balance + streak state
+    // Award XP for the daily reward (idempotent via source_key = today)
+    const DAILY_XP = 5;
+    const { data: xpProfile } = await admin
+      .from("profiles")
+      .select("xp, level")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const fromLevel = xpProfile?.level ?? 1;
+    const newXp = (xpProfile?.xp ?? 0) + DAILY_XP;
+    // Mirror level math from award-xp: T(n) = 100*(n-1) + 50*(n-1)*(n-2)
+    const xpThreshold = (lvl: number) =>
+      lvl <= 1 ? 0 : 100 * (lvl - 1) + 50 * (lvl - 1) * (lvl - 2);
+    let newLevel = fromLevel;
+    while (xpThreshold(newLevel + 1) <= newXp) newLevel += 1;
+
+    // Best-effort log (unique constraint protects against double-award)
+    await admin.from("xp_events").insert({
+      user_id: userId,
+      source: "daily_reward",
+      source_key: today,
+      xp_awarded: DAILY_XP,
+      credits_awarded: credits,
+      metadata: { trigger },
+    });
+
+    // Update profile balance + streak + xp + level state
     await admin
       .from("profiles")
       .update({
@@ -162,6 +188,8 @@ Deno.serve(async (req) => {
         current_streak: newStreak,
         last_reward_date: today,
         streak_grace_used: graceUsed,
+        xp: newXp,
+        level: newLevel,
       })
       .eq("user_id", userId);
 

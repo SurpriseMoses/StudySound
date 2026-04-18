@@ -24,6 +24,8 @@ import { subjects } from "@/lib/subjects";
 import { CreditEstimator } from "@/components/CreditEstimator";
 import { LowCreditNudge, HardCreditBlock } from "@/components/LowCreditNudge";
 import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
+import { useProgressionContext } from "@/contexts/ProgressionContext";
+import QuizBonusCard from "@/components/QuizBonusCard";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -69,6 +71,7 @@ export default function LessonPlayer() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { claim: claimDailyReward } = useDailyRewardContext();
+  const { awardXp, flushLevelUp } = useProgressionContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const listenRewardFired = useRef(false);
@@ -251,34 +254,55 @@ export default function LessonPlayer() {
     const onLoad = () => setDuration(audio.duration);
     const onEnd = () => {
       setIsPlaying(false);
-      if (chunkIndex + 1 < totalChunks) {
-        // Smart nudge: section just completed — best moment to convert.
-        const remainingNeeded = costPreview ? costPreview.remaining : 0;
-        const balance = costPreview?.balance ?? 0;
-        if (remainingNeeded > 0 && balance < Math.max(1, Math.ceil(remainingNeeded * 0.3))) {
-          setNudgeOpen(true);
-          return; // pause auto-advance until user decides
-        }
-        // Smooth fade-out before advancing
-        const fadeOut = () => new Promise<void>((resolve) => {
-          const start = audio.volume;
-          const steps = 8;
-          let i = 0;
-          const id = setInterval(() => {
-            i += 1;
-            audio.volume = Math.max(0, start * (1 - i / steps));
-            if (i >= steps) { clearInterval(id); audio.volume = start; resolve(); }
-          }, 30);
-        });
-        fadeOut().then(() => {
-          const next = chunkIndex + 1;
-          setChunkIndex(next);
-          loadChunk(next, language).then(() => {
-            setTimeout(() => audioRef.current?.play(), 200);
-            setIsPlaying(true);
-          });
+
+      // Award section_complete XP (idempotent on lesson_id:chunk_index)
+      if (lesson?.id) {
+        awardXp("section_complete", {
+          sourceKey: `${lesson.id}:${chunkIndex}`,
+          metadata: { language },
         });
       }
+
+      const isLastChunk = chunkIndex + 1 >= totalChunks;
+      if (isLastChunk) {
+        // Award lesson_complete XP (idempotent on lesson_id)
+        if (lesson?.id) {
+          awardXp("lesson_complete", { sourceKey: lesson.id }).then(() => {
+            // Surface any queued level-up after the lesson naturally ends
+            setTimeout(flushLevelUp, 600);
+          });
+        }
+        return;
+      }
+
+      // Smart nudge: section just completed — best moment to convert.
+      const remainingNeeded = costPreview ? costPreview.remaining : 0;
+      const balance = costPreview?.balance ?? 0;
+      if (remainingNeeded > 0 && balance < Math.max(1, Math.ceil(remainingNeeded * 0.3))) {
+        setNudgeOpen(true);
+        return; // pause auto-advance until user decides
+      }
+      // Smooth fade-out before advancing
+      const fadeOut = () => new Promise<void>((resolve) => {
+        const start = audio.volume;
+        const steps = 8;
+        let i = 0;
+        const id = setInterval(() => {
+          i += 1;
+          audio.volume = Math.max(0, start * (1 - i / steps));
+          if (i >= steps) { clearInterval(id); audio.volume = start; resolve(); }
+        }, 30);
+      });
+      fadeOut().then(() => {
+        const next = chunkIndex + 1;
+        setChunkIndex(next);
+        loadChunk(next, language).then(() => {
+          setTimeout(() => audioRef.current?.play(), 200);
+          setIsPlaying(true);
+        });
+        // After section transitions, if user just leveled up, surface modal
+        setTimeout(flushLevelUp, 800);
+      });
     };
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("loadedmetadata", onLoad);
@@ -288,7 +312,7 @@ export default function LessonPlayer() {
       audio.removeEventListener("loadedmetadata", onLoad);
       audio.removeEventListener("ended", onEnd);
     };
-  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview, claimDailyReward]);
+  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview, claimDailyReward, lesson?.id, awardXp, flushLevelUp]);
 
   // Reset the listen reward fired flag when the chunk changes
   useEffect(() => {
@@ -506,7 +530,11 @@ export default function LessonPlayer() {
                 <VisualsTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />
               )}
               {activeTab === "quiz" && lesson.document_id && (
-                <QuizTab documentId={lesson.document_id} onFirstAnswer={() => claimDailyReward("quiz")} />
+                <QuizTab
+                  documentId={lesson.document_id}
+                  lessonId={lesson.id}
+                  onFirstAnswer={() => claimDailyReward("quiz")}
+                />
               )}
             </motion.div>
           </AnimatePresence>
@@ -904,9 +932,19 @@ function VisualsTab({ documentId, lessonId, subjectType }: { documentId: string;
 }
 
 // ===================== Quiz Tab =====================
-function QuizTab({ documentId, onFirstAnswer }: { documentId: string; onFirstAnswer?: () => void }) {
+function QuizTab({
+  documentId,
+  lessonId,
+  onFirstAnswer,
+}: {
+  documentId: string;
+  lessonId: string;
+  onFirstAnswer?: () => void;
+}) {
   const firstAnswerFired = useRef(false);
+  const completionFired = useRef(false);
   const { toast } = useToast();
+  const { awardXp, flushLevelUp } = useProgressionContext();
   const [questions, setQuestions] = useState<QuizQ[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -915,6 +953,8 @@ function QuizTab({ documentId, onFirstAnswer }: { documentId: string; onFirstAns
   const [answered, setAnswered] = useState(false);
   const [score, setScore] = useState(0);
   const [completed, setCompleted] = useState(false);
+  const [bonusAward, setBonusAward] = useState<{ credits: number; xp: number } | null>(null);
+  const [attemptId, setAttemptId] = useState<string>(() => crypto.randomUUID());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -954,6 +994,9 @@ function QuizTab({ documentId, onFirstAnswer }: { documentId: string; onFirstAns
 
   const restart = () => {
     setCurrent(0); setSelected(null); setAnswered(false); setScore(0); setCompleted(false);
+    setBonusAward(null);
+    completionFired.current = false;
+    setAttemptId(crypto.randomUUID()); // new attempt → new idempotency key
   };
 
   const submit = () => {
@@ -1003,15 +1046,37 @@ function QuizTab({ documentId, onFirstAnswer }: { documentId: string; onFirstAns
 
   if (completed) {
     const pct = Math.round((score / questions.length) * 100);
+
+    // Award quiz_bonus exactly once per attempt (idempotent on attemptId)
+    if (!completionFired.current) {
+      completionFired.current = true;
+      awardXp("quiz_bonus", {
+        sourceKey: `${lessonId}:${attemptId}`,
+        scorePct: pct,
+        metadata: { score, total: questions.length },
+      }).then((res) => {
+        if (res && !res.duplicate) {
+          setBonusAward({ credits: res.creditsAwarded, xp: res.xpAwarded });
+          // Surface level-up after the user sees their result
+          setTimeout(flushLevelUp, 1500);
+        }
+      });
+    }
+
     return (
       <Card>
-        <CardContent className="p-10 text-center">
+        <CardContent className="p-8 md:p-10 text-center">
           <div className="text-5xl mb-3">{pct >= 80 ? "🎉" : pct >= 50 ? "👍" : "📚"}</div>
           <h2 className="text-3xl font-display font-bold">{pct}%</h2>
           <p className="text-muted-foreground mt-1">{score} / {questions.length} correct</p>
           <p className="text-sm text-muted-foreground mt-1">
             {pct >= 80 ? "Excellent work!" : pct >= 50 ? "Good effort, keep practising!" : "Review the lesson and try again."}
           </p>
+
+          <div className="mt-5 max-w-sm mx-auto text-left">
+            <QuizBonusCard scorePct={pct} awarded={bonusAward} />
+          </div>
+
           <Button onClick={restart} className="mt-5 gap-2">
             <RotateCcw className="w-4 h-4" /> Try Again
           </Button>
