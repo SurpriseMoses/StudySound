@@ -254,34 +254,55 @@ export default function LessonPlayer() {
     const onLoad = () => setDuration(audio.duration);
     const onEnd = () => {
       setIsPlaying(false);
-      if (chunkIndex + 1 < totalChunks) {
-        // Smart nudge: section just completed — best moment to convert.
-        const remainingNeeded = costPreview ? costPreview.remaining : 0;
-        const balance = costPreview?.balance ?? 0;
-        if (remainingNeeded > 0 && balance < Math.max(1, Math.ceil(remainingNeeded * 0.3))) {
-          setNudgeOpen(true);
-          return; // pause auto-advance until user decides
-        }
-        // Smooth fade-out before advancing
-        const fadeOut = () => new Promise<void>((resolve) => {
-          const start = audio.volume;
-          const steps = 8;
-          let i = 0;
-          const id = setInterval(() => {
-            i += 1;
-            audio.volume = Math.max(0, start * (1 - i / steps));
-            if (i >= steps) { clearInterval(id); audio.volume = start; resolve(); }
-          }, 30);
-        });
-        fadeOut().then(() => {
-          const next = chunkIndex + 1;
-          setChunkIndex(next);
-          loadChunk(next, language).then(() => {
-            setTimeout(() => audioRef.current?.play(), 200);
-            setIsPlaying(true);
-          });
+
+      // Award section_complete XP (idempotent on lesson_id:chunk_index)
+      if (lesson?.id) {
+        awardXp("section_complete", {
+          sourceKey: `${lesson.id}:${chunkIndex}`,
+          metadata: { language },
         });
       }
+
+      const isLastChunk = chunkIndex + 1 >= totalChunks;
+      if (isLastChunk) {
+        // Award lesson_complete XP (idempotent on lesson_id)
+        if (lesson?.id) {
+          awardXp("lesson_complete", { sourceKey: lesson.id }).then(() => {
+            // Surface any queued level-up after the lesson naturally ends
+            setTimeout(flushLevelUp, 600);
+          });
+        }
+        return;
+      }
+
+      // Smart nudge: section just completed — best moment to convert.
+      const remainingNeeded = costPreview ? costPreview.remaining : 0;
+      const balance = costPreview?.balance ?? 0;
+      if (remainingNeeded > 0 && balance < Math.max(1, Math.ceil(remainingNeeded * 0.3))) {
+        setNudgeOpen(true);
+        return; // pause auto-advance until user decides
+      }
+      // Smooth fade-out before advancing
+      const fadeOut = () => new Promise<void>((resolve) => {
+        const start = audio.volume;
+        const steps = 8;
+        let i = 0;
+        const id = setInterval(() => {
+          i += 1;
+          audio.volume = Math.max(0, start * (1 - i / steps));
+          if (i >= steps) { clearInterval(id); audio.volume = start; resolve(); }
+        }, 30);
+      });
+      fadeOut().then(() => {
+        const next = chunkIndex + 1;
+        setChunkIndex(next);
+        loadChunk(next, language).then(() => {
+          setTimeout(() => audioRef.current?.play(), 200);
+          setIsPlaying(true);
+        });
+        // After section transitions, if user just leveled up, surface modal
+        setTimeout(flushLevelUp, 800);
+      });
     };
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("loadedmetadata", onLoad);
