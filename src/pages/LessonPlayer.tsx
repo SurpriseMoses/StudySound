@@ -633,6 +633,7 @@ function ListenTab(props: {
   return (
     <>
       {estimator}
+      {softWarning}
       <Card>
       <CardContent className="p-6 min-h-[320px]">
         <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
