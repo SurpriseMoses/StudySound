@@ -284,9 +284,15 @@ Deno.serve(async (req) => {
         if (tr?.translated_text) {
           text = tr.translated_text;
         } else {
-          throw new Error(
-            `Translation not ready for ${lang} chunk ${chunk_index}. Open the section first to translate it, then play audio.`,
-          );
+          // Auto-translate on demand via the generate-translation function (uses Azure Translator + cache).
+          const { data: trData, error: trErr } = await admin.functions.invoke("generate-translation", {
+            body: { lesson_id, chunk_index, target_language: lang },
+            headers: { Authorization: authHeader },
+          });
+          if (trErr || !trData?.translated_text) {
+            throw new Error(`Auto-translate failed for ${lang} chunk ${chunk_index}: ${trErr?.message ?? "no text"}`);
+          }
+          text = trData.translated_text;
         }
       }
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
