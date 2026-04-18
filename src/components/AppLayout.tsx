@@ -10,6 +10,9 @@ import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { DailyRewardProvider } from "@/contexts/DailyRewardContext";
+import DailyRewardModal from "@/components/DailyRewardModal";
+import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: Home },
@@ -20,12 +23,13 @@ const navItems = [
   { path: "/profile", label: "Profile", icon: User },
 ];
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+function AppLayoutInner({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const { isAdmin } = useIsAdmin();
   const { signOut } = useAuth();
   const navigate = useNavigate();
+  const { open, result, dismiss } = useDailyRewardContext();
 
   const handleSignOut = async () => {
     await signOut();
@@ -131,6 +135,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </main>
+
+      <DailyRewardModal open={open} result={result} onClose={dismiss} />
     </div>
+  );
+}
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <DailyRewardProvider>
+      <AppLayoutInner>{children}</AppLayoutInner>
+    </DailyRewardProvider>
   );
 }

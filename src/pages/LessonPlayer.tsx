@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { subjects } from "@/lib/subjects";
 import { CreditEstimator } from "@/components/CreditEstimator";
 import { LowCreditNudge, HardCreditBlock } from "@/components/LowCreditNudge";
+import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -67,8 +68,10 @@ export default function LessonPlayer() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { claim: claimDailyReward } = useDailyRewardContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const listenRewardFired = useRef(false);
 
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab: Tab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "listen";
@@ -236,7 +239,14 @@ export default function LessonPlayer() {
     audio.playbackRate = playbackRate;
     const onTime = () => {
       setCurrentTime(audio.currentTime);
-      if (audio.duration) setSeekProgress([(audio.currentTime / audio.duration) * 100]);
+      if (audio.duration) {
+        const pct = audio.currentTime / audio.duration;
+        setSeekProgress([pct * 100]);
+        if (!listenRewardFired.current && pct >= 0.7) {
+          listenRewardFired.current = true;
+          claimDailyReward("listen");
+        }
+      }
     };
     const onLoad = () => setDuration(audio.duration);
     const onEnd = () => {
@@ -278,7 +288,33 @@ export default function LessonPlayer() {
       audio.removeEventListener("loadedmetadata", onLoad);
       audio.removeEventListener("ended", onEnd);
     };
-  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview]);
+  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview, claimDailyReward]);
+
+  // Reset the listen reward fired flag when the chunk changes
+  useEffect(() => {
+    listenRewardFired.current = false;
+  }, [chunkIndex, audioUrl]);
+
+  // Reading reward: 60s of active page presence on the listen tab counts as "reading"
+  useEffect(() => {
+    if (activeTab !== "listen") return;
+    let elapsed = 0;
+    let lastTick = Date.now();
+    const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        lastTick = Date.now();
+        return;
+      }
+      const now = Date.now();
+      elapsed += (now - lastTick) / 1000;
+      lastTick = now;
+      if (elapsed >= 60) {
+        clearInterval(interval);
+        claimDailyReward("reading");
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeTab, claimDailyReward]);
 
   // Keep playbackRate in sync
   useEffect(() => {
@@ -470,7 +506,7 @@ export default function LessonPlayer() {
                 <VisualsTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />
               )}
               {activeTab === "quiz" && lesson.document_id && (
-                <QuizTab documentId={lesson.document_id} />
+                <QuizTab documentId={lesson.document_id} onFirstAnswer={() => claimDailyReward("quiz")} />
               )}
             </motion.div>
           </AnimatePresence>
@@ -868,7 +904,8 @@ function VisualsTab({ documentId, lessonId, subjectType }: { documentId: string;
 }
 
 // ===================== Quiz Tab =====================
-function QuizTab({ documentId }: { documentId: string }) {
+function QuizTab({ documentId, onFirstAnswer }: { documentId: string; onFirstAnswer?: () => void }) {
+  const firstAnswerFired = useRef(false);
   const { toast } = useToast();
   const [questions, setQuestions] = useState<QuizQ[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -923,6 +960,10 @@ function QuizTab({ documentId }: { documentId: string }) {
     if (!questions || answered || !selected) return;
     setAnswered(true);
     if (selected === questions[current].correct_answer) setScore((s) => s + 1);
+    if (!firstAnswerFired.current) {
+      firstAnswerFired.current = true;
+      onFirstAnswer?.();
+    }
   };
 
   const next = () => {
