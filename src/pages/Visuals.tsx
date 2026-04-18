@@ -240,6 +240,6 @@ export default function Visuals({ lessonId: initialLessonId, embedded = false }:
           </div>
         )}
       </motion.div>
-    </AppLayout>
+    </Wrapper>
   );
 }
