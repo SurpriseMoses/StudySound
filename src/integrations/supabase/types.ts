@@ -96,6 +96,36 @@ export type Database = {
           },
         ]
       }
+      daily_rewards: {
+        Row: {
+          created_at: string
+          credits_awarded: number
+          id: string
+          reward_date: string
+          streak_count: number
+          trigger_action: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          credits_awarded: number
+          id?: string
+          reward_date?: string
+          streak_count: number
+          trigger_action: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          credits_awarded?: number
+          id?: string
+          reward_date?: string
+          streak_count?: number
+          trigger_action?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           char_count: number
@@ -250,12 +280,15 @@ export type Database = {
           avatar_url: string | null
           created_at: string
           credits_balance: number
+          current_streak: number
           display_name: string | null
           id: string
+          last_reward_date: string | null
           onboarding_completed: boolean | null
           plan: Database["public"]["Enums"]["subscription_plan"] | null
           preferred_language: string | null
           selected_subjects: string[] | null
+          streak_grace_used: boolean
           updated_at: string
           user_id: string
         }
@@ -263,12 +296,15 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           credits_balance?: number
+          current_streak?: number
           display_name?: string | null
           id?: string
+          last_reward_date?: string | null
           onboarding_completed?: boolean | null
           plan?: Database["public"]["Enums"]["subscription_plan"] | null
           preferred_language?: string | null
           selected_subjects?: string[] | null
+          streak_grace_used?: boolean
           updated_at?: string
           user_id: string
         }
@@ -276,12 +312,15 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           credits_balance?: number
+          current_streak?: number
           display_name?: string | null
           id?: string
+          last_reward_date?: string | null
           onboarding_completed?: boolean | null
           plan?: Database["public"]["Enums"]["subscription_plan"] | null
           preferred_language?: string | null
           selected_subjects?: string[] | null
+          streak_grace_used?: boolean
           updated_at?: string
           user_id?: string
         }
