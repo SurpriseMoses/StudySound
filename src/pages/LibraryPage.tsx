@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { subjects } from "@/lib/subjects";
 import { Link } from "react-router-dom";
+import { CreditEstimator } from "@/components/CreditEstimator";
 
 type Lesson = {
   id: string;
@@ -134,6 +135,11 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
               <Progress value={progress} className="flex-1 h-1.5" />
               <span className="text-xs text-muted-foreground">{progress}%</span>
             </div>
+            {lesson.document_id && (
+              <div className="mt-2.5">
+                <CreditEstimator documentId={lesson.document_id} variant="compact" />
+              </div>
+            )}
           </div>
         </div>
       </CardContent>
