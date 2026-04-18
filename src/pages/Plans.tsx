@@ -78,7 +78,10 @@ export default function Plans() {
         </div>
 
         <p className="text-center text-sm text-muted-foreground mt-6">
-          Need more? <span className="text-foreground font-medium">Top up credits anytime</span>
+          Need more?{" "}
+          <a href="/topup" className="text-foreground font-medium underline underline-offset-4 hover:text-primary">
+            Top up credits anytime
+          </a>
         </p>
       </motion.div>
     </AppLayout>
