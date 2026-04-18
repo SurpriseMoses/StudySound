@@ -12,9 +12,7 @@ import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Subjects from "./pages/Subjects";
 import UploadPage from "./pages/UploadPage";
-import Listen from "./pages/Listen";
-import Visuals from "./pages/Visuals";
-import Quiz from "./pages/Quiz";
+import LessonPlayer from "./pages/LessonPlayer";
 import LibraryPage from "./pages/LibraryPage";
 import Plans from "./pages/Plans";
 import Profile from "./pages/Profile";
@@ -53,9 +51,7 @@ const App = () => (
             <Route path="/dashboard" element={protect(<Dashboard />)} />
             <Route path="/subjects" element={protect(<Subjects />)} />
             <Route path="/upload" element={protect(<UploadPage />)} />
-            <Route path="/listen/:lessonId" element={protect(<Listen />)} />
-            <Route path="/visuals" element={protect(<Visuals />)} />
-            <Route path="/quiz" element={protect(<Quiz />)} />
+            <Route path="/lesson/:lessonId" element={protect(<LessonPlayer />)} />
             <Route path="/library" element={protect(<LibraryPage />)} />
             <Route path="/profile" element={protect(<Profile />)} />
 
