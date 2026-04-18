@@ -288,7 +288,33 @@ export default function LessonPlayer() {
       audio.removeEventListener("loadedmetadata", onLoad);
       audio.removeEventListener("ended", onEnd);
     };
-  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview]);
+  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview, claimDailyReward]);
+
+  // Reset the listen reward fired flag when the chunk changes
+  useEffect(() => {
+    listenRewardFired.current = false;
+  }, [chunkIndex, audioUrl]);
+
+  // Reading reward: 60s of active page presence on the listen tab counts as "reading"
+  useEffect(() => {
+    if (activeTab !== "listen") return;
+    let elapsed = 0;
+    let lastTick = Date.now();
+    const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        lastTick = Date.now();
+        return;
+      }
+      const now = Date.now();
+      elapsed += (now - lastTick) / 1000;
+      lastTick = now;
+      if (elapsed >= 60) {
+        clearInterval(interval);
+        claimDailyReward("reading");
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeTab, claimDailyReward]);
 
   // Keep playbackRate in sync
   useEffect(() => {
@@ -480,7 +506,7 @@ export default function LessonPlayer() {
                 <VisualsTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />
               )}
               {activeTab === "quiz" && lesson.document_id && (
-                <QuizTab documentId={lesson.document_id} />
+                <QuizTab documentId={lesson.document_id} onFirstAnswer={() => claimDailyReward("quiz")} />
               )}
             </motion.div>
           </AnimatePresence>
@@ -878,7 +904,8 @@ function VisualsTab({ documentId, lessonId, subjectType }: { documentId: string;
 }
 
 // ===================== Quiz Tab =====================
-function QuizTab({ documentId }: { documentId: string }) {
+function QuizTab({ documentId, onFirstAnswer }: { documentId: string; onFirstAnswer?: () => void }) {
+  const firstAnswerFired = useRef(false);
   const { toast } = useToast();
   const [questions, setQuestions] = useState<QuizQ[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -933,6 +960,10 @@ function QuizTab({ documentId }: { documentId: string }) {
     if (!questions || answered || !selected) return;
     setAnswered(true);
     if (selected === questions[current].correct_answer) setScore((s) => s + 1);
+    if (!firstAnswerFired.current) {
+      firstAnswerFired.current = true;
+      onFirstAnswer?.();
+    }
   };
 
   const next = () => {
