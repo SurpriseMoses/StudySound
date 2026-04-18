@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins, RefreshCw } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins, RefreshCw, Languages } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
