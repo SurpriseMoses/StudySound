@@ -200,6 +200,9 @@ export default function Landing() {
               </Card>
             ))}
           </div>
+          <p className="text-center text-sm text-muted-foreground mt-6">
+            Need more? <span className="text-foreground font-medium">Top up credits anytime</span>
+          </p>
         </div>
       </section>
 
