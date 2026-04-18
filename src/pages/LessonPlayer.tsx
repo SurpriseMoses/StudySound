@@ -305,6 +305,18 @@ export default function LessonPlayer() {
     loadChunk(next, language);
   };
 
+  // Unlock next section from the nudge: load it, then auto-play
+  const unlockNext = useCallback(async () => {
+    const next = Math.min(totalChunks - 1, chunkIndex + 1);
+    setChunkIndex(next);
+    setIsPlaying(false);
+    await loadChunk(next, language);
+    setTimeout(() => {
+      audioRef.current?.play();
+      setIsPlaying(true);
+    }, 250);
+  }, [chunkIndex, totalChunks, language, loadChunk]);
+
   const onSeek = (val: number[]) => {
     const audio = audioRef.current;
     if (!audio || !audio.duration) return;
