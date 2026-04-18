@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { subjects } from "@/lib/subjects";
 import { CreditEstimator } from "@/components/CreditEstimator";
 import { LowCreditNudge, HardCreditBlock } from "@/components/LowCreditNudge";
+import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -67,8 +68,10 @@ export default function LessonPlayer() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { claim: claimDailyReward } = useDailyRewardContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const listenRewardFired = useRef(false);
 
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab: Tab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "listen";
@@ -236,7 +239,14 @@ export default function LessonPlayer() {
     audio.playbackRate = playbackRate;
     const onTime = () => {
       setCurrentTime(audio.currentTime);
-      if (audio.duration) setSeekProgress([(audio.currentTime / audio.duration) * 100]);
+      if (audio.duration) {
+        const pct = audio.currentTime / audio.duration;
+        setSeekProgress([pct * 100]);
+        if (!listenRewardFired.current && pct >= 0.7) {
+          listenRewardFired.current = true;
+          claimDailyReward("listen");
+        }
+      }
     };
     const onLoad = () => setDuration(audio.duration);
     const onEnd = () => {
