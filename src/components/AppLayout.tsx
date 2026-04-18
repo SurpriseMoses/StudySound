@@ -14,6 +14,9 @@ import { DailyRewardProvider } from "@/contexts/DailyRewardContext";
 import DailyRewardModal from "@/components/DailyRewardModal";
 import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
 import StreakActivePill from "@/components/StreakActivePill";
+import { ProgressionProvider, useProgressionContext } from "@/contexts/ProgressionContext";
+import LevelUpModal from "@/components/LevelUpModal";
+import LevelXpBar from "@/components/LevelXpBar";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: Home },
