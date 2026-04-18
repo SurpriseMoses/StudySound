@@ -1,0 +1,1 @@
+DELETE FROM public.audio_assets WHERE language IN ('ts', 'nso', 'xh');
