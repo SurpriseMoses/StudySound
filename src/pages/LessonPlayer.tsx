@@ -312,7 +312,7 @@ export default function LessonPlayer() {
       audio.removeEventListener("loadedmetadata", onLoad);
       audio.removeEventListener("ended", onEnd);
     };
-  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview, claimDailyReward]);
+  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview, claimDailyReward, lesson?.id, awardXp, flushLevelUp]);
 
   // Reset the listen reward fired flag when the chunk changes
   useEffect(() => {
