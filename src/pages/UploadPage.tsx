@@ -32,6 +32,7 @@ interface LibraryMatch {
   title: string;
   subject_type: string;
   char_count: number;
+  similarity?: number;
 }
 
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -49,7 +50,7 @@ export default function UploadPage() {
   const [searching, setSearching] = useState(false);
   const [matches, setMatches] = useState<LibraryMatch[] | null>(null);
 
-  // Search library on debounce
+  // Search library on debounce — uses fuzzy/trigram matching server-side
   useEffect(() => {
     const q = searchQuery.trim();
     if (q.length < 2) {
@@ -58,13 +59,13 @@ export default function UploadPage() {
     }
     const timer = setTimeout(async () => {
       setSearching(true);
-      const { data, error } = await supabase
-        .from("documents")
-        .select("id, title, subject_type, char_count")
-        .ilike("title", `%${q}%`)
-        .limit(5);
+      const { data, error } = await supabase.rpc("search_documents_fuzzy", {
+        _query: q,
+        _threshold: 0.3,
+        _limit: 5,
+      });
       setSearching(false);
-      if (!error) setMatches(data ?? []);
+      if (!error) setMatches((data as LibraryMatch[]) ?? []);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
@@ -100,13 +101,22 @@ export default function UploadPage() {
       if (error) throw new Error(error.message);
       if (!data?.success) throw new Error(data?.error ?? "Extraction failed");
 
+      const reused = !!data.reused;
       updateFile(uf.id, {
         status: "done",
         progress: 100,
-        message: `Ready · ${data.char_count.toLocaleString()} chars`,
+        message: reused
+          ? "This matches a book already in our library — linked for instant access."
+          : `Ready · ${data.char_count.toLocaleString()} chars`,
         documentId: data.document_id,
         lessonId: data.lesson_id,
       });
+      if (reused) {
+        toast({
+          title: "Matched a library book",
+          description: "We linked your upload to the existing version for instant access.",
+        });
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unknown error";
       updateFile(uf.id, { status: "error", progress: 100, message: msg });
@@ -148,8 +158,8 @@ export default function UploadPage() {
   const completed = files.filter((f) => f.status === "done");
   const goToLibrary = () => navigate("/library");
 
-  const openInstantly = (_docId: string) => {
-    navigate(`/library`);
+  const openInstantly = (docId: string) => {
+    navigate(`/lesson/${docId}`);
   };
 
   return (

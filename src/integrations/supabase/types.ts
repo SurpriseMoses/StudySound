@@ -752,6 +752,18 @@ export type Database = {
         }
         Returns: boolean
       }
+      search_documents_fuzzy: {
+        Args: { _limit?: number; _query: string; _threshold?: number }
+        Returns: {
+          char_count: number
+          id: string
+          similarity: number
+          subject_type: Database["public"]["Enums"]["subject_type"]
+          title: string
+        }[]
+      }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       app_role: "admin" | "user"
