@@ -138,6 +138,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
       </main>
 
       <DailyRewardModal open={open} result={result} onClose={dismiss} />
+      <StreakActivePill />
     </div>
   );
 }
