@@ -243,18 +243,30 @@ export default function LessonPlayer() {
       setIsPlaying(false);
       if (chunkIndex + 1 < totalChunks) {
         // Smart nudge: section just completed — best moment to convert.
-        // Trigger if balance is below 30% of remaining audio cost (Level 1/2 threshold).
         const remainingNeeded = costPreview ? costPreview.remaining : 0;
         const balance = costPreview?.balance ?? 0;
         if (remainingNeeded > 0 && balance < Math.max(1, Math.ceil(remainingNeeded * 0.3))) {
           setNudgeOpen(true);
           return; // pause auto-advance until user decides
         }
-        const next = chunkIndex + 1;
-        setChunkIndex(next);
-        loadChunk(next, language).then(() => {
-          setTimeout(() => audioRef.current?.play(), 200);
-          setIsPlaying(true);
+        // Smooth fade-out before advancing
+        const fadeOut = () => new Promise<void>((resolve) => {
+          const start = audio.volume;
+          const steps = 8;
+          let i = 0;
+          const id = setInterval(() => {
+            i += 1;
+            audio.volume = Math.max(0, start * (1 - i / steps));
+            if (i >= steps) { clearInterval(id); audio.volume = start; resolve(); }
+          }, 30);
+        });
+        fadeOut().then(() => {
+          const next = chunkIndex + 1;
+          setChunkIndex(next);
+          loadChunk(next, language).then(() => {
+            setTimeout(() => audioRef.current?.play(), 200);
+            setIsPlaying(true);
+          });
         });
       }
     };
@@ -292,6 +304,18 @@ export default function LessonPlayer() {
     setIsPlaying(false);
     loadChunk(next, language);
   };
+
+  // Unlock next section from the nudge: load it, then auto-play
+  const unlockNext = useCallback(async () => {
+    const next = Math.min(totalChunks - 1, chunkIndex + 1);
+    setChunkIndex(next);
+    setIsPlaying(false);
+    await loadChunk(next, language);
+    setTimeout(() => {
+      audioRef.current?.play();
+      setIsPlaying(true);
+    }, 250);
+  }, [chunkIndex, totalChunks, language, loadChunk]);
 
   const onSeek = (val: number[]) => {
     const audio = audioRef.current;
@@ -458,6 +482,8 @@ export default function LessonPlayer() {
           onClose={() => setNudgeOpen(false)}
           documentId={lesson.document_id}
           fromContext="audio"
+          onUnlock={unlockNext}
+          unlockCost={1}
         />
 
         {/* Persistent audio player */}
