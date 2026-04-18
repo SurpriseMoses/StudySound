@@ -57,6 +57,12 @@ export default function Listen() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
 
+  // Translation (read-language) state — independent of audio voice language
+  const [readLang, setReadLang] = useState("en");
+  const [translatedText, setTranslatedText] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translationCache, setTranslationCache] = useState<Record<string, string>>({});
+
   // Check admin role
   useEffect(() => {
     if (!user) { setIsAdmin(false); return; }
