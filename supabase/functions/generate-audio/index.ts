@@ -278,9 +278,10 @@ Deno.serve(async (req) => {
       reused = true;
     } else {
       let text = chunks[chunk_index];
-      // If narrating in a non-source language, use the cached translation so the audio matches the language.
+      // If narrating in a non-source language WITH a native voice, use the cached translation.
+      // Languages without a native voice fall back to English voice + English text so pronunciation is correct.
       const sourceLang = (doc.language ?? "en").toLowerCase();
-      if (lang !== sourceLang) {
+      if (lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)) {
         const { data: tr } = await admin
           .from("translation_assets")
           .select("translated_text")
@@ -291,7 +292,6 @@ Deno.serve(async (req) => {
         if (tr?.translated_text) {
           text = tr.translated_text;
         } else {
-          // Auto-translate on demand via the generate-translation function (uses Azure Translator + cache).
           const { data: trData, error: trErr } = await admin.functions.invoke("generate-translation", {
             body: { lesson_id, chunk_index, target_language: lang },
             headers: { Authorization: authHeader },
