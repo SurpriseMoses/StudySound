@@ -266,7 +266,7 @@ export default function LessonPlayer() {
       audio.removeEventListener("loadedmetadata", onLoad);
       audio.removeEventListener("ended", onEnd);
     };
-  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate]);
+  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview]);
 
   // Keep playbackRate in sync
   useEffect(() => {
@@ -283,6 +283,11 @@ export default function LessonPlayer() {
   const goChunk = (delta: number) => {
     const next = Math.max(0, Math.min(totalChunks - 1, chunkIndex + delta));
     if (next === chunkIndex) return;
+    // Level 2: block forward into a locked section when balance can't cover it
+    if (delta > 0 && costPreview && next >= costPreview.paid && costPreview.balance < 1) {
+      setNudgeOpen(true);
+      return;
+    }
     setChunkIndex(next);
     setIsPlaying(false);
     loadChunk(next, language);
