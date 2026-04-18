@@ -482,6 +482,8 @@ export default function LessonPlayer() {
           onClose={() => setNudgeOpen(false)}
           documentId={lesson.document_id}
           fromContext="audio"
+          onUnlock={unlockNext}
+          unlockCost={1}
         />
 
         {/* Persistent audio player */}
