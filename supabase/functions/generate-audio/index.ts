@@ -270,7 +270,25 @@ Deno.serve(async (req) => {
       storagePath = cached.storage_path;
       reused = true;
     } else {
-      const text = chunks[chunk_index];
+      let text = chunks[chunk_index];
+      // If narrating in a non-source language, use the cached translation so the audio matches the language.
+      const sourceLang = (doc.language ?? "en").toLowerCase();
+      if (lang !== sourceLang) {
+        const { data: tr } = await admin
+          .from("translation_assets")
+          .select("translated_text")
+          .eq("document_id", doc.id)
+          .eq("chunk_index", chunk_index)
+          .eq("target_language", lang)
+          .maybeSingle();
+        if (tr?.translated_text) {
+          text = tr.translated_text;
+        } else {
+          throw new Error(
+            `Translation not ready for ${lang} chunk ${chunk_index}. Open the section first to translate it, then play audio.`,
+          );
+        }
+      }
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
       if (!apiKey) throw new Error(`${provider} API key not configured`);
       const audio =
