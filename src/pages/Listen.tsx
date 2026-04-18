@@ -248,16 +248,15 @@ export default function Listen() {
 
   const subjectName = subjects.find((s) => s.id === lesson?.subject)?.name ?? lesson?.subject;
 
-  // Lazy-load translation for the currently visible chunk only
+  // Lazy-load translation for the currently visible chunk only — driven by the audio language picker
   useEffect(() => {
-    // Reset & exit early when reading in English (source) or no chunk text yet
-    if (readLang === "en") {
+    if (language === "en") {
       setTranslatedText(null);
       return;
     }
     if (!lessonId || !chunkText) return;
 
-    const cacheKey = `${readLang}:${chunkIndex}`;
+    const cacheKey = `${language}:${chunkIndex}`;
     if (translationCache[cacheKey]) {
       setTranslatedText(translationCache[cacheKey]);
       return;
@@ -269,7 +268,7 @@ export default function Listen() {
     (async () => {
       try {
         const { data, error } = await supabase.functions.invoke("generate-translation", {
-          body: { lesson_id: lessonId, chunk_index: chunkIndex, target_language: readLang },
+          body: { lesson_id: lessonId, chunk_index: chunkIndex, target_language: language },
         });
         if (cancelled) return;
         if (error) throw new Error(error.message);
@@ -286,14 +285,13 @@ export default function Listen() {
         if (cancelled) return;
         const msg = e instanceof Error ? e.message : "Translation failed";
         toast({ title: "Translation failed", description: msg, variant: "destructive" });
-        setReadLang("en");
       } finally {
         if (!cancelled) setIsTranslating(false);
       }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readLang, chunkIndex, chunkText, lessonId]);
+  }, [language, chunkIndex, chunkText, lessonId]);
 
   return (
     <AppLayout>
