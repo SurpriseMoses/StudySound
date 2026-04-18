@@ -932,9 +932,19 @@ function VisualsTab({ documentId, lessonId, subjectType }: { documentId: string;
 }
 
 // ===================== Quiz Tab =====================
-function QuizTab({ documentId, onFirstAnswer }: { documentId: string; onFirstAnswer?: () => void }) {
+function QuizTab({
+  documentId,
+  lessonId,
+  onFirstAnswer,
+}: {
+  documentId: string;
+  lessonId: string;
+  onFirstAnswer?: () => void;
+}) {
   const firstAnswerFired = useRef(false);
+  const completionFired = useRef(false);
   const { toast } = useToast();
+  const { awardXp, flushLevelUp } = useProgressionContext();
   const [questions, setQuestions] = useState<QuizQ[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -943,6 +953,8 @@ function QuizTab({ documentId, onFirstAnswer }: { documentId: string; onFirstAns
   const [answered, setAnswered] = useState(false);
   const [score, setScore] = useState(0);
   const [completed, setCompleted] = useState(false);
+  const [bonusAward, setBonusAward] = useState<{ credits: number; xp: number } | null>(null);
+  const [attemptId, setAttemptId] = useState<string>(() => crypto.randomUUID());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -982,6 +994,9 @@ function QuizTab({ documentId, onFirstAnswer }: { documentId: string; onFirstAns
 
   const restart = () => {
     setCurrent(0); setSelected(null); setAnswered(false); setScore(0); setCompleted(false);
+    setBonusAward(null);
+    completionFired.current = false;
+    setAttemptId(crypto.randomUUID()); // new attempt → new idempotency key
   };
 
   const submit = () => {
