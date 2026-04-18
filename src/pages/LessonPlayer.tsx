@@ -1046,15 +1046,37 @@ function QuizTab({
 
   if (completed) {
     const pct = Math.round((score / questions.length) * 100);
+
+    // Award quiz_bonus exactly once per attempt (idempotent on attemptId)
+    if (!completionFired.current) {
+      completionFired.current = true;
+      awardXp("quiz_bonus", {
+        sourceKey: `${lessonId}:${attemptId}`,
+        scorePct: pct,
+        metadata: { score, total: questions.length },
+      }).then((res) => {
+        if (res && !res.duplicate) {
+          setBonusAward({ credits: res.creditsAwarded, xp: res.xpAwarded });
+          // Surface level-up after the user sees their result
+          setTimeout(flushLevelUp, 1500);
+        }
+      });
+    }
+
     return (
       <Card>
-        <CardContent className="p-10 text-center">
+        <CardContent className="p-8 md:p-10 text-center">
           <div className="text-5xl mb-3">{pct >= 80 ? "🎉" : pct >= 50 ? "👍" : "📚"}</div>
           <h2 className="text-3xl font-display font-bold">{pct}%</h2>
           <p className="text-muted-foreground mt-1">{score} / {questions.length} correct</p>
           <p className="text-sm text-muted-foreground mt-1">
             {pct >= 80 ? "Excellent work!" : pct >= 50 ? "Good effort, keep practising!" : "Review the lesson and try again."}
           </p>
+
+          <div className="mt-5 max-w-sm mx-auto text-left">
+            <QuizBonusCard scorePct={pct} awarded={bonusAward} />
+          </div>
+
           <Button onClick={restart} className="mt-5 gap-2">
             <RotateCcw className="w-4 h-4" /> Try Again
           </Button>
