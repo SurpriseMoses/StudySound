@@ -22,6 +22,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { subjects } from "@/lib/subjects";
 import { CreditEstimator } from "@/components/CreditEstimator";
+import { LowCreditNudge, HardCreditBlock } from "@/components/LowCreditNudge";
 
 const LANGS = [
   { code: "en", label: "English" },
