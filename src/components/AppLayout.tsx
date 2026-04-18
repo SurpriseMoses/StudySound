@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   BookOpen, Upload, Headphones, Image, Brain, Library,
@@ -34,6 +34,17 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const { open, result, dismiss } = useDailyRewardContext();
+  const { reload: reloadProgression, flushLevelUp } = useProgressionContext();
+
+  // After a fresh daily reward, refetch XP/level (server bumps both) and surface any queued level-up.
+  useEffect(() => {
+    if (result && !result.alreadyClaimed) {
+      reloadProgression().then(() => {
+        // Small delay so the reward modal has its moment first
+        setTimeout(flushLevelUp, 3200);
+      });
+    }
+  }, [result, reloadProgression, flushLevelUp]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -101,6 +112,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="p-4 border-t border-sidebar-border space-y-2">
+          <LevelXpBar variant="sidebar" />
           <div className="bg-sidebar-accent rounded-lg p-3">
             <p className="text-xs font-medium text-sidebar-foreground/80">Free Trial</p>
             <p className="text-xs text-sidebar-foreground/50 mt-1">Upgrade for full access</p>
@@ -142,14 +154,17 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
 
       <DailyRewardModal open={open} result={result} onClose={dismiss} />
       <StreakActivePill />
+      <LevelUpModal />
     </div>
   );
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <DailyRewardProvider>
-      <AppLayoutInner>{children}</AppLayoutInner>
-    </DailyRewardProvider>
+    <ProgressionProvider>
+      <DailyRewardProvider>
+        <AppLayoutInner>{children}</AppLayoutInner>
+      </DailyRewardProvider>
+    </ProgressionProvider>
   );
 }
