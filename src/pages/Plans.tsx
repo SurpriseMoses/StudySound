@@ -12,12 +12,10 @@ const plans = [
     period: "/month",
     desc: "For learners who prefer listening and practising",
     features: [
-      "10 uploads per month (100 pages/file)",
-      "120 minutes AI audio generation",
-      "50 AI quiz questions",
+      "~2–3 books per month",
+      "Audio + Quiz + Translation",
       "Multilingual voices",
-      "Offline storage (5 lessons)",
-      "Unlimited cached replays",
+      "Offline study mode",
     ],
     popular: false,
   },
@@ -28,14 +26,12 @@ const plans = [
     period: "/month",
     desc: "Full audio-visual learning experience",
     features: [
-      "30 uploads per month (200 pages/file)",
-      "500 minutes AI audio generation",
-      "200 AI quiz questions",
-      "200 visual scene generations",
+      "~5–6 books per month",
+      "Audio + Quiz + Visuals",
+      "Visual scenes for novels & history",
       "Priority processing",
-      "Offline storage (20 lessons)",
+      "Offline study mode",
       "Custom study packs",
-      "Difficulty-level quizzes",
     ],
     popular: true,
   },
@@ -47,7 +43,7 @@ export default function Plans() {
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="text-center mb-8">
           <h1 className="text-2xl md:text-3xl font-display font-bold">Choose Your Plan</h1>
-          <p className="text-muted-foreground text-sm mt-1">Upgrade to unlock more features and higher limits.</p>
+          <p className="text-muted-foreground text-sm mt-1">Simple plans built for how students actually learn.</p>
         </div>
 
         <div className="grid md:grid-cols-2 gap-5 max-w-3xl mx-auto">
@@ -80,6 +76,10 @@ export default function Plans() {
             </Card>
           ))}
         </div>
+
+        <p className="text-center text-sm text-muted-foreground mt-6">
+          Need more? <span className="text-foreground font-medium">Top up credits anytime</span>
+        </p>
       </motion.div>
     </AppLayout>
   );
