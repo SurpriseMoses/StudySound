@@ -57,8 +57,7 @@ export default function Listen() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
 
-  // Translation (read-language) state — independent of audio voice language
-  const [readLang, setReadLang] = useState("en");
+  // Translation state — driven by the same `language` selector that drives audio
   const [translatedText, setTranslatedText] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationCache, setTranslationCache] = useState<Record<string, string>>({});
@@ -249,16 +248,15 @@ export default function Listen() {
 
   const subjectName = subjects.find((s) => s.id === lesson?.subject)?.name ?? lesson?.subject;
 
-  // Lazy-load translation for the currently visible chunk only
+  // Lazy-load translation for the currently visible chunk only — driven by the audio language picker
   useEffect(() => {
-    // Reset & exit early when reading in English (source) or no chunk text yet
-    if (readLang === "en") {
+    if (language === "en") {
       setTranslatedText(null);
       return;
     }
     if (!lessonId || !chunkText) return;
 
-    const cacheKey = `${readLang}:${chunkIndex}`;
+    const cacheKey = `${language}:${chunkIndex}`;
     if (translationCache[cacheKey]) {
       setTranslatedText(translationCache[cacheKey]);
       return;
@@ -270,7 +268,7 @@ export default function Listen() {
     (async () => {
       try {
         const { data, error } = await supabase.functions.invoke("generate-translation", {
-          body: { lesson_id: lessonId, chunk_index: chunkIndex, target_language: readLang },
+          body: { lesson_id: lessonId, chunk_index: chunkIndex, target_language: language },
         });
         if (cancelled) return;
         if (error) throw new Error(error.message);
@@ -287,14 +285,13 @@ export default function Listen() {
         if (cancelled) return;
         const msg = e instanceof Error ? e.message : "Translation failed";
         toast({ title: "Translation failed", description: msg, variant: "destructive" });
-        setReadLang("en");
       } finally {
         if (!cancelled) setIsTranslating(false);
       }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readLang, chunkIndex, chunkText, lessonId]);
+  }, [language, chunkIndex, chunkText, lessonId]);
 
   return (
     <AppLayout>
@@ -392,28 +389,12 @@ export default function Listen() {
                   Section {chunkIndex + 1} of {totalChunks}
                 </h3>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {/* Read-language toggle (translation, lazy per chunk) */}
-                  <div className="inline-flex items-center rounded-md border bg-background p-0.5 text-xs">
-                    <Languages className="w-3 h-3 mx-1.5 text-muted-foreground" />
-                    {[
-                      { code: "en", label: "EN" },
-                      { code: "zu", label: "isiZulu" },
-                      { code: "af", label: "Afrikaans" },
-                    ].map((opt) => (
-                      <button
-                        key={opt.code}
-                        onClick={() => setReadLang(opt.code)}
-                        disabled={isTranslating && readLang !== opt.code}
-                        className={`px-2 py-1 rounded transition-colors ${
-                          readLang === opt.code
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
+                  {language !== "en" && (
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <Languages className="w-3 h-3" />
+                      Translated to {LANGS.find((l) => l.code === language)?.label ?? language}
+                    </span>
+                  )}
                   {isAdmin && (
                     <Button
                       size="sm"
@@ -446,7 +427,7 @@ export default function Listen() {
                 </div>
               ) : (
                 <p className="text-foreground/80 leading-relaxed text-sm whitespace-pre-line">
-                  {readLang !== "en" && translatedText ? translatedText : chunkText}
+                  {language !== "en" && translatedText ? translatedText : chunkText}
                 </p>
               )}
             </CardContent>
