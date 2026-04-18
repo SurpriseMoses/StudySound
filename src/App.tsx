@@ -55,6 +55,7 @@ const App = () => (
             <Route path="/lesson/:documentId" element={protect(<LessonPlayer />)} />
             <Route path="/library" element={protect(<LibraryPage />)} />
             <Route path="/profile" element={protect(<Profile />)} />
+            <Route path="/topup" element={protect(<TopUp />)} />
 
             {/* Admin */}
             <Route
