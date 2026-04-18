@@ -249,6 +249,53 @@ export default function Listen() {
 
   const subjectName = subjects.find((s) => s.id === lesson?.subject)?.name ?? lesson?.subject;
 
+  // Lazy-load translation for the currently visible chunk only
+  useEffect(() => {
+    // Reset & exit early when reading in English (source) or no chunk text yet
+    if (readLang === "en") {
+      setTranslatedText(null);
+      return;
+    }
+    if (!lessonId || !chunkText) return;
+
+    const cacheKey = `${readLang}:${chunkIndex}`;
+    if (translationCache[cacheKey]) {
+      setTranslatedText(translationCache[cacheKey]);
+      return;
+    }
+
+    let cancelled = false;
+    setIsTranslating(true);
+    setTranslatedText(null);
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("generate-translation", {
+          body: { lesson_id: lessonId, chunk_index: chunkIndex, target_language: readLang },
+        });
+        if (cancelled) return;
+        if (error) throw new Error(error.message);
+        if (!data?.success) throw new Error(data?.error ?? "Translation failed");
+        setTranslatedText(data.translated_text);
+        setTranslationCache((prev) => ({ ...prev, [cacheKey]: data.translated_text }));
+        if (data.credits_charged > 0) {
+          toast({
+            title: `1 credit charged`,
+            description: `Translation unlocked for section ${chunkIndex + 1} — replays free.`,
+          });
+        }
+      } catch (e) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : "Translation failed";
+        toast({ title: "Translation failed", description: msg, variant: "destructive" });
+        setReadLang("en");
+      } finally {
+        if (!cancelled) setIsTranslating(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readLang, chunkIndex, chunkText, lessonId]);
+
   return (
     <AppLayout>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
