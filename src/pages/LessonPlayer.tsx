@@ -26,6 +26,7 @@ import { LowCreditNudge, HardCreditBlock } from "@/components/LowCreditNudge";
 import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
 import { useProgressionContext } from "@/contexts/ProgressionContext";
 import QuizBonusCard from "@/components/QuizBonusCard";
+import { useLessonProgress } from "@/hooks/use-lesson-progress";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -75,6 +76,8 @@ export default function LessonPlayer() {
   const [searchParams, setSearchParams] = useSearchParams();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const listenRewardFired = useRef(false);
+  const lastListenTickRef = useRef<number>(0);
+  const totalListenedSecondsRef = useRef<number>(0);
 
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab: Tab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "listen";
@@ -156,6 +159,9 @@ export default function LessonPlayer() {
   const [chunkIndex, setChunkIndex] = useState(0);
   const [totalChunks, setTotalChunks] = useState(1);
   const [chunkText, setChunkText] = useState("");
+
+  // Persist playback progress into dedicated lesson_progress table (throttled).
+  const { update: updateLessonProgress, flush: flushLessonProgress } = useLessonProgress(lesson?.id ?? null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -243,9 +249,32 @@ export default function LessonPlayer() {
     const onTime = () => {
       setCurrentTime(audio.currentTime);
       if (audio.duration) {
-        const pct = audio.currentTime / audio.duration;
-        setSeekProgress([pct * 100]);
-        if (!listenRewardFired.current && pct >= 0.7) {
+        const sectionPct = audio.currentTime / audio.duration;
+        setSeekProgress([sectionPct * 100]);
+
+        // Accumulate "real" seconds listened (forward playback only — ignore seeks/jumps).
+        const now = audio.currentTime;
+        const last = lastListenTickRef.current;
+        const delta = now - last;
+        if (delta > 0 && delta < 2) {
+          totalListenedSecondsRef.current += delta;
+        }
+        lastListenTickRef.current = now;
+
+        // Overall lesson progress across all chunks
+        const overallPct = ((chunkIndex + sectionPct) / Math.max(1, totalChunks)) * 100;
+        const rewardEligible = overallPct >= 70;
+
+        updateLessonProgress({
+          audio_progress_pct: overallPct,
+          last_position_seconds: Math.floor(audio.currentTime),
+          audio_listened_seconds: Math.floor(totalListenedSecondsRef.current),
+          sections_total: totalChunks,
+          sections_completed: Math.max(0, chunkIndex),
+          reward_eligible: rewardEligible,
+        });
+
+        if (!listenRewardFired.current && sectionPct >= 0.7) {
           listenRewardFired.current = true;
           claimDailyReward("listen");
         }
@@ -255,6 +284,20 @@ export default function LessonPlayer() {
     const onEnd = () => {
       setIsPlaying(false);
 
+      const completedSections = Math.min(totalChunks, chunkIndex + 1);
+      const isLastChunk = completedSections >= totalChunks;
+      const overallPct = (completedSections / Math.max(1, totalChunks)) * 100;
+      // Persist the section completion immediately (no throttle).
+      updateLessonProgress({
+        audio_progress_pct: overallPct,
+        sections_completed: completedSections,
+        sections_total: totalChunks,
+        last_position_seconds: Math.floor(audio.currentTime),
+        audio_listened_seconds: Math.floor(totalListenedSecondsRef.current),
+        reward_eligible: overallPct >= 70,
+      });
+      flushLessonProgress();
+
       // Award section_complete XP (idempotent on lesson_id:chunk_index)
       if (lesson?.id) {
         awardXp("section_complete", {
@@ -263,7 +306,6 @@ export default function LessonPlayer() {
         });
       }
 
-      const isLastChunk = chunkIndex + 1 >= totalChunks;
       if (isLastChunk) {
         // Award lesson_complete XP (idempotent on lesson_id)
         if (lesson?.id) {
@@ -312,7 +354,12 @@ export default function LessonPlayer() {
       audio.removeEventListener("loadedmetadata", onLoad);
       audio.removeEventListener("ended", onEnd);
     };
-  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview, claimDailyReward, lesson?.id, awardXp, flushLevelUp]);
+  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview, claimDailyReward, lesson?.id, awardXp, flushLevelUp, updateLessonProgress, flushLessonProgress]);
+
+  // Reset the per-chunk listening tick when the audio source changes (new chunk).
+  useEffect(() => {
+    lastListenTickRef.current = 0;
+  }, [audioUrl]);
 
   // Reset the listen reward fired flag when the chunk changes
   useEffect(() => {
