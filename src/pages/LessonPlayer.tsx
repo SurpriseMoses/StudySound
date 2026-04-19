@@ -248,9 +248,30 @@ export default function LessonPlayer() {
     const onTime = () => {
       setCurrentTime(audio.currentTime);
       if (audio.duration) {
-        const pct = audio.currentTime / audio.duration;
-        setSeekProgress([pct * 100]);
-        if (!listenRewardFired.current && pct >= 0.7) {
+        const sectionPct = audio.currentTime / audio.duration;
+        setSeekProgress([sectionPct * 100]);
+
+        // Accumulate "real" seconds listened (forward playback only, ignore seeks)
+        const now = audio.currentTime;
+        const last = lastListenTickRef.current;
+        const delta = now - last;
+        const listenedDelta = delta > 0 && delta < 2 ? delta : 0; // ignore big jumps (seeks)
+        lastListenTickRef.current = now;
+
+        // Overall lesson progress across all chunks
+        const overallPct = ((chunkIndex + sectionPct) / Math.max(1, totalChunks)) * 100;
+        const rewardEligible = overallPct >= 70;
+
+        updateLessonProgress({
+          audio_progress_pct: overallPct,
+          last_position_seconds: Math.floor(audio.currentTime),
+          ...(listenedDelta > 0 ? { audio_listened_seconds: undefined } : {}),
+          sections_total: totalChunks,
+          sections_completed: Math.max(0, chunkIndex),
+          reward_eligible: rewardEligible,
+        });
+
+        if (!listenRewardFired.current && sectionPct >= 0.7) {
           listenRewardFired.current = true;
           claimDailyReward("listen");
         }
