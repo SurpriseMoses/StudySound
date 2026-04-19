@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import AppLayout from "@/components/AppLayout";
+import ProgressionPanel from "@/components/ProgressionPanel";
 
 export default function Profile() {
   return (
@@ -16,6 +17,7 @@ export default function Profile() {
 
         <div className="grid lg:grid-cols-3 gap-5">
           <div className="lg:col-span-2 space-y-5">
+            <ProgressionPanel />
             <Card>
               <CardContent className="p-6 space-y-4">
                 <h2 className="font-display font-semibold flex items-center gap-2">
