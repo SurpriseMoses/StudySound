@@ -124,6 +124,8 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Expire stale free-tier credits before crediting bonus
+    await admin.rpc("expire_free_credits", { _user_id: userId });
     const { data: profile, error: profileErr } = await admin
       .from("profiles")
       .select("xp, level, credits_balance")

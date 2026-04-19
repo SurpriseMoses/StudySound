@@ -173,6 +173,8 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Expire stale free-tier credits before reading balance
+    await admin.rpc("expire_free_credits", { _user_id: userId });
     // Profile + balance
     const { data: profile } = await admin
       .from("profiles")
