@@ -354,7 +354,12 @@ export default function LessonPlayer() {
       audio.removeEventListener("loadedmetadata", onLoad);
       audio.removeEventListener("ended", onEnd);
     };
-  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview, claimDailyReward, lesson?.id, awardXp, flushLevelUp]);
+  }, [audioUrl, chunkIndex, totalChunks, language, loadChunk, playbackRate, costPreview, claimDailyReward, lesson?.id, awardXp, flushLevelUp, updateLessonProgress, flushLessonProgress]);
+
+  // Reset the per-chunk listening tick when the audio source changes (new chunk).
+  useEffect(() => {
+    lastListenTickRef.current = 0;
+  }, [audioUrl]);
 
   // Reset the listen reward fired flag when the chunk changes
   useEffect(() => {
