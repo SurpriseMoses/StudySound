@@ -1,11 +1,15 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Upload, Headphones, Brain, Image, ArrowRight, Play, Sparkles } from "lucide-react";
+import { Upload, Headphones, Brain, Image, ArrowRight, Play, Sparkles, BookOpen } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import AppLayout from "@/components/AppLayout";
 import UpgradeForRewardsBanner from "@/components/UpgradeForRewardsBanner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { subjects } from "@/lib/subjects";
 
 const startActions = [
   { icon: Upload, label: "Upload Content", desc: "Add a new document", path: "/upload", color: "bg-primary/10 text-primary" },
@@ -14,12 +18,15 @@ const startActions = [
   { icon: Image, label: "Plans", desc: "Upgrade for more", path: "/plans", color: "bg-success/10 text-success" },
 ];
 
-const continueLesson = {
-  title: "Great Expectations — Ch. 3",
-  subject: "English",
-  progress: 72,
-  icon: "📖",
-  path: "/library",
+type ContinueLesson = {
+  lessonId: string;
+  documentId: string | null;
+  title: string;
+  subject: string;
+  icon: string;
+  progress: number;
+  sectionsCompleted: number;
+  sectionsTotal: number;
 };
 
 const stats = [
@@ -28,6 +35,9 @@ const stats = [
   { label: "Quiz Qs", used: 18, total: 50, icon: Brain },
   { label: "Visuals", used: 5, total: 0, icon: Image },
 ];
+
+const subjectIcon = (id: string) => subjects.find((s) => s.id === id)?.icon ?? "📚";
+const subjectName = (id: string) => subjects.find((s) => s.id === id)?.name ?? id;
 
 export default function Dashboard() {
   return (
