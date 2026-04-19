@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { dailyCreditBonus } from "../_shared/perks.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -90,7 +91,7 @@ Deno.serve(async (req) => {
     // Load profile to compute next streak
     const { data: profile, error: profileErr } = await admin
       .from("profiles")
-      .select("credits_balance, current_streak, last_reward_date, streak_grace_used")
+      .select("credits_balance, current_streak, last_reward_date, streak_grace_used, level, plan")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -121,7 +122,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    const credits = creditsForStreak(newStreak);
+    const baseCredits = creditsForStreak(newStreak);
+    // Apply daily credit bonus perk (paid plans only): +1 at lvl 3, +2 at lvl 15
+    const perkBonus = dailyCreditBonus(profile.level ?? 1, profile.plan as "free" | "essential" | "premium" | null);
+    const credits = baseCredits + perkBonus;
 
     // Insert reward (UNIQUE constraint protects against double-claims)
     const { error: insertErr } = await admin.from("daily_rewards").insert({
@@ -197,6 +201,8 @@ Deno.serve(async (req) => {
       JSON.stringify({
         alreadyClaimed: false,
         creditsAwarded: credits,
+        baseCredits,
+        perkBonus,
         streak: newStreak,
         trigger,
       }),
