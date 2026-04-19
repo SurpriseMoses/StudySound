@@ -26,6 +26,7 @@ import { LowCreditNudge, HardCreditBlock } from "@/components/LowCreditNudge";
 import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
 import { useProgressionContext } from "@/contexts/ProgressionContext";
 import QuizBonusCard from "@/components/QuizBonusCard";
+import { useLessonProgress } from "@/hooks/use-lesson-progress";
 
 const LANGS = [
   { code: "en", label: "English" },
