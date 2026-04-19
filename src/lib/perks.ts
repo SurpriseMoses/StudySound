@@ -91,3 +91,26 @@ export function hasPerk(level: number, key: string): boolean {
   const perk = PERKS.find((p) => p.key === key);
   return !!perk && level >= perk.level;
 }
+
+// ===== Active perk effects (mirror supabase/functions/_shared/perks.ts) =====
+
+export type Plan = "free" | "essential" | "premium" | null | undefined;
+
+export function isPaidPlan(plan: Plan): boolean {
+  return plan === "essential" || plan === "premium";
+}
+
+/** XP multiplier from level-based XP boost perks. */
+export function xpBoostMultiplier(level: number): number {
+  if (level >= 20) return 1.2;
+  if (level >= 5) return 1.1;
+  return 1.0;
+}
+
+/** Extra daily-reward credits — paid plans only. */
+export function dailyCreditBonus(level: number, plan: Plan): number {
+  if (!isPaidPlan(plan)) return 0;
+  if (level >= 15) return 2;
+  if (level >= 3) return 1;
+  return 0;
+}

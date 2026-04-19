@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { xpBoostMultiplier } from "../_shared/perks.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -137,6 +138,11 @@ Deno.serve(async (req) => {
     }
 
     const fromLevel = profile.level ?? 1;
+    // Apply XP boost perk (level 5 → +10%, level 20 → +20%)
+    const boost = xpBoostMultiplier(fromLevel);
+    if (boost > 1) {
+      xpAwarded = Math.round(xpAwarded * boost);
+    }
     const newXp = (profile.xp ?? 0) + xpAwarded;
     const newLevel = levelForXp(newXp);
     const leveledUp = newLevel > fromLevel;
