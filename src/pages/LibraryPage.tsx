@@ -37,10 +37,28 @@ export default function LibraryPage() {
       setLoading(true);
       const { data } = await supabase
         .from("lessons")
-        .select("id, title, subject, progress, is_downloaded, audio_url, document_id, created_at")
+        .select("id, title, subject, is_downloaded, audio_url, document_id, created_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
-      setLessons(data ?? []);
+
+      // Fetch per-lesson progress from the dedicated lesson_progress table.
+      const ids = (data ?? []).map((l) => l.id);
+      let progressMap = new Map<string, number>();
+      if (ids.length > 0) {
+        const { data: progs } = await supabase
+          .from("lesson_progress")
+          .select("lesson_id, audio_progress_pct")
+          .eq("user_id", user.id)
+          .in("lesson_id", ids);
+        progressMap = new Map((progs ?? []).map((p) => [p.lesson_id, Number(p.audio_progress_pct ?? 0)]));
+      }
+
+      setLessons(
+        (data ?? []).map((l) => ({
+          ...l,
+          progress: Math.round(progressMap.get(l.id) ?? 0),
+        })),
+      );
       setLoading(false);
     })();
   }, [user]);
