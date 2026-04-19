@@ -158,6 +158,9 @@ export default function LessonPlayer() {
   const [chunkIndex, setChunkIndex] = useState(0);
   const [totalChunks, setTotalChunks] = useState(1);
   const [chunkText, setChunkText] = useState("");
+
+  // Persist playback progress into dedicated lesson_progress table (throttled).
+  const { update: updateLessonProgress, flush: flushLessonProgress } = useLessonProgress(lesson?.id ?? null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
