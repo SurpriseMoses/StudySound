@@ -494,6 +494,41 @@ export type Database = {
           },
         ]
       }
+      scene_unlocks: {
+        Row: {
+          created_at: string
+          credits_charged: number
+          document_id: string
+          id: string
+          scene_index: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          credits_charged?: number
+          document_id: string
+          id?: string
+          scene_index: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          credits_charged?: number
+          document_id?: string
+          id?: string
+          scene_index?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scene_unlocks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       translation_assets: {
         Row: {
           char_count: number
