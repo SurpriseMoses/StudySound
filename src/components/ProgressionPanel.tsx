@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Trophy, Sparkles, Target, Clock } from "lucide-react";
+import { Trophy, Sparkles, Target, Clock, Lock, Check } from "lucide-react";
+import { unlockedPerks, nextPerks } from "@/lib/perks";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
