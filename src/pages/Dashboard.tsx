@@ -1,11 +1,15 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Upload, Headphones, Brain, Image, ArrowRight, Play, Sparkles } from "lucide-react";
+import { Upload, Headphones, Brain, Image, ArrowRight, Play, Sparkles, BookOpen } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import AppLayout from "@/components/AppLayout";
 import UpgradeForRewardsBanner from "@/components/UpgradeForRewardsBanner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { subjects } from "@/lib/subjects";
 
 const startActions = [
   { icon: Upload, label: "Upload Content", desc: "Add a new document", path: "/upload", color: "bg-primary/10 text-primary" },
@@ -14,12 +18,15 @@ const startActions = [
   { icon: Image, label: "Plans", desc: "Upgrade for more", path: "/plans", color: "bg-success/10 text-success" },
 ];
 
-const continueLesson = {
-  title: "Great Expectations — Ch. 3",
-  subject: "English",
-  progress: 72,
-  icon: "📖",
-  path: "/library",
+type ContinueLesson = {
+  lessonId: string;
+  documentId: string | null;
+  title: string;
+  subject: string;
+  icon: string;
+  progress: number;
+  sectionsCompleted: number;
+  sectionsTotal: number;
 };
 
 const stats = [
@@ -29,7 +36,85 @@ const stats = [
   { label: "Visuals", used: 5, total: 0, icon: Image },
 ];
 
+const subjectIcon = (id: string) => subjects.find((s) => s.id === id)?.icon ?? "📚";
+const subjectName = (id: string) => subjects.find((s) => s.id === id)?.name ?? id;
+
 export default function Dashboard() {
+  const { user } = useAuth();
+  const [cont, setCont] = useState<ContinueLesson | null>(null);
+  const [contLoading, setContLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) {
+      setContLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setContLoading(true);
+      // Most recently updated lesson_progress row → join lesson info.
+      const { data: prog } = await supabase
+        .from("lesson_progress")
+        .select("lesson_id, audio_progress_pct, sections_completed, sections_total, last_updated_at")
+        .eq("user_id", user.id)
+        .order("last_updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let chosen: ContinueLesson | null = null;
+      if (prog) {
+        const { data: lesson } = await supabase
+          .from("lessons")
+          .select("id, title, subject, document_id")
+          .eq("id", prog.lesson_id)
+          .maybeSingle();
+        if (lesson) {
+          chosen = {
+            lessonId: lesson.id,
+            documentId: lesson.document_id,
+            title: lesson.title,
+            subject: subjectName(lesson.subject),
+            icon: subjectIcon(lesson.subject),
+            progress: Math.round(Number(prog.audio_progress_pct ?? 0)),
+            sectionsCompleted: prog.sections_completed ?? 0,
+            sectionsTotal: prog.sections_total ?? 0,
+          };
+        }
+      }
+      // Fallback: no progress yet — surface the most recent lesson if one exists.
+      if (!chosen) {
+        const { data: lesson } = await supabase
+          .from("lessons")
+          .select("id, title, subject, document_id")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (lesson) {
+          chosen = {
+            lessonId: lesson.id,
+            documentId: lesson.document_id,
+            title: lesson.title,
+            subject: subjectName(lesson.subject),
+            icon: subjectIcon(lesson.subject),
+            progress: 0,
+            sectionsCompleted: 0,
+            sectionsTotal: 0,
+          };
+        }
+      }
+      if (!cancelled) {
+        setCont(chosen);
+        setContLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const resumePath = cont?.documentId ? `/lesson/${cont.documentId}` : null;
+
   return (
     <AppLayout>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
@@ -47,28 +132,68 @@ export default function Dashboard() {
           <h2 className="font-display font-semibold text-lg mb-3 flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-primary" /> Continue Learning
           </h2>
-          <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 via-card to-secondary/5">
-            <CardContent className="p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-5">
-              <div className="flex items-center gap-4 flex-1 min-w-0">
-                <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-background border flex items-center justify-center text-3xl shrink-0">
-                  {continueLesson.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{continueLesson.subject}</p>
-                  <p className="font-display font-semibold text-base md:text-lg truncate">{continueLesson.title}</p>
-                  <div className="flex items-center gap-3 mt-2">
-                    <Progress value={continueLesson.progress} className="h-1.5 flex-1 max-w-xs" />
-                    <span className="text-xs font-medium text-muted-foreground shrink-0">{continueLesson.progress}%</span>
+
+          {contLoading ? (
+            <Card className="border-primary/20">
+              <CardContent className="p-5 md:p-6">
+                <div className="h-16 animate-pulse rounded-xl bg-muted/50" />
+              </CardContent>
+            </Card>
+          ) : cont && resumePath ? (
+            <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 via-card to-secondary/5">
+              <CardContent className="p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-5">
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-background border flex items-center justify-center text-3xl shrink-0">
+                    {cont.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{cont.subject}</p>
+                    <p className="font-display font-semibold text-base md:text-lg truncate">{cont.title}</p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <Progress value={cont.progress} className="h-1.5 flex-1 max-w-xs" />
+                      <span className="text-xs font-medium text-muted-foreground shrink-0">{cont.progress}%</span>
+                    </div>
+                    {cont.sectionsTotal > 0 && (
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Section {Math.min(cont.sectionsCompleted + 1, cont.sectionsTotal)} of {cont.sectionsTotal}
+                      </p>
+                    )}
                   </div>
                 </div>
-              </div>
-              <Link to={continueLesson.path} className="shrink-0">
-                <Button size="lg" className="w-full md:w-auto gap-2">
-                  <Play className="w-4 h-4 fill-current" /> Resume
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+                <Link to={resumePath} className="shrink-0">
+                  <Button size="lg" className="w-full md:w-auto gap-2">
+                    <Play className="w-4 h-4 fill-current" /> Resume
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-dashed border-primary/30 bg-gradient-to-br from-primary/5 via-card to-secondary/5">
+              <CardContent className="p-6 md:p-8 flex flex-col items-center text-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+                  <BookOpen className="w-7 h-7" />
+                </div>
+                <div>
+                  <p className="font-display font-semibold text-lg">Start Learning</p>
+                  <p className="text-sm text-muted-foreground mt-1 max-w-md">
+                    You haven't started a lesson yet. Upload your own material or browse ready-made content to get going.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                  <Link to="/upload" className="w-full sm:w-auto">
+                    <Button size="lg" className="w-full gap-2">
+                      <Upload className="w-4 h-4" /> Upload Content
+                    </Button>
+                  </Link>
+                  <Link to="/library" className="w-full sm:w-auto">
+                    <Button size="lg" variant="outline" className="w-full gap-2">
+                      <Headphones className="w-4 h-4" /> Go to Library
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </section>
 
         {/* Start Learning — actions */}
