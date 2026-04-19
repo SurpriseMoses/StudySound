@@ -9,6 +9,7 @@ export type RewardResult = {
   creditsAwarded: number;
   streak: number;
   trigger: RewardTrigger;
+  requiresUpgrade?: boolean;
 };
 
 type DailyRewardState = {
@@ -62,8 +63,8 @@ export function useDailyReward(): DailyRewardState {
         claimedThisSession.current = true;
         localStorage.setItem(localKey, "shown");
 
-        // Only show celebratory modal for fresh claims
-        if (!res.alreadyClaimed) {
+        // Only show celebratory modal for fresh paid claims
+        if (!res.alreadyClaimed && !res.requiresUpgrade && res.creditsAwarded > 0) {
           setResult(res);
           setOpen(true);
         }
