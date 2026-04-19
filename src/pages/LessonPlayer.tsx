@@ -284,6 +284,20 @@ export default function LessonPlayer() {
     const onEnd = () => {
       setIsPlaying(false);
 
+      const completedSections = Math.min(totalChunks, chunkIndex + 1);
+      const isLastChunk = completedSections >= totalChunks;
+      const overallPct = (completedSections / Math.max(1, totalChunks)) * 100;
+      // Persist the section completion immediately (no throttle).
+      updateLessonProgress({
+        audio_progress_pct: overallPct,
+        sections_completed: completedSections,
+        sections_total: totalChunks,
+        last_position_seconds: Math.floor(audio.currentTime),
+        audio_listened_seconds: Math.floor(totalListenedSecondsRef.current),
+        reward_eligible: overallPct >= 70,
+      });
+      flushLessonProgress();
+
       // Award section_complete XP (idempotent on lesson_id:chunk_index)
       if (lesson?.id) {
         awardXp("section_complete", {
@@ -292,7 +306,6 @@ export default function LessonPlayer() {
         });
       }
 
-      const isLastChunk = chunkIndex + 1 >= totalChunks;
       if (isLastChunk) {
         // Award lesson_complete XP (idempotent on lesson_id)
         if (lesson?.id) {
