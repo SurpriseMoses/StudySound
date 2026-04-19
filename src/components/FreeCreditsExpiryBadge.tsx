@@ -60,11 +60,11 @@ export default function FreeCreditsExpiryBadge({ className }: { className?: stri
 
   let label: string;
   if (expired) {
-    label = "Free credits expired";
+    label = "Renewing soon…";
   } else if (hoursLeft !== null && hoursLeft <= 24) {
-    label = `${p.credits_balance} credits • ${hoursLeft}h left`;
+    label = `${p.credits_balance} credits • renews in ${hoursLeft}h`;
   } else {
-    label = `${p.credits_balance} credits • ${daysLeft}d left`;
+    label = `${p.credits_balance} credits • renews in ${daysLeft}d`;
   }
 
   return (
