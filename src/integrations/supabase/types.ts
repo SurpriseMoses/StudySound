@@ -327,6 +327,7 @@ export type Database = {
           credits_balance: number
           current_streak: number
           display_name: string | null
+          free_credits_expires_at: string | null
           id: string
           last_reward_date: string | null
           level: number
@@ -345,6 +346,7 @@ export type Database = {
           credits_balance?: number
           current_streak?: number
           display_name?: string | null
+          free_credits_expires_at?: string | null
           id?: string
           last_reward_date?: string | null
           level?: number
@@ -363,6 +365,7 @@ export type Database = {
           credits_balance?: number
           current_streak?: number
           display_name?: string | null
+          free_credits_expires_at?: string | null
           id?: string
           last_reward_date?: string | null
           level?: number
@@ -868,6 +871,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      expire_free_credits: { Args: { _user_id: string }; Returns: undefined }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
