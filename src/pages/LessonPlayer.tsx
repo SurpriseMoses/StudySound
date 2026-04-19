@@ -252,11 +252,13 @@ export default function LessonPlayer() {
         const sectionPct = audio.currentTime / audio.duration;
         setSeekProgress([sectionPct * 100]);
 
-        // Accumulate "real" seconds listened (forward playback only, ignore seeks)
+        // Accumulate "real" seconds listened (forward playback only — ignore seeks/jumps).
         const now = audio.currentTime;
         const last = lastListenTickRef.current;
         const delta = now - last;
-        const listenedDelta = delta > 0 && delta < 2 ? delta : 0; // ignore big jumps (seeks)
+        if (delta > 0 && delta < 2) {
+          totalListenedSecondsRef.current += delta;
+        }
         lastListenTickRef.current = now;
 
         // Overall lesson progress across all chunks
@@ -266,7 +268,7 @@ export default function LessonPlayer() {
         updateLessonProgress({
           audio_progress_pct: overallPct,
           last_position_seconds: Math.floor(audio.currentTime),
-          ...(listenedDelta > 0 ? { audio_listened_seconds: undefined } : {}),
+          audio_listened_seconds: Math.floor(totalListenedSecondsRef.current),
           sections_total: totalChunks,
           sections_completed: Math.max(0, chunkIndex),
           reward_eligible: rewardEligible,
