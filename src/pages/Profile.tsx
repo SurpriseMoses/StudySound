@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import AppLayout from "@/components/AppLayout";
+import ProgressionPanel from "@/components/ProgressionPanel";
 
 export default function Profile() {
   return (
