@@ -73,7 +73,9 @@ async function generateQuestions(
 
   if (!resp.ok) {
     const err = await resp.text();
-    throw new Error(`AI gateway error ${resp.status}: ${err}`);
+    const e = new Error(`AI gateway error ${resp.status}: ${err}`) as Error & { status?: number };
+    e.status = resp.status;
+    throw e;
   }
   const data = await resp.json();
   const tc = data.choices?.[0]?.message?.tool_calls?.[0];
