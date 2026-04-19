@@ -73,7 +73,9 @@ async function generateQuestions(
 
   if (!resp.ok) {
     const err = await resp.text();
-    throw new Error(`AI gateway error ${resp.status}: ${err}`);
+    const e = new Error(`AI gateway error ${resp.status}: ${err}`) as Error & { status?: number };
+    e.status = resp.status;
+    throw e;
   }
   const data = await resp.json();
   const tc = data.choices?.[0]?.message?.tool_calls?.[0];
@@ -171,7 +173,20 @@ Deno.serve(async (req) => {
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
+    const status = (e as { status?: number })?.status;
     console.error("[generate-quiz] error:", msg);
+    if (status === 402) {
+      return new Response(
+        JSON.stringify({ error: "AI credits exhausted. Please add credits to your Lovable AI workspace to generate new quizzes." }),
+        { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    if (status === 429) {
+      return new Response(
+        JSON.stringify({ error: "AI is rate-limited right now. Please try again in a moment." }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     return new Response(JSON.stringify({ error: msg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
