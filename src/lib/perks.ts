@@ -1,6 +1,6 @@
 // Level-based perks. Surfaced on level-up + in the Profile progression panel.
-// Keep purely declarative — actual enforcement lives wherever the perk applies.
-import { Languages, Percent, Sparkles, Zap, Crown, Star, Gift, Rocket } from "lucide-react";
+// Revenue-safe: no credit-pack discounts, no unlimited feature unlocks.
+import { Languages, Sparkles, Zap, Gift, Coins, RotateCcw, Star, Crown } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type Perk = {
@@ -14,59 +14,59 @@ export type Perk = {
 
 export const PERKS: Perk[] = [
   {
-    level: 2,
-    key: "daily_streak_boost",
-    title: "Streak booster",
-    description: "Daily reward credits scale faster with your streak",
-    icon: Sparkles,
+    level: 3,
+    key: "daily_credit_bonus_1",
+    title: "Daily credit bonus",
+    description: "Earn +1 extra credit on your daily reward",
+    icon: Coins,
   },
   {
     level: 5,
+    key: "xp_boost_10",
+    title: "XP boost",
+    description: "Earn 10% bonus XP on every learning action",
+    icon: Zap,
+  },
+  {
+    level: 7,
     key: "extra_translation_slot",
     title: "Extra translation language",
     description: "Unlock one additional translation language slot",
     icon: Languages,
   },
   {
-    level: 7,
-    key: "priority_audio",
-    title: "Priority audio generation",
-    description: "Your audio jobs jump to the front of the queue",
-    icon: Zap,
-  },
-  {
     level: 10,
-    key: "credit_pack_discount",
-    title: "10% off credit packs",
-    description: "Permanent discount on every credit top-up",
-    icon: Percent,
+    key: "quiz_retry_bonus",
+    title: "Quiz retry bonus",
+    description: "Retry a failed quiz once per day for half cost",
+    icon: RotateCcw,
   },
   {
     level: 15,
-    key: "bonus_quiz_credit",
-    title: "Bonus quiz reward",
-    description: "+1 extra credit on every quiz scoring 70% or higher",
+    key: "daily_credit_bonus_2",
+    title: "Bigger daily bonus",
+    description: "Earn +2 extra credits on your daily reward",
     icon: Gift,
   },
   {
     level: 20,
-    key: "premium_voices",
-    title: "Premium voice library",
-    description: "Access expressive narration voices on every lesson",
-    icon: Star,
+    key: "xp_boost_20",
+    title: "XP boost upgrade",
+    description: "Earn 20% bonus XP on every learning action",
+    icon: Sparkles,
   },
   {
     level: 30,
-    key: "unlimited_translations",
-    title: "Unlimited translation slots",
-    description: "Translate to any supported language without limits",
-    icon: Rocket,
+    key: "scholar_badge",
+    title: "Scholar badge",
+    description: "Display a Scholar badge on your profile",
+    icon: Star,
   },
   {
     level: 50,
     key: "founder_badge",
-    title: "Scholar badge",
-    description: "Display a Scholar badge on your profile",
+    title: "Master Scholar badge",
+    description: "Display the prestigious Master Scholar badge",
     icon: Crown,
   },
 ];
