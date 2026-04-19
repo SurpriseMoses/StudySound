@@ -60,11 +60,11 @@ export default function FreeCreditsExpiryBadge({ className }: { className?: stri
 
   let label: string;
   if (expired) {
-    label = "Renewing soon…";
+    label = "Refilling soon…";
   } else if (hoursLeft !== null && hoursLeft <= 24) {
-    label = `${p.credits_balance} credits • renews in ${hoursLeft}h`;
+    label = `${p.credits_balance} credits • expire in ${hoursLeft}h`;
   } else {
-    label = `${p.credits_balance} credits • renews in ${daysLeft}d`;
+    label = `${p.credits_balance} credits • expire in ${daysLeft}d`;
   }
 
   return (
@@ -75,7 +75,7 @@ export default function FreeCreditsExpiryBadge({ className }: { className?: stri
         tone,
         className,
       )}
-      title={expired ? "Your free credits will refill on next action" : "Free credits renew monthly — upgrade for daily rewards"}
+      title={expired ? "Your free credits will refill on next action" : "Free credits expire after 7 days, then refill monthly — upgrade for daily rewards"}
     >
       {expired ? <Sparkles className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
       <span>{label}</span>
