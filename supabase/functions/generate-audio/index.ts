@@ -188,6 +188,8 @@ Deno.serve(async (req) => {
         .eq("asset_type", "audio");
       const paidSet = new Set((paidChunks ?? []).map((r) => r.chunk_index));
       const remainingChunks = Array.from({ length: totalChunks }, (_, i) => i).filter((i) => !paidSet.has(i));
+      // Expire stale free-tier credits before reading balance
+      await admin.rpc("expire_free_credits", { _user_id: user.id });
       const { data: profile } = await admin
         .from("profiles")
         .select("credits_balance")
@@ -237,6 +239,8 @@ Deno.serve(async (req) => {
     let chargedCredits = 0;
 
     if (!userPaid) {
+      // Expire stale free-tier credits before charging
+      await admin.rpc("expire_free_credits", { _user_id: user.id });
       const { data: profile } = await admin
         .from("profiles")
         .select("credits_balance")
