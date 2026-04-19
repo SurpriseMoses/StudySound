@@ -77,6 +77,7 @@ export default function LessonPlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const listenRewardFired = useRef(false);
   const lastListenTickRef = useRef<number>(0);
+  const totalListenedSecondsRef = useRef<number>(0);
 
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab: Tab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "listen";
