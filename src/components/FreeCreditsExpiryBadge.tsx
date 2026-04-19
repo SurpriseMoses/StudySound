@@ -75,7 +75,7 @@ export default function FreeCreditsExpiryBadge({ className }: { className?: stri
         tone,
         className,
       )}
-      title={expired ? "Upgrade to keep learning" : "Free credits expire — tap to upgrade"}
+      title={expired ? "Your free credits will refill on next action" : "Free credits renew monthly — upgrade for daily rewards"}
     >
       {expired ? <Sparkles className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
       <span>{label}</span>
