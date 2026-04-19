@@ -1,18 +1,24 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Trophy, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useProgressionContext } from "@/contexts/ProgressionContext";
+import { perksUnlockedBetween } from "@/lib/perks";
 
 export default function LevelUpModal() {
   const { pendingLevelUp, dismissLevelUp } = useProgressionContext();
 
-  // Auto-dismiss after a few seconds (still tap-to-close)
+  const newPerks = useMemo(
+    () => (pendingLevelUp ? perksUnlockedBetween(pendingLevelUp.fromLevel, pendingLevelUp.toLevel) : []),
+    [pendingLevelUp],
+  );
+
+  // Auto-dismiss after a few seconds (longer if perks unlocked, still tap-to-close)
   useEffect(() => {
     if (!pendingLevelUp) return;
-    const t = setTimeout(() => dismissLevelUp(), 4500);
+    const t = setTimeout(() => dismissLevelUp(), newPerks.length > 0 ? 6500 : 4500);
     return () => clearTimeout(t);
-  }, [pendingLevelUp, dismissLevelUp]);
+  }, [pendingLevelUp, dismissLevelUp, newPerks.length]);
 
   return (
     <AnimatePresence>
@@ -80,6 +86,43 @@ export default function LevelUpModal() {
                 ? `+${pendingLevelUp.toLevel - pendingLevelUp.fromLevel} levels gained!`
                 : "Keep learning to unlock the next milestone."}
             </p>
+
+            {newPerks.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="mt-4 text-left rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2"
+              >
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-primary text-center">
+                  {newPerks.length === 1 ? "Perk unlocked" : `${newPerks.length} perks unlocked`}
+                </p>
+                {newPerks.map((perk, i) => {
+                  const Icon = perk.icon;
+                  return (
+                    <motion.div
+                      key={perk.key}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.4 + i * 0.1 }}
+                      className="flex items-start gap-2.5"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+                        <Icon className="w-3.5 h-3.5 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-display font-semibold leading-tight">
+                          {perk.title}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground leading-snug">
+                          {perk.description}
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            )}
 
             <Button onClick={dismissLevelUp} className="mt-5 w-full">
               Keep going
