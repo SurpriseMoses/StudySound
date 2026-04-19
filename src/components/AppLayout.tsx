@@ -17,6 +17,7 @@ import StreakActivePill from "@/components/StreakActivePill";
 import { ProgressionProvider, useProgressionContext } from "@/contexts/ProgressionContext";
 import LevelUpModal from "@/components/LevelUpModal";
 import LevelXpBar from "@/components/LevelXpBar";
+import FreeCreditsExpiryBadge from "@/components/FreeCreditsExpiryBadge";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: Home },
@@ -113,11 +114,10 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
 
         <div className="p-4 border-t border-sidebar-border space-y-2">
           <LevelXpBar variant="sidebar" />
-          <div className="bg-sidebar-accent rounded-lg p-3">
-            <p className="text-xs font-medium text-sidebar-foreground/80">Free Trial</p>
-            <p className="text-xs text-sidebar-foreground/50 mt-1">Upgrade for full access</p>
+          <div className="bg-sidebar-accent rounded-lg p-3 space-y-2">
+            <FreeCreditsExpiryBadge className="w-full justify-center" />
             <Link to="/plans">
-              <Button size="sm" className="w-full mt-2 bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90 text-xs">
+              <Button size="sm" className="w-full bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90 text-xs">
                 Upgrade Plan
               </Button>
             </Link>
@@ -144,6 +144,9 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
             <span className="font-display font-bold">StudySound</span>
+          </div>
+          <div className="ml-auto">
+            <FreeCreditsExpiryBadge />
           </div>
         </header>
 
