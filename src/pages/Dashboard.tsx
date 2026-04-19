@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import AppLayout from "@/components/AppLayout";
+import UpgradeForRewardsBanner from "@/components/UpgradeForRewardsBanner";
 
 const startActions = [
   { icon: Upload, label: "Upload Content", desc: "Add a new document", path: "/upload", color: "bg-primary/10 text-primary" },
@@ -37,6 +38,9 @@ export default function Dashboard() {
           <h1 className="text-2xl md:text-3xl font-display font-bold">Welcome back, Learner 👋</h1>
           <p className="text-muted-foreground mt-1">Pick up where you left off or start something new.</p>
         </div>
+
+        {/* Free-tier upsell — daily rewards locked behind Essential */}
+        <UpgradeForRewardsBanner />
 
         {/* Continue Learning — hero */}
         <section className="mb-10">

@@ -102,6 +102,22 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Gate: daily rewards are an Essential/Premium-only feature.
+    // Free users see an upgrade banner on Dashboard instead.
+    const plan = profile.plan as "free" | "essential" | "premium" | null;
+    if (plan !== "essential" && plan !== "premium") {
+      return new Response(
+        JSON.stringify({
+          alreadyClaimed: false,
+          creditsAwarded: 0,
+          streak: profile.current_streak ?? 0,
+          trigger,
+          requiresUpgrade: true,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     let newStreak = 1;
     let graceUsed = profile.streak_grace_used ?? false;
 

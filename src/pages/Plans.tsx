@@ -13,6 +13,8 @@ const plans = [
     desc: "For learners who prefer listening and practising",
     features: [
       "~2–3 books per month",
+      "Daily streak rewards (1–5 credits/day)",
+      "Bonus credits as you level up",
       "Audio + Quiz + Translation",
       "Multilingual voices",
       "Offline study mode",
@@ -27,6 +29,7 @@ const plans = [
     desc: "Full audio-visual learning experience",
     features: [
       "~5–6 books per month",
+      "Daily streak rewards + bigger bonus",
       "Audio + Quiz + Visuals",
       "Visual scenes for novels & history",
       "Priority processing",
