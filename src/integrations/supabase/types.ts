@@ -209,6 +209,51 @@ export type Database = {
           },
         ]
       }
+      lesson_progress: {
+        Row: {
+          audio_listened_seconds: number
+          audio_progress_pct: number
+          created_at: string
+          id: string
+          last_position_seconds: number
+          last_updated_at: string
+          lesson_id: string
+          reward_claimed: boolean
+          reward_eligible: boolean
+          sections_completed: number
+          sections_total: number
+          user_id: string
+        }
+        Insert: {
+          audio_listened_seconds?: number
+          audio_progress_pct?: number
+          created_at?: string
+          id?: string
+          last_position_seconds?: number
+          last_updated_at?: string
+          lesson_id: string
+          reward_claimed?: boolean
+          reward_eligible?: boolean
+          sections_completed?: number
+          sections_total?: number
+          user_id: string
+        }
+        Update: {
+          audio_listened_seconds?: number
+          audio_progress_pct?: number
+          created_at?: string
+          id?: string
+          last_position_seconds?: number
+          last_updated_at?: string
+          lesson_id?: string
+          reward_claimed?: boolean
+          reward_eligible?: boolean
+          sections_completed?: number
+          sections_total?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       lessons: {
         Row: {
           audio_duration_seconds: number | null
