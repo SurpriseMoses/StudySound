@@ -28,7 +28,7 @@ import { useProgressionContext } from "@/contexts/ProgressionContext";
 import QuizBonusCard from "@/components/QuizBonusCard";
 import { useLessonProgress } from "@/hooks/use-lesson-progress";
 import StoryModeTab from "@/components/StoryModeTab";
-import { ProtectedTranslation } from "@/components/ProtectedTranslation";
+import { TranslationSection } from "@/components/TranslationSection";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -178,10 +178,7 @@ export default function LessonPlayer() {
   const [chunkAlreadyPaid, setChunkAlreadyPaid] = useState(false);
   const [nudgeOpen, setNudgeOpen] = useState(false);
 
-  // Translation
-  const [translatedText, setTranslatedText] = useState<string | null>(null);
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [translationCache, setTranslationCache] = useState<Record<string, string>>({});
+  // Translation is now per-section, on-demand (see <TranslationSection /> in ListenTab).
 
   const lessonId = lesson?.id;
 
@@ -440,39 +437,7 @@ export default function LessonPlayer() {
     return `${m}:${sec}`;
   };
 
-  // Translation lazy-load
-  useEffect(() => {
-    if (language === "en") { setTranslatedText(null); return; }
-    if (!lessonId || !chunkText) return;
-    const cacheKey = `${language}:${chunkIndex}`;
-    if (translationCache[cacheKey]) {
-      setTranslatedText(translationCache[cacheKey]);
-      return;
-    }
-    let cancelled = false;
-    setIsTranslating(true);
-    setTranslatedText(null);
-    (async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke("generate-translation", {
-          body: { lesson_id: lessonId, chunk_index: chunkIndex, target_language: language },
-        });
-        if (cancelled) return;
-        if (error) throw new Error(error.message);
-        if (!data?.success) throw new Error(data?.error ?? "Translation failed");
-        setTranslatedText(data.translated_text);
-        setTranslationCache((prev) => ({ ...prev, [cacheKey]: data.translated_text }));
-      } catch (e) {
-        if (cancelled) return;
-        const msg = e instanceof Error ? e.message : "Translation failed";
-        toast({ title: "Translation failed", description: msg, variant: "destructive" });
-      } finally {
-        if (!cancelled) setIsTranslating(false);
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language, chunkIndex, chunkText, lessonId]);
+  // Translation is per-section now — handled inside <TranslationSection /> in ListenTab.
 
   // ---------- Tab change ----------
   const onTabChange = (next: string) => {
@@ -561,6 +526,7 @@ export default function LessonPlayer() {
             >
               {activeTab === "listen" && (
                 <ListenTab
+                  lessonId={lesson.id}
                   documentId={lesson.document_id}
                   hasConfirmed={hasConfirmed}
                   setHasConfirmed={setHasConfirmed}
@@ -569,8 +535,6 @@ export default function LessonPlayer() {
                   totalChunks={totalChunks}
                   chunkText={chunkText}
                   isLoadingAudio={isLoadingAudio}
-                  isTranslating={isTranslating}
-                  translatedText={translatedText}
                   language={language}
                   chunkAlreadyPaid={chunkAlreadyPaid}
                 />
@@ -671,6 +635,7 @@ export default function LessonPlayer() {
 
 // ===================== Listen Tab =====================
 function ListenTab(props: {
+  lessonId: string;
   documentId: string | null;
   hasConfirmed: boolean;
   setHasConfirmed: (v: boolean) => void;
@@ -679,14 +644,12 @@ function ListenTab(props: {
   totalChunks: number;
   chunkText: string;
   isLoadingAudio: boolean;
-  isTranslating: boolean;
-  translatedText: string | null;
   language: string;
   chunkAlreadyPaid: boolean;
 }) {
   const {
-    documentId, hasConfirmed, setHasConfirmed, costPreview, chunkIndex, totalChunks, chunkText,
-    isLoadingAudio, isTranslating, translatedText, language, chunkAlreadyPaid,
+    lessonId, documentId, hasConfirmed, setHasConfirmed, costPreview, chunkIndex, totalChunks, chunkText,
+    isLoadingAudio, language, chunkAlreadyPaid,
   } = props;
 
   const estimator = documentId ? (
@@ -788,19 +751,19 @@ function ListenTab(props: {
           <div className="flex items-center justify-center py-12 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin mr-2" /> Generating audio…
           </div>
-        ) : isTranslating ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground">
-            <Loader2 className="w-5 h-5 animate-spin mr-2" /> Translating section…
-          </div>
-        ) : language !== "en" && translatedText ? (
-          <ProtectedTranslation
-            text={translatedText}
-            className="text-foreground/85 leading-relaxed text-base whitespace-pre-line max-w-prose outline-none"
-          />
         ) : (
-          <p className="text-foreground/85 leading-relaxed text-base whitespace-pre-line max-w-prose">
-            {chunkText}
-          </p>
+          <>
+            <p className="text-foreground/85 leading-relaxed text-base whitespace-pre-line max-w-prose">
+              {chunkText}
+            </p>
+            {lessonId && chunkText && (
+              <TranslationSection
+                lessonId={lessonId}
+                chunkIndex={chunkIndex}
+                language={language}
+              />
+            )}
+          </>
         )}
       </CardContent>
     </Card>
