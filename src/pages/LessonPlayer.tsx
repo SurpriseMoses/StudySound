@@ -791,9 +791,14 @@ function ListenTab(props: {
           <div className="flex items-center justify-center py-12 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin mr-2" /> Translating section…
           </div>
+        ) : language !== "en" && translatedText ? (
+          <ProtectedTranslation
+            text={translatedText}
+            className="text-foreground/85 leading-relaxed text-base whitespace-pre-line max-w-prose outline-none"
+          />
         ) : (
           <p className="text-foreground/85 leading-relaxed text-base whitespace-pre-line max-w-prose">
-            {language !== "en" && translatedText ? translatedText : chunkText}
+            {chunkText}
           </p>
         )}
       </CardContent>
