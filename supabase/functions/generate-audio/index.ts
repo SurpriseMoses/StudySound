@@ -145,7 +145,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { lesson_id, chunk_index = 0, language, preview_only = false } = body ?? {};
+    const { lesson_id, chunk_index = 0, language, preview_only = false, check_only = false } = body ?? {};
     if (!lesson_id) {
       return new Response(JSON.stringify({ error: "lesson_id required" }), {
         status: 400,
