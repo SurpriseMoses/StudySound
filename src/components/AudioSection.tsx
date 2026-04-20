@@ -34,6 +34,8 @@ type Props = {
   onUnlocked?: () => void;
   /** Called when navigating sections from inside the player. */
   onSeekChunk?: (delta: number) => void;
+  /** Called after the initial check with the chunk text + totalChunks. */
+  onMeta?: (meta: { text: string; totalChunks: number }) => void;
 };
 
 type CheckResult = {
