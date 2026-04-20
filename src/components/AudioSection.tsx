@@ -85,6 +85,7 @@ export function AudioSection({
         already_paid: !!data.already_paid,
         credits_balance: data.credits_balance ?? 0,
       });
+      onMeta?.({ text: data.text ?? "", totalChunks: data.total_chunks ?? 1 });
       // Auto-load audio for already-unlocked sections.
       if (data.already_paid) {
         await loadAudio();
