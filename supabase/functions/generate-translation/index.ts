@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceKey);
 
     const body = await req.json();
-    const { lesson_id, chunk_index, target_language, preview_only } = body ?? {};
+    const { lesson_id, chunk_index, target_language, preview_only, check_only } = body ?? {};
 
     if (!lesson_id || typeof lesson_id !== "string") {
       return new Response(JSON.stringify({ error: "lesson_id required" }), {
