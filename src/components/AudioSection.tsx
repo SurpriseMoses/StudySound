@@ -54,6 +54,7 @@ export function AudioSection({
   onProgress,
   onUnlocked,
   onSeekChunk,
+  onMeta,
 }: Props) {
   const { toast } = useToast();
   const audioRef = useRef<HTMLAudioElement | null>(null);
