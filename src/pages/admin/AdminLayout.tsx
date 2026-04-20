@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Shield, BarChart3, FileAudio, Users, AlertTriangle, ArrowLeft, ShieldAlert, Coins } from "lucide-react";
+import { Shield, BarChart3, FileAudio, Users, AlertTriangle, ArrowLeft, ShieldAlert, Coins, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -8,6 +8,7 @@ const links = [
   { to: "/admin/economy", label: "Credit economy", icon: Coins, end: false },
   { to: "/admin/abuse", label: "Abuse", icon: ShieldAlert, end: false },
   { to: "/admin/documents", label: "Documents & cache", icon: FileAudio, end: false },
+  { to: "/admin/top-documents", label: "Top documents", icon: Trophy, end: false },
   { to: "/admin/users", label: "Users & roles", icon: Users, end: false },
   { to: "/admin/errors", label: "Error log", icon: AlertTriangle, end: false },
 ];
