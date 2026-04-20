@@ -219,6 +219,29 @@ Deno.serve(async (req) => {
     }
 
     const idx = typeof chunk_index === "number" ? chunk_index : 0;
+
+    // ---- CHECK ONLY: cache existence + per-user paid state, no charge, no generation ----
+    if (check_only) {
+      const { data: cachedRow } = await admin
+        .from("translation_assets")
+        .select("id")
+        .eq("document_id", documentId)
+        .eq("chunk_index", idx)
+        .eq("target_language", target_language)
+        .maybeSingle();
+      const alreadyPaidCheck = (paidRows ?? []).some((r) => r.chunk_index === idx);
+      return new Response(JSON.stringify({
+        success: true,
+        check_only: true,
+        cache_exists: !!cachedRow,
+        already_paid: alreadyPaidCheck,
+        credits_required: CREDITS_PER_CHUNK,
+        credits_balance: balance,
+        total_chunks: totalChunks,
+        source_language: sourceLang,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (idx < 0 || idx >= totalChunks) {
       return new Response(JSON.stringify({ error: "chunk_index out of range" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
