@@ -15,6 +15,7 @@ export const COST_USD = {
 } as const;
 
 export const usdToZar = (usd: number) => usd * USD_TO_ZAR;
+export const creditsToZAR = (credits: number) => credits * CREDIT_PRICE_ZAR;
 
 export function estimateCostsZar(opts: {
   audio_generated: number;

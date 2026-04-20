@@ -14,6 +14,10 @@ type Doc = {
   is_seeded: boolean;
   char_count: number;
   cached_chunks: number;
+  audio_unlocks: number;
+  translation_unlocks: number;
+  visual_unlocks: number;
+  credits_generated: number;
 };
 
 export default function AdminDocuments() {
@@ -25,14 +29,33 @@ export default function AdminDocuments() {
 
   const load = async () => {
     setLoading(true);
-    // Fetch documents and audio_assets count separately (RLS allows authenticated read)
-    const [{ data: documents }, { data: assets }] = await Promise.all([
+    const [{ data: documents }, { data: assets }, topRes] = await Promise.all([
       supabase.from("documents").select("id, title, subject_type, language, is_seeded, char_count").order("created_at", { ascending: false }).limit(200),
       supabase.from("audio_assets").select("document_id"),
+      supabase.functions.invoke("admin-api", { body: { action: "top_documents", limit: 200 } }),
     ]);
     const counts = new Map<string, number>();
     (assets ?? []).forEach((a) => counts.set(a.document_id, (counts.get(a.document_id) ?? 0) + 1));
-    setDocs((documents ?? []).map((d) => ({ ...d, cached_chunks: counts.get(d.id) ?? 0 })));
+    const stats = new Map<string, { audio: number; trans: number; vis: number; credits: number }>();
+    ((topRes.data?.documents ?? []) as any[]).forEach((r) => {
+      stats.set(r.document_id, {
+        audio: Number(r.audio_unlocks ?? 0),
+        trans: Number(r.translation_unlocks ?? 0),
+        vis: Number(r.visual_unlocks ?? 0),
+        credits: Number(r.credits_generated ?? 0),
+      });
+    });
+    setDocs((documents ?? []).map((d) => {
+      const s = stats.get(d.id);
+      return {
+        ...d,
+        cached_chunks: counts.get(d.id) ?? 0,
+        audio_unlocks: s?.audio ?? 0,
+        translation_unlocks: s?.trans ?? 0,
+        visual_unlocks: s?.vis ?? 0,
+        credits_generated: s?.credits ?? 0,
+      };
+    }));
     setLoading(false);
   };
 
@@ -76,23 +99,29 @@ export default function AdminDocuments() {
                   <tr>
                     <th className="text-left p-3">Title</th>
                     <th className="text-left p-3">Type</th>
-                    <th className="text-left p-3">Lang</th>
                     <th className="text-right p-3">Chars</th>
-                    <th className="text-right p-3">Cached chunks</th>
+                    <th className="text-right p-3">Cached</th>
+                    <th className="text-right p-3">Audio unlocks</th>
+                    <th className="text-right p-3">Trans unlocks</th>
+                    <th className="text-right p-3">Visual unlocks</th>
+                    <th className="text-right p-3">Credits</th>
                     <th className="text-right p-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((d) => (
                     <tr key={d.id} className="border-t">
-                      <td className="p-3 font-medium">
+                      <td className="p-3 font-medium max-w-[260px] truncate">
                         {d.title}
                         {d.is_seeded && <span className="ml-2 text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">SEEDED</span>}
                       </td>
                       <td className="p-3 text-muted-foreground">{d.subject_type}</td>
-                      <td className="p-3 text-muted-foreground">{d.language}</td>
                       <td className="p-3 text-right text-muted-foreground">{d.char_count.toLocaleString()}</td>
                       <td className="p-3 text-right">{d.cached_chunks}</td>
+                      <td className="p-3 text-right">{d.audio_unlocks}</td>
+                      <td className="p-3 text-right">{d.translation_unlocks}</td>
+                      <td className="p-3 text-right">{d.visual_unlocks}</td>
+                      <td className="p-3 text-right text-primary font-medium">{d.credits_generated}</td>
                       <td className="p-3 text-right">
                         <Button
                           size="sm"
@@ -107,7 +136,7 @@ export default function AdminDocuments() {
                     </tr>
                   ))}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No documents found.</td></tr>
+                    <tr><td colSpan={9} className="p-6 text-center text-muted-foreground">No documents found.</td></tr>
                   )}
                 </tbody>
               </table>
