@@ -570,6 +570,63 @@ export type Database = {
           },
         ]
       }
+      translation_rate_log: {
+        Row: {
+          chunk_index: number | null
+          created_at: string
+          document_id: string | null
+          id: string
+          target_language: string | null
+          user_id: string
+        }
+        Insert: {
+          chunk_index?: number | null
+          created_at?: string
+          document_id?: string | null
+          id?: string
+          target_language?: string | null
+          user_id: string
+        }
+        Update: {
+          chunk_index?: number | null
+          created_at?: string
+          document_id?: string | null
+          id?: string
+          target_language?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      translation_watermarks: {
+        Row: {
+          chunk_index: number
+          created_at: string
+          document_id: string
+          id: string
+          target_language: string
+          user_id: string
+          watermark_hash: string
+        }
+        Insert: {
+          chunk_index: number
+          created_at?: string
+          document_id: string
+          id?: string
+          target_language: string
+          user_id: string
+          watermark_hash: string
+        }
+        Update: {
+          chunk_index?: number
+          created_at?: string
+          document_id?: string
+          id?: string
+          target_language?: string
+          user_id?: string
+          watermark_hash?: string
+        }
+        Relationships: []
+      }
       uploads: {
         Row: {
           created_at: string
@@ -906,6 +963,11 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      count_translations_last_minute: {
+        Args: { _user_id: string }
+        Returns: number
+      }
+      count_translations_today: { Args: { _user_id: string }; Returns: number }
       expire_free_credits: { Args: { _user_id: string }; Returns: undefined }
       has_role: {
         Args: {
