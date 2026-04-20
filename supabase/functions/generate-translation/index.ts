@@ -14,7 +14,7 @@ const corsHeaders = {
 };
 
 const CHUNK_SIZE = 1800;
-const CREDITS_PER_CHUNK = 1;
+const CREDITS_PER_CHUNK = 2;
 const DAILY_CAP_FREE = 20;
 const DAILY_CAP_PAID = 100;
 const PER_MINUTE_SOFT_LIMIT = 5;
