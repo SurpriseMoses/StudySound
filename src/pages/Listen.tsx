@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins, RefreshCw, Languages } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Loader2, Globe, ArrowLeft, Coins, RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import AppLayout from "@/components/AppLayout";
-import { ProtectedTranslation } from "@/components/ProtectedTranslation";
+import { TranslationSection } from "@/components/TranslationSection";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -63,11 +63,6 @@ export default function Listen({ lessonId: lessonIdProp, embedded = false }: Lis
   const [chunkAlreadyPaid, setChunkAlreadyPaid] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
-
-  // Translation state — driven by the same `language` selector that drives audio
-  const [translatedText, setTranslatedText] = useState<string | null>(null);
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [translationCache, setTranslationCache] = useState<Record<string, string>>({});
 
   // Check admin role
   useEffect(() => {
