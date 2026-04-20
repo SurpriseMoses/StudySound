@@ -1,8 +1,17 @@
-// Admin-only endpoints (single function, action-routed):
-// - "analytics": signups, lessons, audio minutes, credits spent over last 30 days
-// - "regenerate_document": delete all cached audio_assets rows + storage files for a document
-// - "set_role": grant or revoke admin role for a user
-// - "adjust_credits": set or delta a user's credit balance
+// Admin-only endpoints (single function, action-routed).
+// Actions:
+//   analytics            – legacy 30d cards (kept for back-compat with old Overview)
+//   business_metrics     – aggregated revenue/cost/usage metrics
+//   credit_timeseries    – daily credit-spend split by feature
+//   top_documents        – revenue leaderboard
+//   abuse_candidates     – users near or over abuse thresholds
+//   regenerate_document  – wipe cached audio for a document
+//   set_role             – grant/revoke admin
+//   adjust_credits       – +/- credits on a profile (logs credit_transactions)
+//   flag_user            – set is_flagged + reason
+//   unflag_user          – clear flag + cooldown
+//   apply_cooldown       – set cooldown_until = now() + N minutes
+//   reset_user_counters  – delete today's translation_rate_log rows for a user
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -33,7 +42,6 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    // verify admin
     const { data: roleRow } = await admin
       .from("user_roles").select("id").eq("user_id", user.id).eq("role", "admin").maybeSingle();
     if (!roleRow) {
@@ -44,8 +52,17 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const action = body?.action as string;
+    const adminId = user.id;
+
+    const json = (payload: unknown, status = 200) =>
+      new Response(JSON.stringify(payload), {
+        status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
+    // -------------------- READ ACTIONS --------------------
 
     if (action === "analytics") {
+      // Legacy 30d cards used by current Overview page (kept for back-compat).
       const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
       const [{ count: profileCount }, { data: lessonsRecent }, { data: usage }, { data: docs }] = await Promise.all([
@@ -58,7 +75,6 @@ Deno.serve(async (req) => {
       const totalCredits = (usage ?? []).reduce((s, r) => s + (r.credits_used ?? 0), 0);
       const audioMinutes = (docs ?? []).reduce((s, r) => s + ((r.duration_seconds ?? 0) / 60), 0);
 
-      // by-day buckets
       const byDay = (rows: { created_at: string }[] | null | undefined) => {
         const map = new Map<string, number>();
         (rows ?? []).forEach((r) => {
@@ -68,16 +84,45 @@ Deno.serve(async (req) => {
         return Array.from(map.entries()).sort().map(([date, count]) => ({ date, count }));
       };
 
-      return new Response(JSON.stringify({
+      return json({
         success: true,
         new_signups: profileCount ?? 0,
         new_lessons: (lessonsRecent ?? []).length,
         credits_spent: totalCredits,
         audio_minutes_generated: Math.round(audioMinutes),
-        signups_by_day: byDay(null), // signups on profiles needs created_at — using lessons as proxy below
+        signups_by_day: byDay(null),
         lessons_by_day: byDay(lessonsRecent),
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      });
     }
+
+    if (action === "business_metrics") {
+      const days = Math.max(1, Math.min(365, Number(body?.days ?? 30)));
+      const { data, error } = await admin.rpc("admin_business_metrics", { _days: days });
+      if (error) throw error;
+      return json({ success: true, metrics: data });
+    }
+
+    if (action === "credit_timeseries") {
+      const days = Math.max(1, Math.min(90, Number(body?.days ?? 30)));
+      const { data, error } = await admin.rpc("admin_credit_timeseries", { _days: days });
+      if (error) throw error;
+      return json({ success: true, series: data ?? [] });
+    }
+
+    if (action === "top_documents") {
+      const limit = Math.max(1, Math.min(100, Number(body?.limit ?? 20)));
+      const { data, error } = await admin.rpc("admin_top_documents", { _limit: limit });
+      if (error) throw error;
+      return json({ success: true, documents: data ?? [] });
+    }
+
+    if (action === "abuse_candidates") {
+      const { data, error } = await admin.rpc("admin_abuse_candidates");
+      if (error) throw error;
+      return json({ success: true, candidates: data ?? [] });
+    }
+
+    // -------------------- WRITE ACTIONS --------------------
 
     if (action === "regenerate_document") {
       const document_id = body?.document_id as string;
@@ -91,9 +136,7 @@ Deno.serve(async (req) => {
         if (!rmErr) removedFiles = paths.length;
         await admin.from("audio_assets").delete().in("id", rows.map((r) => r.id));
       }
-      return new Response(JSON.stringify({
-        success: true, deleted_rows: rows?.length ?? 0, deleted_files: removedFiles,
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return json({ success: true, deleted_rows: rows?.length ?? 0, deleted_files: removedFiles });
     }
 
     if (action === "set_role") {
@@ -105,9 +148,7 @@ Deno.serve(async (req) => {
       } else {
         await admin.from("user_roles").delete().eq("user_id", target_user_id).eq("role", "admin");
       }
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ success: true });
     }
 
     if (action === "adjust_credits") {
@@ -119,14 +160,59 @@ Deno.serve(async (req) => {
       const current = profile?.credits_balance ?? 0;
       const next = Math.max(0, current + delta);
       await admin.from("profiles").update({ credits_balance: next }).eq("user_id", target_user_id);
-      return new Response(JSON.stringify({ success: true, balance: next }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      // Ledger
+      await admin.from("credit_transactions").insert({
+        user_id: target_user_id,
+        amount: delta,
+        source: "admin_adjust",
+        feature_type: null,
+        metadata: { admin_id: adminId, prev: current, next },
+      }).then(() => {}, () => {});
+      return json({ success: true, balance: next });
     }
 
-    return new Response(JSON.stringify({ error: "Unknown action" }), {
-      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    if (action === "flag_user") {
+      const target_user_id = body?.user_id as string;
+      const reason = (body?.reason as string | undefined) ?? "Flagged by admin";
+      if (!target_user_id) throw new Error("user_id required");
+      await admin.from("profiles")
+        .update({ is_flagged: true, flagged_reason: reason })
+        .eq("user_id", target_user_id);
+      return json({ success: true });
+    }
+
+    if (action === "unflag_user") {
+      const target_user_id = body?.user_id as string;
+      if (!target_user_id) throw new Error("user_id required");
+      await admin.from("profiles")
+        .update({ is_flagged: false, flagged_reason: null, cooldown_until: null })
+        .eq("user_id", target_user_id);
+      return json({ success: true });
+    }
+
+    if (action === "apply_cooldown") {
+      const target_user_id = body?.user_id as string;
+      const minutes = Math.max(1, Math.min(60 * 24 * 7, Number(body?.minutes ?? 60)));
+      if (!target_user_id) throw new Error("user_id required");
+      const until = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+      await admin.from("profiles")
+        .update({ cooldown_until: until })
+        .eq("user_id", target_user_id);
+      return json({ success: true, cooldown_until: until });
+    }
+
+    if (action === "reset_user_counters") {
+      const target_user_id = body?.user_id as string;
+      if (!target_user_id) throw new Error("user_id required");
+      const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+      await admin.from("translation_rate_log")
+        .delete()
+        .eq("user_id", target_user_id)
+        .gte("created_at", today.toISOString());
+      return json({ success: true });
+    }
+
+    return json({ error: "Unknown action" }, 400);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     console.error("admin-api error:", msg);

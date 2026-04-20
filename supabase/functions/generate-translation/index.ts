@@ -200,6 +200,17 @@ Deno.serve(async (req) => {
     const plan = profile?.plan ?? "free";
     const dailyCap = plan === "free" ? DAILY_CAP_FREE : DAILY_CAP_PAID;
 
+    // Admin enforcement: flagged users / active cooldown blocked from generation
+    // (cache replays via already_paid still work — see below)
+    const { data: enforce } = await admin
+      .from("profiles")
+      .select("is_flagged, cooldown_until, flagged_reason")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const isFlagged = !!enforce?.is_flagged;
+    const cooldownUntil = enforce?.cooldown_until ? new Date(enforce.cooldown_until) : null;
+    const inCooldown = cooldownUntil ? cooldownUntil.getTime() > Date.now() : false;
+
     // Existing user-paid chunks for this (doc, lang) — needed for preview & alreadyPaid check
     const { data: paidRows } = await admin
       .from("user_translation_access")
@@ -252,6 +263,22 @@ Deno.serve(async (req) => {
 
     // ---- ANTI-ABUSE: rate limiting (only for NEW chunks; replays are free & uncounted) ----
     if (!alreadyPaid) {
+      if (isFlagged) {
+        return new Response(JSON.stringify({
+          error: enforce?.flagged_reason ?? "Your account is under review. Please contact support.",
+          code: "USER_FLAGGED",
+        }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      if (inCooldown) {
+        const secs = Math.max(1, Math.ceil((cooldownUntil!.getTime() - Date.now()) / 1000));
+        return new Response(JSON.stringify({
+          error: `You're temporarily paused. Try again in ${Math.ceil(secs / 60)} min.`,
+          code: "COOLDOWN_ACTIVE", retry_after_seconds: secs, cooldown_until: cooldownUntil!.toISOString(),
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": String(secs) },
+        });
+      }
       const { data: dailyCount } = await admin.rpc("count_translations_today", { _user_id: userId });
       if ((dailyCount ?? 0) >= dailyCap) {
         return new Response(JSON.stringify({
