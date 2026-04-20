@@ -96,6 +96,42 @@ export type Database = {
           },
         ]
       }
+      credit_transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          document_id: string | null
+          feature_type: string | null
+          id: string
+          metadata: Json | null
+          request_id: string | null
+          source: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          document_id?: string | null
+          feature_type?: string | null
+          id?: string
+          metadata?: Json | null
+          request_id?: string | null
+          source: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          document_id?: string | null
+          feature_type?: string | null
+          id?: string
+          metadata?: Json | null
+          request_id?: string | null
+          source?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       daily_rewards: {
         Row: {
           created_at: string
@@ -323,12 +359,15 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          cooldown_until: string | null
           created_at: string
           credits_balance: number
           current_streak: number
           display_name: string | null
+          flagged_reason: string | null
           free_credits_expires_at: string | null
           id: string
+          is_flagged: boolean
           last_reward_date: string | null
           level: number
           onboarding_completed: boolean | null
@@ -342,12 +381,15 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          cooldown_until?: string | null
           created_at?: string
           credits_balance?: number
           current_streak?: number
           display_name?: string | null
+          flagged_reason?: string | null
           free_credits_expires_at?: string | null
           id?: string
+          is_flagged?: boolean
           last_reward_date?: string | null
           level?: number
           onboarding_completed?: boolean | null
@@ -361,12 +403,15 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          cooldown_until?: string | null
           created_at?: string
           credits_balance?: number
           current_streak?: number
           display_name?: string | null
+          flagged_reason?: string | null
           free_credits_expires_at?: string | null
           id?: string
+          is_flagged?: boolean
           last_reward_date?: string | null
           level?: number
           onboarding_completed?: boolean | null
@@ -963,6 +1008,45 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_abuse_candidates: {
+        Args: never
+        Returns: {
+          audio_today: number
+          cooldown_until: string
+          daily_cap: number
+          display_name: string
+          is_flagged: boolean
+          plan: string
+          translations_last_minute: number
+          translations_today: number
+          user_id: string
+        }[]
+      }
+      admin_business_metrics: { Args: { _days?: number }; Returns: Json }
+      admin_credit_timeseries: {
+        Args: { _days?: number }
+        Returns: {
+          audio_credits: number
+          day: string
+          total: number
+          translation_credits: number
+          visual_credits: number
+        }[]
+      }
+      admin_top_documents: {
+        Args: { _limit?: number }
+        Returns: {
+          audio_cached: number
+          audio_unlocks: number
+          credits_generated: number
+          document_id: string
+          last_activity: string
+          title: string
+          total_unlocks: number
+          translation_unlocks: number
+          visual_unlocks: number
+        }[]
+      }
       count_translations_last_minute: {
         Args: { _user_id: string }
         Returns: number
