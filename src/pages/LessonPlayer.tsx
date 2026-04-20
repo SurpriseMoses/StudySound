@@ -28,6 +28,7 @@ import { useProgressionContext } from "@/contexts/ProgressionContext";
 import QuizBonusCard from "@/components/QuizBonusCard";
 import { useLessonProgress } from "@/hooks/use-lesson-progress";
 import StoryModeTab from "@/components/StoryModeTab";
+import { ProtectedTranslation } from "@/components/ProtectedTranslation";
 
 const LANGS = [
   { code: "en", label: "English" },
