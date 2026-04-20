@@ -284,6 +284,29 @@ Deno.serve(async (req) => {
     let chargedCredits = 0;
 
     if (!userPaid) {
+      // Admin enforcement (only blocks NEW unlocks; replays via userPaid still work)
+      const { data: enforce } = await admin
+        .from("profiles")
+        .select("is_flagged, cooldown_until, flagged_reason")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (enforce?.is_flagged) {
+        return new Response(JSON.stringify({
+          error: enforce.flagged_reason ?? "Your account is under review. Please contact support.",
+          code: "USER_FLAGGED",
+        }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const cd = enforce?.cooldown_until ? new Date(enforce.cooldown_until) : null;
+      if (cd && cd.getTime() > Date.now()) {
+        const secs = Math.max(1, Math.ceil((cd.getTime() - Date.now()) / 1000));
+        return new Response(JSON.stringify({
+          error: `You're temporarily paused. Try again in ${Math.ceil(secs / 60)} min.`,
+          code: "COOLDOWN_ACTIVE", retry_after_seconds: secs, cooldown_until: cd.toISOString(),
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": String(secs) },
+        });
+      }
       // Expire stale free-tier credits before charging
       await admin.rpc("expire_free_credits", { _user_id: user.id });
       const { data: profile } = await admin
