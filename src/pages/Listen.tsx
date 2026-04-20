@@ -250,50 +250,7 @@ export default function Listen({ lessonId: lessonIdProp, embedded = false }: Lis
 
   const subjectName = subjects.find((s) => s.id === lesson?.subject)?.name ?? lesson?.subject;
 
-  // Lazy-load translation for the currently visible chunk only — driven by the audio language picker
-  useEffect(() => {
-    if (language === "en") {
-      setTranslatedText(null);
-      return;
-    }
-    if (!lessonId || !chunkText) return;
-
-    const cacheKey = `${language}:${chunkIndex}`;
-    if (translationCache[cacheKey]) {
-      setTranslatedText(translationCache[cacheKey]);
-      return;
-    }
-
-    let cancelled = false;
-    setIsTranslating(true);
-    setTranslatedText(null);
-    (async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke("generate-translation", {
-          body: { lesson_id: lessonId, chunk_index: chunkIndex, target_language: language },
-        });
-        if (cancelled) return;
-        if (error) throw new Error(error.message);
-        if (!data?.success) throw new Error(data?.error ?? "Translation failed");
-        setTranslatedText(data.translated_text);
-        setTranslationCache((prev) => ({ ...prev, [cacheKey]: data.translated_text }));
-        if (data.credits_charged > 0) {
-          toast({
-            title: `1 credit charged`,
-            description: `Translation unlocked for section ${chunkIndex + 1} — replays free.`,
-          });
-        }
-      } catch (e) {
-        if (cancelled) return;
-        const msg = e instanceof Error ? e.message : "Translation failed";
-        toast({ title: "Translation failed", description: msg, variant: "destructive" });
-      } finally {
-        if (!cancelled) setIsTranslating(false);
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language, chunkIndex, chunkText, lessonId]);
+  // Translation is now per-section, on-demand (see <TranslationSection /> below).
 
   const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     embedded ? <>{children}</> : <AppLayout>{children}</AppLayout>;
@@ -396,12 +353,6 @@ export default function Listen({ lessonId: lessonIdProp, embedded = false }: Lis
                   Section {chunkIndex + 1} of {totalChunks}
                 </h3>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {language !== "en" && (
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                      <Languages className="w-3 h-3" />
-                      Translated to {LANGS.find((l) => l.code === language)?.label ?? language}
-                    </span>
-                  )}
                   {isAdmin && (
                     <Button
                       size="sm"
@@ -428,19 +379,19 @@ export default function Listen({ lessonId: lessonIdProp, embedded = false }: Lis
                 <div className="flex items-center justify-center py-10 text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin mr-2" /> Generating audio…
                 </div>
-              ) : isTranslating ? (
-                <div className="flex items-center justify-center py-10 text-muted-foreground">
-                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> Translating section…
-                </div>
-      ) : language !== "en" && translatedText ? (
-                <ProtectedTranslation
-                  text={translatedText}
-                  className="text-foreground/80 leading-relaxed text-sm whitespace-pre-line outline-none"
-                />
               ) : (
-                <p className="text-foreground/80 leading-relaxed text-sm whitespace-pre-line">
-                  {chunkText}
-                </p>
+                <>
+                  <p className="text-foreground/80 leading-relaxed text-sm whitespace-pre-line">
+                    {chunkText}
+                  </p>
+                  {lessonId && chunkText && (
+                    <TranslationSection
+                      lessonId={lessonId}
+                      chunkIndex={chunkIndex}
+                      language={language}
+                    />
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
