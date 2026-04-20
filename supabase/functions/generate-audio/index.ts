@@ -217,6 +217,51 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Lightweight per-chunk status check — no charge, no generation.
+    if (check_only) {
+      const { data: cachedRow } = await admin
+        .from("audio_assets")
+        .select("id")
+        .eq("document_id", doc.id)
+        .eq("chunk_index", chunk_index)
+        .eq("language", lang)
+        .eq("voice_provider", provider)
+        .maybeSingle();
+
+      const { data: paidRow } = await admin
+        .from("user_chunk_access")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("document_id", doc.id)
+        .eq("chunk_index", chunk_index)
+        .eq("language", lang)
+        .eq("asset_type", "audio")
+        .maybeSingle();
+
+      await admin.rpc("expire_free_credits", { _user_id: user.id });
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("credits_balance")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          check: true,
+          cache_exists: !!cachedRow,
+          already_paid: !!paidRow,
+          credits_balance: profile?.credits_balance ?? 0,
+          total_chunks: totalChunks,
+          text: chunks[chunk_index],
+          chunk_index,
+          language: lang,
+          provider,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const { data: cached } = await admin
       .from("audio_assets")
       .select("storage_path")
