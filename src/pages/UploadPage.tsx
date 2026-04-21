@@ -158,8 +158,54 @@ export default function UploadPage() {
   const completed = files.filter((f) => f.status === "done");
   const goToLibrary = () => navigate("/library");
 
-  const openInstantly = (docId: string) => {
-    navigate(`/lesson/${docId}`);
+  const openInstantly = async (match: LibraryMatch) => {
+    if (!user) return;
+    try {
+      // Check if the user already has a lesson for this document
+      const { data: existingLesson } = await supabase
+        .from("lessons")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("document_id", match.id)
+        .maybeSingle();
+
+      if (!existingLesson) {
+        // Create a placeholder upload row (required by lessons.upload_id FK)
+        const { data: uploadRow, error: upErr } = await supabase
+          .from("uploads")
+          .insert({
+            user_id: user.id,
+            file_name: match.title,
+            file_type: "library/reuse",
+            file_size_bytes: 0,
+            storage_path: `library/${match.id}`,
+            subject: match.subject_type,
+            status: "processed",
+          })
+          .select("id")
+          .single();
+        if (upErr || !uploadRow) throw new Error(upErr?.message ?? "Failed to link book");
+
+        const { error: lErr } = await supabase.from("lessons").insert({
+          user_id: user.id,
+          upload_id: uploadRow.id,
+          document_id: match.id,
+          title: match.title,
+          subject: match.subject_type,
+          content_text: "",
+        });
+        if (lErr) throw new Error(lErr.message);
+
+        toast({
+          title: "Added to your library",
+          description: "Opening now — you can resume this anytime from Library.",
+        });
+      }
+      navigate(`/lesson/${match.id}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to open";
+      toast({ title: "Couldn't open book", description: msg, variant: "destructive" });
+    }
   };
 
   return (
@@ -204,7 +250,7 @@ export default function UploadPage() {
                           {m.subject_type} · {m.char_count.toLocaleString()} chars
                         </p>
                       </div>
-                      <Button size="sm" onClick={() => openInstantly(m.id)}>
+                      <Button size="sm" onClick={() => openInstantly(m)}>
                         Open instantly
                       </Button>
                     </CardContent>
