@@ -250,7 +250,7 @@ export default function UploadPage() {
                           {m.subject_type} · {m.char_count.toLocaleString()} chars
                         </p>
                       </div>
-                      <Button size="sm" onClick={() => openInstantly(m.id)}>
+                      <Button size="sm" onClick={() => openInstantly(m)}>
                         Open instantly
                       </Button>
                     </CardContent>
