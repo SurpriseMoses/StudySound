@@ -116,6 +116,13 @@ Deno.serve(async (req) => {
       return json({ success: true, documents: data ?? [] });
     }
 
+    if (action === "top_documents_v2") {
+      const limit = Math.max(1, Math.min(200, Number(body?.limit ?? 100)));
+      const { data, error } = await admin.rpc("admin_top_documents_v2", { _limit: limit });
+      if (error) throw error;
+      return json({ success: true, documents: data ?? [] });
+    }
+
     if (action === "abuse_candidates") {
       const { data, error } = await admin.rpc("admin_abuse_candidates");
       if (error) throw error;

@@ -99,35 +99,44 @@ export type Database = {
       credit_transactions: {
         Row: {
           amount: number
+          api_cost: number
           created_at: string
           document_id: string | null
           feature_type: string | null
+          generations: number
           id: string
           metadata: Json | null
           request_id: string | null
           source: string
+          unlocks: number
           user_id: string
         }
         Insert: {
           amount: number
+          api_cost?: number
           created_at?: string
           document_id?: string | null
           feature_type?: string | null
+          generations?: number
           id?: string
           metadata?: Json | null
           request_id?: string | null
           source: string
+          unlocks?: number
           user_id: string
         }
         Update: {
           amount?: number
+          api_cost?: number
           created_at?: string
           document_id?: string | null
           feature_type?: string | null
+          generations?: number
           id?: string
           metadata?: Json | null
           request_id?: string | null
           source?: string
+          unlocks?: number
           user_id?: string
         }
         Relationships: []
@@ -168,6 +177,7 @@ export type Database = {
           clean_text: string
           content_hash: string
           created_at: string
+          doc_type: string | null
           grade_level: string | null
           id: string
           is_seeded: boolean
@@ -175,6 +185,7 @@ export type Database = {
           page_count: number | null
           source_url: string | null
           subject_type: Database["public"]["Enums"]["subject_type"]
+          tags: Json
           title: string
           updated_at: string
         }
@@ -183,6 +194,7 @@ export type Database = {
           clean_text: string
           content_hash: string
           created_at?: string
+          doc_type?: string | null
           grade_level?: string | null
           id?: string
           is_seeded?: boolean
@@ -190,6 +202,7 @@ export type Database = {
           page_count?: number | null
           source_url?: string | null
           subject_type?: Database["public"]["Enums"]["subject_type"]
+          tags?: Json
           title: string
           updated_at?: string
         }
@@ -198,6 +211,7 @@ export type Database = {
           clean_text?: string
           content_hash?: string
           created_at?: string
+          doc_type?: string | null
           grade_level?: string | null
           id?: string
           is_seeded?: boolean
@@ -205,6 +219,7 @@ export type Database = {
           page_count?: number | null
           source_url?: string | null
           subject_type?: Database["public"]["Enums"]["subject_type"]
+          tags?: Json
           title?: string
           updated_at?: string
         }
@@ -756,6 +771,30 @@ export type Database = {
         }
         Relationships: []
       }
+      user_activity: {
+        Row: {
+          activity_type: string
+          created_at: string
+          document_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          activity_type?: string
+          created_at?: string
+          document_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          activity_type?: string
+          created_at?: string
+          document_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_asset_access: {
         Row: {
           asset_type: Database["public"]["Enums"]["asset_type"]
@@ -1045,6 +1084,24 @@ export type Database = {
           total_unlocks: number
           translation_unlocks: number
           visual_unlocks: number
+        }[]
+      }
+      admin_top_documents_v2: {
+        Args: { _limit?: number }
+        Returns: {
+          cache_hit: number
+          cost: number
+          doc_type: string
+          document_id: string
+          generations: number
+          last_activity: string
+          margin: number
+          profit: number
+          revenue: number
+          tags: Json
+          title: string
+          unlocks: number
+          users: number
         }[]
       }
       count_translations_last_minute: {
