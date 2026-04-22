@@ -131,23 +131,39 @@ Deno.serve(async (req) => {
     const ELEVEN_KEY = Deno.env.get("ElevenLabs_Secret_Key_TTS");
     const AZURE_KEY = Deno.env.get("Azure_Secret_Key_SpeechServices");
 
+    const body = await req.json();
+    const {
+      lesson_id,
+      document_id: bodyDocId,
+      chunk_index = 0,
+      language,
+      preview_only = false,
+      check_only = false,
+      preview = false,
+    } = body ?? {};
+
+    // ---------- Auth (preview tolerates anonymous) ----------
     const authHeader = req.headers.get("Authorization") ?? "";
-    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: userData } = await userClient.auth.getUser();
-    const user = userData?.user;
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
+    let user: { id: string } | null = null;
+    if (authHeader && authHeader !== `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`) {
+      const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: userData } = await userClient.auth.getUser();
+      if (userData?.user) user = { id: userData.user.id };
+    }
+
+    // Preview mode = explicit `preview: true` OR no authenticated user.
+    const previewMode = preview === true || !user;
+
+    if (!previewMode && !lesson_id) {
+      return new Response(JSON.stringify({ error: "lesson_id required" }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const body = await req.json();
-    const { lesson_id, chunk_index = 0, language, preview_only = false, check_only = false } = body ?? {};
-    if (!lesson_id) {
-      return new Response(JSON.stringify({ error: "lesson_id required" }), {
+    if (previewMode && !lesson_id && !bodyDocId) {
+      return new Response(JSON.stringify({ error: "lesson_id or document_id required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -155,45 +171,112 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    const { data: lesson, error: lessonErr } = await admin
-      .from("lessons")
-      .select("id, user_id, document_id, content_text, language")
-      .eq("id", lesson_id)
-      .maybeSingle();
-    if (lessonErr || !lesson) throw new Error("Lesson not found");
-    if (lesson.user_id !== user.id) throw new Error("Forbidden");
-    if (!lesson.document_id) throw new Error("Lesson has no linked document");
+    // Resolve doc + (optional) lesson. Preview can resolve straight from document_id.
+    let docId: string;
+    let lessonLanguage: string | null = null;
+    if (lesson_id) {
+      const { data: lesson, error: lessonErr } = await admin
+        .from("lessons")
+        .select("id, user_id, document_id, content_text, language")
+        .eq("id", lesson_id)
+        .maybeSingle();
+      if (lessonErr || !lesson) throw new Error("Lesson not found");
+      if (!previewMode && user && lesson.user_id !== user.id) throw new Error("Forbidden");
+      if (!lesson.document_id) throw new Error("Lesson has no linked document");
+      docId = lesson.document_id;
+      lessonLanguage = lesson.language;
+    } else {
+      docId = bodyDocId;
+    }
 
     const { data: doc } = await admin
       .from("documents")
       .select("id, clean_text, language, subject_type")
-      .eq("id", lesson.document_id)
+      .eq("id", docId)
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
     const mode: "story" | "study" = doc.subject_type === "novel" ? "story" : "study";
 
-    const lang = (language ?? lesson.language ?? doc.language ?? "en").toLowerCase();
+    const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
     const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
+    const voiceName = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+    const speakingStyle = mode === "story" ? "narration-relaxed" : "general";
 
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
+
+    // ---------- Preview mode: cache-only, never call Azure, never charge ----------
+    if (previewMode) {
+      if (chunk_index < 0 || chunk_index >= totalChunks) {
+        return new Response(JSON.stringify({ error: "chunk_index out of range", total_chunks: totalChunks }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: cachedRow } = await admin
+        .from("audio_assets")
+        .select("storage_path")
+        .eq("document_id", doc.id)
+        .eq("chunk_index", chunk_index)
+        .eq("language", lang)
+        .eq("voice_provider", provider)
+        .eq("voice_name", voiceName)
+        .eq("speaking_style", speakingStyle)
+        .maybeSingle();
+      if (!cachedRow) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            preview: true,
+            error: "Preview not available",
+            code: "PREVIEW_NOT_AVAILABLE",
+            chunk_index,
+            total_chunks: totalChunks,
+          }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      const { data: signed } = await admin.storage
+        .from("assets")
+        .createSignedUrl(cachedRow.storage_path, 60 * 60 * 6);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          preview: true,
+          source: "cached",
+          audio_url: signed?.signedUrl,
+          chunk_index,
+          total_chunks: totalChunks,
+          text: chunks[chunk_index],
+          language: lang,
+          provider,
+          voice_name: voiceName,
+          speaking_style: speakingStyle,
+          credits_charged: 0,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+
+    // From here on, user is guaranteed (preview branch above already returned).
+    const authedUserId = user!.id;
 
     if (preview_only) {
       const { data: paidChunks } = await admin
         .from("user_chunk_access")
         .select("chunk_index")
-        .eq("user_id", user.id)
+        .eq("user_id", authedUserId)
         .eq("document_id", doc.id)
         .eq("language", lang)
         .eq("asset_type", "audio");
       const paidSet = new Set((paidChunks ?? []).map((r) => r.chunk_index));
       const remainingChunks = Array.from({ length: totalChunks }, (_, i) => i).filter((i) => !paidSet.has(i));
-      // Expire stale free-tier credits before reading balance
-      await admin.rpc("expire_free_credits", { _user_id: user.id });
+      await admin.rpc("expire_free_credits", { _user_id: authedUserId });
       const { data: profile } = await admin
         .from("profiles")
         .select("credits_balance")
-        .eq("user_id", user.id)
+        .eq("user_id", authedUserId)
         .maybeSingle();
       return new Response(
         JSON.stringify({
@@ -226,23 +309,27 @@ Deno.serve(async (req) => {
         .eq("chunk_index", chunk_index)
         .eq("language", lang)
         .eq("voice_provider", provider)
+        .eq("voice_name", voiceName)
+        .eq("speaking_style", speakingStyle)
         .maybeSingle();
 
       const { data: paidRow } = await admin
         .from("user_chunk_access")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("user_id", authedUserId)
         .eq("document_id", doc.id)
         .eq("chunk_index", chunk_index)
         .eq("language", lang)
         .eq("asset_type", "audio")
+        .eq("voice_name", voiceName)
+        .eq("speaking_style", speakingStyle)
         .maybeSingle();
 
-      await admin.rpc("expire_free_credits", { _user_id: user.id });
+      await admin.rpc("expire_free_credits", { _user_id: authedUserId });
       const { data: profile } = await admin
         .from("profiles")
         .select("credits_balance")
-        .eq("user_id", user.id)
+        .eq("user_id", authedUserId)
         .maybeSingle();
 
       return new Response(
@@ -257,6 +344,8 @@ Deno.serve(async (req) => {
           chunk_index,
           language: lang,
           provider,
+          voice_name: voiceName,
+          speaking_style: speakingStyle,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
@@ -269,26 +358,29 @@ Deno.serve(async (req) => {
       .eq("chunk_index", chunk_index)
       .eq("language", lang)
       .eq("voice_provider", provider)
+      .eq("voice_name", voiceName)
+      .eq("speaking_style", speakingStyle)
       .maybeSingle();
 
     const { data: userPaid } = await admin
       .from("user_chunk_access")
       .select("id")
-      .eq("user_id", user.id)
+      .eq("user_id", authedUserId)
       .eq("document_id", doc.id)
       .eq("chunk_index", chunk_index)
       .eq("language", lang)
       .eq("asset_type", "audio")
+      .eq("voice_name", voiceName)
+      .eq("speaking_style", speakingStyle)
       .maybeSingle();
 
     let chargedCredits = 0;
 
     if (!userPaid) {
-      // Admin enforcement (only blocks NEW unlocks; replays via userPaid still work)
       const { data: enforce } = await admin
         .from("profiles")
         .select("is_flagged, cooldown_until, flagged_reason")
-        .eq("user_id", user.id)
+        .eq("user_id", authedUserId)
         .maybeSingle();
       if (enforce?.is_flagged) {
         return new Response(JSON.stringify({
@@ -307,12 +399,11 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": String(secs) },
         });
       }
-      // Expire stale free-tier credits before charging
-      await admin.rpc("expire_free_credits", { _user_id: user.id });
+      await admin.rpc("expire_free_credits", { _user_id: authedUserId });
       const { data: profile } = await admin
         .from("profiles")
         .select("credits_balance")
-        .eq("user_id", user.id)
+        .eq("user_id", authedUserId)
         .maybeSingle();
       const balance = profile?.credits_balance ?? 0;
       if (balance < 1) {
@@ -324,21 +415,23 @@ Deno.serve(async (req) => {
       await admin
         .from("profiles")
         .update({ credits_balance: balance - 1 })
-        .eq("user_id", user.id);
+        .eq("user_id", authedUserId);
       await admin.from("user_chunk_access").insert({
-        user_id: user.id,
+        user_id: authedUserId,
         document_id: doc.id,
         chunk_index,
         language: lang,
         asset_type: "audio",
         credits_charged: 1,
+        voice_name: voiceName,
+        speaking_style: speakingStyle,
       });
       await admin.from("user_usage").insert({
-        user_id: user.id,
+        user_id: authedUserId,
         document_id: doc.id,
         action_type: "audio",
         credits_used: 1,
-        request_id: `audio-${doc.id}-${lang}-${chunk_index}-${user.id}`,
+        request_id: `audio-${doc.id}-${lang}-${voiceName}-${speakingStyle}-${chunk_index}-${authedUserId}`,
       });
       chargedCredits = 1;
     }
@@ -350,8 +443,6 @@ Deno.serve(async (req) => {
       reused = true;
     } else {
       let text = chunks[chunk_index];
-      // If narrating in a non-source language WITH a native voice, use the cached translation.
-      // Languages without a native voice fall back to English voice + English text so pronunciation is correct.
       const sourceLang = (doc.language ?? "en").toLowerCase();
       if (lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)) {
         const { data: tr } = await admin
@@ -380,7 +471,7 @@ Deno.serve(async (req) => {
         provider === "azure"
           ? await ttsAzure(text, lang, apiKey, mode)
           : await ttsElevenLabs(text, apiKey);
-      storagePath = `audio/${doc.id}/${lang}/${provider}/${chunk_index}.mp3`;
+      storagePath = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
       const { error: upErr } = await admin.storage
         .from("assets")
         .upload(storagePath, new Uint8Array(audio), { contentType: "audio/mpeg", upsert: true });
@@ -390,6 +481,8 @@ Deno.serve(async (req) => {
         chunk_index,
         language: lang,
         voice_provider: provider,
+        voice_name: voiceName,
+        speaking_style: speakingStyle,
         storage_path: storagePath,
         char_count: text.length,
       });
@@ -409,7 +502,11 @@ Deno.serve(async (req) => {
         text: chunks[chunk_index],
         language: lang,
         provider,
+        voice_name: voiceName,
+        speaking_style: speakingStyle,
         reused,
+        source: reused ? "cached" : "generated",
+        cache_state: reused ? "Cached" : (chargedCredits > 0 ? "Generated (1 credit)" : "Generated"),
         credits_charged: chargedCredits,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
