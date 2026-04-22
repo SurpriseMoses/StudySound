@@ -12,7 +12,8 @@ import UnlockSection from "@/components/preview/UnlockSection";
 import QuizTeaser from "@/components/preview/QuizTeaser";
 import PreviewFinalCta from "@/components/preview/PreviewFinalCta";
 
-const SAMPLE_AUDIO_URL = "/preview-audio.mp3";
+// Default seeded document for the public Free Preview ("A Tale of Two Cities — Ch. 1").
+const DEFAULT_PREVIEW_DOC_ID = "11111111-1111-1111-1111-111111111111";
 
 const sampleText = `It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness. The fog crept through the streets of London like a living thing, wrapping itself around lampposts and doorways.
 
@@ -25,27 +26,49 @@ export default function Preview() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playerRef = useRef<HTMLDivElement | null>(null);
   const [params] = useSearchParams();
-  const docId = params.get("doc");
-  const [audioSrc, setAudioSrc] = useState<string>(SAMPLE_AUDIO_URL);
-  const [previewLabel, setPreviewLabel] = useState<string>("Sample audio");
+  const docId = params.get("doc") ?? DEFAULT_PREVIEW_DOC_ID;
+  const [audioSrc, setAudioSrc] = useState<string>("");
+  const [previewLabel, setPreviewLabel] = useState<string>("Loading…");
+  const [isLoadingAudio, setIsLoadingAudio] = useState<boolean>(true);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState([0]);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
   useEffect(() => {
-    if (!docId) return;
     let cancelled = false;
+    setIsLoadingAudio(true);
+    setAudioError(null);
+    setPreviewLabel("Generating audio…");
     (async () => {
       const { data, error } = await supabase.functions.invoke("generate-audio", {
-        body: { document_id: docId, chunk_index: 0, preview: true },
+        body: {
+          document_id: docId,
+          chunk_index: 0,
+          language: "en",
+          speaking_style: "general",
+          preview: true,
+          preview_mode: true,
+        },
       });
       if (cancelled) return;
       if (!error && data?.success && data.audio_url) {
+        const label = data.cache_state === "Cached" ? "Cached preview" : "Generated preview";
+        if (data.cache_state === "Cached") {
+          console.log("Preview audio: cache hit");
+        } else {
+          console.log("Preview audio: saved to cache");
+        }
         setAudioSrc(data.audio_url);
-        setPreviewLabel("Cached preview");
+        setPreviewLabel(label);
+        setIsLoadingAudio(false);
       } else {
-        setPreviewLabel("Preview not available — playing sample");
+        const msg = (data as { error?: string } | null)?.error ?? error?.message ?? "Audio not available";
+        console.error("Preview audio failed:", msg);
+        setAudioError(msg);
+        setPreviewLabel("Audio unavailable");
+        setIsLoadingAudio(false);
       }
     })();
     return () => { cancelled = true; };
@@ -159,6 +182,8 @@ export default function Preview() {
               ref={audioRef}
               audioSrc={audioSrc}
               isPlaying={isPlaying}
+              isLoading={isLoadingAudio}
+              error={audioError}
               progress={progress}
               currentTime={currentTime}
               duration={duration}
