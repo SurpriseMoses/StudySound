@@ -296,11 +296,27 @@ Deno.serve(async (req) => {
       const path = `audio/${doc.id}/${LANGUAGE}/${VOICE_PROVIDER}/${i}.mp3`;
       try {
         const audio = await ttsAzure(text, AZURE_KEY);
-        const { error: upErr } = await admin.storage
-          .from("assets")
-          .upload(path, new Uint8Array(audio), {
-            contentType: "audio/mpeg", upsert: true,
-          });
+
+        // Retry storage upload up to 3 times. The Storage API occasionally
+        // returns an HTML gateway page (502/504) which the SDK then fails to
+        // parse as JSON ("Unexpected token '<'"). Treat those as transient.
+        let upErr: { message: string } | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const r = await admin.storage
+              .from("assets")
+              .upload(path, new Uint8Array(audio), {
+                contentType: "audio/mpeg", upsert: true,
+              });
+            upErr = r.error;
+          } catch (uploadEx) {
+            // SDK threw (e.g. JSON parse on HTML error page).
+            upErr = { message: uploadEx instanceof Error ? uploadEx.message : String(uploadEx) };
+          }
+          if (!upErr) break;
+          console.warn(`[seed-audio-assets] storage upload retry ${attempt + 1}: ${upErr.message}`);
+          await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)));
+        }
         if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
 
         const { error: insErr } = await admin.from("audio_assets").insert({
