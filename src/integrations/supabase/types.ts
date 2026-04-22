@@ -180,7 +180,7 @@ export type Database = {
       documents: {
         Row: {
           char_count: number
-          clean_text: string
+          clean_text: string | null
           content_hash: string
           created_at: string
           doc_type: string | null
@@ -189,6 +189,11 @@ export type Database = {
           is_seeded: boolean
           language: string
           page_count: number | null
+          raw_text: string | null
+          seed_audio: boolean
+          seed_audio_error: string | null
+          seed_audio_progress: number
+          seed_audio_status: string
           source_url: string | null
           subject_type: Database["public"]["Enums"]["subject_type"]
           tags: Json
@@ -197,7 +202,7 @@ export type Database = {
         }
         Insert: {
           char_count?: number
-          clean_text: string
+          clean_text?: string | null
           content_hash: string
           created_at?: string
           doc_type?: string | null
@@ -206,6 +211,11 @@ export type Database = {
           is_seeded?: boolean
           language?: string
           page_count?: number | null
+          raw_text?: string | null
+          seed_audio?: boolean
+          seed_audio_error?: string | null
+          seed_audio_progress?: number
+          seed_audio_status?: string
           source_url?: string | null
           subject_type?: Database["public"]["Enums"]["subject_type"]
           tags?: Json
@@ -214,7 +224,7 @@ export type Database = {
         }
         Update: {
           char_count?: number
-          clean_text?: string
+          clean_text?: string | null
           content_hash?: string
           created_at?: string
           doc_type?: string | null
@@ -223,6 +233,11 @@ export type Database = {
           is_seeded?: boolean
           language?: string
           page_count?: number | null
+          raw_text?: string | null
+          seed_audio?: boolean
+          seed_audio_error?: string | null
+          seed_audio_progress?: number
+          seed_audio_status?: string
           source_url?: string | null
           subject_type?: Database["public"]["Enums"]["subject_type"]
           tags?: Json
