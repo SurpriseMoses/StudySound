@@ -182,6 +182,8 @@ export default function Preview() {
               ref={audioRef}
               audioSrc={audioSrc}
               isPlaying={isPlaying}
+              isLoading={isLoadingAudio}
+              error={audioError}
               progress={progress}
               currentTime={currentTime}
               duration={duration}

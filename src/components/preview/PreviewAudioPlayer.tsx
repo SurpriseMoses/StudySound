@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { Play, Pause, SkipBack, SkipForward, Sparkles } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Sparkles, Loader2, AlertCircle } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -13,6 +13,8 @@ function formatTime(s: number) {
 interface Props {
   audioSrc: string;
   isPlaying: boolean;
+  isLoading?: boolean;
+  error?: string | null;
   progress: number[];
   currentTime: number;
   duration: number;
@@ -23,9 +25,11 @@ interface Props {
 }
 
 const PreviewAudioPlayer = forwardRef<HTMLAudioElement, Props>(function PreviewAudioPlayer(
-  { audioSrc, isPlaying, progress, currentTime, duration, previewLabel, onTogglePlay, onSeek, onSkip },
+  { audioSrc, isPlaying, isLoading = false, error = null, progress, currentTime, duration, previewLabel, onTogglePlay, onSeek, onSkip },
   ref,
 ) {
+  const disabled = isLoading || !!error || !audioSrc;
+
   return (
     <Card className="border-primary/20 overflow-hidden bg-gradient-to-br from-card via-card to-primary/5">
       <CardContent className="p-6">
@@ -39,12 +43,16 @@ const PreviewAudioPlayer = forwardRef<HTMLAudioElement, Props>(function PreviewA
               <p className="text-[11px] text-muted-foreground mt-0.5">Premium voice</p>
             </div>
           </div>
-          <span className="px-2 py-0.5 rounded bg-muted/60 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <span className={`px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide inline-flex items-center gap-1 ${
+            error ? "bg-destructive/10 text-destructive" : "bg-muted/60 text-muted-foreground"
+          }`}>
+            {isLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+            {error && <AlertCircle className="w-3 h-3" />}
             {previewLabel}
           </span>
         </div>
 
-        <audio ref={ref} src={audioSrc} preload="metadata" />
+        <audio ref={ref} src={audioSrc || undefined} preload="metadata" />
 
         {/* Waveform-like progress visualization */}
         <div className="relative mb-2">
@@ -64,7 +72,7 @@ const PreviewAudioPlayer = forwardRef<HTMLAudioElement, Props>(function PreviewA
               );
             })}
           </div>
-          <Slider value={progress} onValueChange={onSeek} max={100} step={0.1} />
+          <Slider value={progress} onValueChange={onSeek} max={100} step={0.1} disabled={disabled} />
         </div>
 
         <div className="flex items-center justify-between text-xs text-muted-foreground mb-5">
@@ -75,26 +83,41 @@ const PreviewAudioPlayer = forwardRef<HTMLAudioElement, Props>(function PreviewA
         <div className="flex items-center justify-center gap-6">
           <button
             onClick={() => onSkip(-10)}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            disabled={disabled}
+            className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Skip back 10 seconds"
           >
             <SkipBack className="w-6 h-6" />
           </button>
           <button
             onClick={onTogglePlay}
-            className="w-16 h-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 transition-all shadow-lg shadow-primary/30 hover:scale-105 active:scale-95"
-            aria-label={isPlaying ? "Pause" : "Play"}
+            disabled={disabled}
+            className="w-16 h-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 transition-all shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+            aria-label={isLoading ? "Loading audio" : isPlaying ? "Pause" : "Play"}
           >
-            {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7 ml-1 fill-current" />}
+            {isLoading ? (
+              <Loader2 className="w-7 h-7 animate-spin" />
+            ) : isPlaying ? (
+              <Pause className="w-7 h-7" />
+            ) : (
+              <Play className="w-7 h-7 ml-1 fill-current" />
+            )}
           </button>
           <button
             onClick={() => onSkip(10)}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            disabled={disabled}
+            className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Skip forward 10 seconds"
           >
             <SkipForward className="w-6 h-6" />
           </button>
         </div>
+
+        {error && (
+          <p className="mt-4 text-xs text-center text-destructive/80">
+            {error}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
