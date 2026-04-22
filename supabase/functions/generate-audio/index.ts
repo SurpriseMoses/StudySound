@@ -171,28 +171,93 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    const { data: lesson, error: lessonErr } = await admin
-      .from("lessons")
-      .select("id, user_id, document_id, content_text, language")
-      .eq("id", lesson_id)
-      .maybeSingle();
-    if (lessonErr || !lesson) throw new Error("Lesson not found");
-    if (lesson.user_id !== user.id) throw new Error("Forbidden");
-    if (!lesson.document_id) throw new Error("Lesson has no linked document");
+    // Resolve doc + (optional) lesson. Preview can resolve straight from document_id.
+    let docId: string;
+    let lessonLanguage: string | null = null;
+    if (lesson_id) {
+      const { data: lesson, error: lessonErr } = await admin
+        .from("lessons")
+        .select("id, user_id, document_id, content_text, language")
+        .eq("id", lesson_id)
+        .maybeSingle();
+      if (lessonErr || !lesson) throw new Error("Lesson not found");
+      if (!previewMode && user && lesson.user_id !== user.id) throw new Error("Forbidden");
+      if (!lesson.document_id) throw new Error("Lesson has no linked document");
+      docId = lesson.document_id;
+      lessonLanguage = lesson.language;
+    } else {
+      docId = bodyDocId;
+    }
 
     const { data: doc } = await admin
       .from("documents")
       .select("id, clean_text, language, subject_type")
-      .eq("id", lesson.document_id)
+      .eq("id", docId)
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
     const mode: "story" | "study" = doc.subject_type === "novel" ? "story" : "study";
 
-    const lang = (language ?? lesson.language ?? doc.language ?? "en").toLowerCase();
+    const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
     const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
+    const voiceName = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+    const speakingStyle = mode === "story" ? "narration-relaxed" : "general";
 
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
+
+    // ---------- Preview mode: cache-only, never call Azure, never charge ----------
+    if (previewMode) {
+      if (chunk_index < 0 || chunk_index >= totalChunks) {
+        return new Response(JSON.stringify({ error: "chunk_index out of range", total_chunks: totalChunks }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: cachedRow } = await admin
+        .from("audio_assets")
+        .select("storage_path")
+        .eq("document_id", doc.id)
+        .eq("chunk_index", chunk_index)
+        .eq("language", lang)
+        .eq("voice_provider", provider)
+        .eq("voice_name", voiceName)
+        .eq("speaking_style", speakingStyle)
+        .maybeSingle();
+      if (!cachedRow) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            preview: true,
+            error: "Preview not available",
+            code: "PREVIEW_NOT_AVAILABLE",
+            chunk_index,
+            total_chunks: totalChunks,
+          }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      const { data: signed } = await admin.storage
+        .from("assets")
+        .createSignedUrl(cachedRow.storage_path, 60 * 60 * 6);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          preview: true,
+          source: "cached",
+          audio_url: signed?.signedUrl,
+          chunk_index,
+          total_chunks: totalChunks,
+          text: chunks[chunk_index],
+          language: lang,
+          provider,
+          voice_name: voiceName,
+          speaking_style: speakingStyle,
+          credits_charged: 0,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
 
     if (preview_only) {
       const { data: paidChunks } = await admin
