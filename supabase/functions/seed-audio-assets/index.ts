@@ -329,10 +329,37 @@ Deno.serve(async (req) => {
         }).eq("id", doc.id);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
+        const isRateLimited = e instanceof RateLimitedError || /\b429\b/.test(msg);
+        console.error(`[seed-audio-assets] doc=${doc.id} chunk=${i} failed:`, msg);
+
+        if (isRateLimited) {
+          // Soft-pause: keep status 'processing' and return 200 so the auto-loop
+          // can wait and resume instead of marking the doc failed.
+          await admin.from("documents").update({
+            seed_audio_status: "processing",
+            seed_audio_progress: highestCompleted,
+            seed_audio_error: `rate_limited at chunk ${i}`,
+          }).eq("id", doc.id);
+          return new Response(JSON.stringify({
+            success: true,
+            rate_limited: true,
+            retry_after_ms: 30000,
+            document_id: doc.id,
+            title: doc.title,
+            total_documents_processed: 1,
+            total_chunks: totalChunks,
+            total_chunks_generated: generated,
+            total_chunks_skipped: skipped,
+            failed_chunks: 0,
+            highest_completed: highestCompleted,
+            status: "processing",
+            remaining: Math.max(0, totalChunks - (highestCompleted + 1)),
+            message: "Azure rate limit hit; pausing. Re-invoke after a short wait.",
+          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
         failed++;
         failures.push({ chunk_index: i, error: msg });
-        console.error(`[seed-audio-assets] doc=${doc.id} chunk=${i} failed:`, msg);
-        // Stop the batch on first hard failure so admin can investigate.
         await admin.from("documents").update({
           seed_audio_status: "failed",
           seed_audio_error: `chunk ${i}: ${msg}`,
