@@ -131,23 +131,39 @@ Deno.serve(async (req) => {
     const ELEVEN_KEY = Deno.env.get("ElevenLabs_Secret_Key_TTS");
     const AZURE_KEY = Deno.env.get("Azure_Secret_Key_SpeechServices");
 
+    const body = await req.json();
+    const {
+      lesson_id,
+      document_id: bodyDocId,
+      chunk_index = 0,
+      language,
+      preview_only = false,
+      check_only = false,
+      preview = false,
+    } = body ?? {};
+
+    // ---------- Auth (preview tolerates anonymous) ----------
     const authHeader = req.headers.get("Authorization") ?? "";
-    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: userData } = await userClient.auth.getUser();
-    const user = userData?.user;
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
+    let user: { id: string } | null = null;
+    if (authHeader && authHeader !== `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`) {
+      const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: userData } = await userClient.auth.getUser();
+      if (userData?.user) user = { id: userData.user.id };
+    }
+
+    // Preview mode = explicit `preview: true` OR no authenticated user.
+    const previewMode = preview === true || !user;
+
+    if (!previewMode && !lesson_id) {
+      return new Response(JSON.stringify({ error: "lesson_id required" }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const body = await req.json();
-    const { lesson_id, chunk_index = 0, language, preview_only = false, check_only = false } = body ?? {};
-    if (!lesson_id) {
-      return new Response(JSON.stringify({ error: "lesson_id required" }), {
+    if (previewMode && !lesson_id && !bodyDocId) {
+      return new Response(JSON.stringify({ error: "lesson_id or document_id required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
