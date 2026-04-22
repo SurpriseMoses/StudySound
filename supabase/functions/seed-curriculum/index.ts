@@ -26,8 +26,9 @@ type SeedItem = {
 // + Siyavula CC-BY textbook chapter URLs (plain-text versions).
 const SEED_LIST: SeedItem[] = [
   // ---------- Shakespeare (FET English HL/FAL setworks) ----------
-  { title: "Macbeth", grade_level: "Grade 12", subject_type: "novel",
-    url: "https://www.gutenberg.org/cache/epub/1533/pg1533.txt", is_gutenberg: true },
+  // NOTE: Macbeth intentionally excluded — the previously uploaded copy
+  // had non-canonical front matter (didn't start at Act I Scene 1).
+  // We will re-add it once a clean source text is selected.
   { title: "Hamlet", grade_level: "Grade 12", subject_type: "novel",
     url: "https://www.gutenberg.org/cache/epub/1524/pg1524.txt", is_gutenberg: true },
   { title: "Othello", grade_level: "Grade 12", subject_type: "novel",
