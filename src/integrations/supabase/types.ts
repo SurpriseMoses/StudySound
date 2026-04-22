@@ -23,7 +23,9 @@ export type Database = {
           duration_seconds: number | null
           id: string
           language: string
+          speaking_style: string
           storage_path: string
+          voice_name: string
           voice_provider: Database["public"]["Enums"]["voice_provider"]
         }
         Insert: {
@@ -34,7 +36,9 @@ export type Database = {
           duration_seconds?: number | null
           id?: string
           language: string
+          speaking_style?: string
           storage_path: string
+          voice_name?: string
           voice_provider: Database["public"]["Enums"]["voice_provider"]
         }
         Update: {
@@ -45,7 +49,9 @@ export type Database = {
           duration_seconds?: number | null
           id?: string
           language?: string
+          speaking_style?: string
           storage_path?: string
+          voice_name?: string
           voice_provider?: Database["public"]["Enums"]["voice_provider"]
         }
         Relationships: [
@@ -839,7 +845,9 @@ export type Database = {
           document_id: string
           id: string
           language: string
+          speaking_style: string | null
           user_id: string
+          voice_name: string | null
         }
         Insert: {
           asset_type?: Database["public"]["Enums"]["asset_type"]
@@ -849,7 +857,9 @@ export type Database = {
           document_id: string
           id?: string
           language: string
+          speaking_style?: string | null
           user_id: string
+          voice_name?: string | null
         }
         Update: {
           asset_type?: Database["public"]["Enums"]["asset_type"]
@@ -859,7 +869,9 @@ export type Database = {
           document_id?: string
           id?: string
           language?: string
+          speaking_style?: string | null
           user_id?: string
+          voice_name?: string | null
         }
         Relationships: [
           {
