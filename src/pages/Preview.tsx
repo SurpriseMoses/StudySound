@@ -2,8 +2,11 @@ import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Play, Pause, SkipBack, SkipForward, Volume2, ArrowRight, Sparkles, Image } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Slider } from "@/components/ui/slider";
 
-const SAMPLE_AUDIO_URL = "https://cdn.pixabay.com/audio/2022/03/15/audio_8cd5469783.mp3";
+const SAMPLE_AUDIO_URL = "/preview-audio.mp3";
 
 function formatTime(s: number) {
   if (!isFinite(s) || s < 0) s = 0;
@@ -11,9 +14,6 @@ function formatTime(s: number) {
   const sec = Math.floor(s % 60);
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Slider } from "@/components/ui/slider";
 
 const sampleText = `It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness. Charles Darnay and Sydney Carton stood in the courtroom, their fates intertwined in ways neither could yet fathom.
 
