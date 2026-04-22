@@ -86,11 +86,16 @@ export default function AdminSeedAudio() {
     }
   }
 
-  async function runOneBatch(docId: string): Promise<{ done: boolean; error?: string }> {
+  async function runOneBatch(
+    docId: string,
+  ): Promise<{ done: boolean; error?: string; rateLimited?: boolean; retryAfterMs?: number }> {
     const { data, error } = await supabase.functions.invoke("seed-audio-assets", {
       body: { document_id: docId, max_chunks: 25 },
     });
     if (error) return { done: false, error: error.message };
+    if (data?.rate_limited) {
+      return { done: false, rateLimited: true, retryAfterMs: data.retry_after_ms ?? 30000 };
+    }
     if (data?.success === false) return { done: false, error: data?.error ?? "Batch failed" };
     return { done: data?.status === "done" };
   }
@@ -99,7 +104,8 @@ export default function AdminSeedAudio() {
     setRunningDoc(docId);
     try {
       const res = await runOneBatch(docId);
-      if (res.error) toast.error(res.error);
+      if (res.rateLimited) toast.warning("Azure rate limit hit. Wait a moment, then run again.");
+      else if (res.error) toast.error(res.error);
       else toast.success(res.done ? "Document fully narrated 🎉" : "Batch complete. Run again to continue.");
       await load();
     } finally {
@@ -110,11 +116,16 @@ export default function AdminSeedAudio() {
   async function runAutoLoop(docId: string) {
     setAutoLoop(docId);
     try {
-      // Up to 40 iterations * 25 chunks = 1000 chunks max — enough for any
-      // single book. Stops on done or first error.
-      for (let i = 0; i < 40; i++) {
+      // Up to 80 iterations * 25 chunks = 2000 chunks max. Pauses on rate limit.
+      for (let i = 0; i < 80; i++) {
         const res = await runOneBatch(docId);
         await load();
+        if (res.rateLimited) {
+          const wait = res.retryAfterMs ?? 30000;
+          toast.message(`Rate limited — waiting ${Math.round(wait / 1000)}s before retrying…`);
+          await new Promise((r) => setTimeout(r, wait));
+          continue;
+        }
         if (res.error) {
           toast.error(`Stopped at iteration ${i + 1}: ${res.error}`);
           break;
