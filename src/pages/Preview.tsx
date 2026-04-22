@@ -146,6 +146,9 @@ export default function Preview() {
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-display font-semibold text-sm">🎧 AI Narration</h3>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="px-2 py-0.5 rounded bg-muted/60 text-[10px] font-medium uppercase tracking-wide">
+                      {previewLabel}
+                    </span>
                     <button
                       onClick={() => setSpeed(s => s === 2 ? 0.5 : s + 0.25)}
                       className="px-2 py-1 rounded bg-muted hover:bg-muted/80 font-medium"
@@ -155,7 +158,7 @@ export default function Preview() {
                     <Volume2 className="w-4 h-4" />
                   </div>
                 </div>
-                <audio ref={audioRef} src={SAMPLE_AUDIO_URL} preload="metadata" />
+                <audio ref={audioRef} src={audioSrc} preload="metadata" />
                 <Slider value={progress} onValueChange={onSeek} max={100} step={0.1} className="mb-3" />
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
                   <span>{formatTime(currentTime)}</span>
