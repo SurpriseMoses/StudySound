@@ -1,7 +1,16 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Play, Pause, SkipBack, SkipForward, Volume2, ArrowRight, Sparkles, Image } from "lucide-react";
+
+const SAMPLE_AUDIO_URL = "https://cdn.pixabay.com/audio/2022/03/15/audio_8cd5469783.mp3";
+
+function formatTime(s: number) {
+  if (!isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
@@ -13,9 +22,64 @@ The fog crept through the streets of London like a living thing, wrapping itself
 "It is a far, far better thing that I do, than I have ever done," Carton whispered to himself, staring out at the grey Thames below.`;
 
 export default function Preview() {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState([35]);
+  const [progress, setProgress] = useState([0]);
   const [speed, setSpeed] = useState(1);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onTime = () => {
+      setCurrentTime(audio.currentTime);
+      if (audio.duration) setProgress([(audio.currentTime / audio.duration) * 100]);
+    };
+    const onLoaded = () => setDuration(audio.duration || 0);
+    const onEnded = () => setIsPlaying(false);
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("loadedmetadata", onLoaded);
+    audio.addEventListener("ended", onEnded);
+    return () => {
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("loadedmetadata", onLoaded);
+      audio.removeEventListener("ended", onEnded);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = speed;
+  }, [speed]);
+
+  const togglePlay = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    try {
+      if (isPlaying) {
+        audio.pause();
+        setIsPlaying(false);
+      } else {
+        await audio.play();
+        setIsPlaying(true);
+      }
+    } catch (e) {
+      console.error("Audio play failed", e);
+    }
+  };
+
+  const onSeek = (val: number[]) => {
+    setProgress(val);
+    const audio = audioRef.current;
+    if (audio && audio.duration) {
+      audio.currentTime = (val[0] / 100) * audio.duration;
+    }
+  };
+
+  const skip = (delta: number) => {
+    const audio = audioRef.current;
+    if (audio) audio.currentTime = Math.max(0, Math.min((audio.duration || 0), audio.currentTime + delta));
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -67,20 +131,21 @@ export default function Preview() {
                     <Volume2 className="w-4 h-4" />
                   </div>
                 </div>
-                <Slider value={progress} onValueChange={setProgress} max={100} step={1} className="mb-3" />
+                <audio ref={audioRef} src={SAMPLE_AUDIO_URL} preload="metadata" />
+                <Slider value={progress} onValueChange={onSeek} max={100} step={0.1} className="mb-3" />
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-                  <span>1:12</span>
-                  <span>3:24</span>
+                  <span>{formatTime(currentTime)}</span>
+                  <span>{formatTime(duration)}</span>
                 </div>
                 <div className="flex items-center justify-center gap-4">
-                  <button className="text-muted-foreground hover:text-foreground"><SkipBack className="w-5 h-5" /></button>
+                  <button onClick={() => skip(-10)} className="text-muted-foreground hover:text-foreground"><SkipBack className="w-5 h-5" /></button>
                   <button
-                    onClick={() => setIsPlaying(!isPlaying)}
+                    onClick={togglePlay}
                     className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 transition"
                   >
                     {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
                   </button>
-                  <button className="text-muted-foreground hover:text-foreground"><SkipForward className="w-5 h-5" /></button>
+                  <button onClick={() => skip(10)} className="text-muted-foreground hover:text-foreground"><SkipForward className="w-5 h-5" /></button>
                 </div>
               </CardContent>
             </Card>
