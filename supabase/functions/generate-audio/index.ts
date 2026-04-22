@@ -205,7 +205,7 @@ Deno.serve(async (req) => {
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
 
-    // ---------- Preview mode: cache-only, never call Azure, never charge ----------
+    // ---------- Preview mode: cache-first, generate-on-miss, NEVER charge ----------
     if (previewMode) {
       if (chunk_index < 0 || chunk_index >= totalChunks) {
         return new Response(JSON.stringify({ error: "chunk_index out of range", total_chunks: totalChunks }), {
@@ -213,6 +213,8 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      let pStoragePath: string | null = null;
+      let pSource: "cached" | "generated" = "cached";
       const { data: cachedRow } = await admin
         .from("audio_assets")
         .select("storage_path")
@@ -223,27 +225,53 @@ Deno.serve(async (req) => {
         .eq("voice_name", voiceName)
         .eq("speaking_style", speakingStyle)
         .maybeSingle();
-      if (!cachedRow) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            preview: true,
-            error: "Preview not available",
-            code: "PREVIEW_NOT_AVAILABLE",
-            chunk_index,
-            total_chunks: totalChunks,
-          }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+
+      if (cachedRow) {
+        console.log("Preview audio: cache hit", { doc: doc.id, chunk: chunk_index, lang });
+        pStoragePath = cachedRow.storage_path;
+      } else {
+        console.log("Preview audio: generating via Azure", { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
+        const text = chunks[chunk_index];
+        const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
+        if (!apiKey) {
+          return new Response(
+            JSON.stringify({ success: false, preview: true, error: `${provider} API key not configured`, code: "TTS_NOT_CONFIGURED" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        const audio =
+          provider === "azure"
+            ? await ttsAzure(text, lang, apiKey, mode)
+            : await ttsElevenLabs(text, apiKey);
+        const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
+        const { error: upErr } = await admin.storage
+          .from("assets")
+          .upload(path, new Uint8Array(audio), { contentType: "audio/mpeg", upsert: true });
+        if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
+        await admin.from("audio_assets").insert({
+          document_id: doc.id,
+          chunk_index,
+          language: lang,
+          voice_provider: provider,
+          voice_name: voiceName,
+          speaking_style: speakingStyle,
+          storage_path: path,
+          char_count: text.length,
+        });
+        console.log("Preview audio: saved to cache", { path });
+        pStoragePath = path;
+        pSource = "generated";
       }
+
       const { data: signed } = await admin.storage
         .from("assets")
-        .createSignedUrl(cachedRow.storage_path, 60 * 60 * 6);
+        .createSignedUrl(pStoragePath!, 60 * 60 * 6);
       return new Response(
         JSON.stringify({
           success: true,
           preview: true,
-          source: "cached",
+          source: pSource,
+          cache_state: pSource === "cached" ? "Cached" : "Generated",
           audio_url: signed?.signedUrl,
           chunk_index,
           total_chunks: totalChunks,
