@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Play, Pause, SkipBack, SkipForward, Volume2, ArrowRight, Sparkles, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
+import { supabase } from "@/integrations/supabase/client";
 
 const SAMPLE_AUDIO_URL = "/preview-audio.mp3";
 
@@ -23,11 +24,34 @@ The fog crept through the streets of London like a living thing, wrapping itself
 
 export default function Preview() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [params] = useSearchParams();
+  const docId = params.get("doc");
+  const [audioSrc, setAudioSrc] = useState<string>(SAMPLE_AUDIO_URL);
+  const [previewLabel, setPreviewLabel] = useState<string>("Sample audio");
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState([0]);
   const [speed, setSpeed] = useState(1);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+
+  // If a document_id is provided, try to load its pre-generated preview audio.
+  useEffect(() => {
+    if (!docId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.functions.invoke("generate-audio", {
+        body: { document_id: docId, chunk_index: 0, preview: true },
+      });
+      if (cancelled) return;
+      if (!error && data?.success && data.audio_url) {
+        setAudioSrc(data.audio_url);
+        setPreviewLabel("Cached preview");
+      } else {
+        setPreviewLabel("Preview not available — playing sample");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [docId]);
 
   useEffect(() => {
     const audio = audioRef.current;
