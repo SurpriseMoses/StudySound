@@ -19,10 +19,10 @@ type SeedDoc = {
 
 const statusColors: Record<SeedDoc["seed_audio_status"], string> = {
   pending: "bg-muted text-muted-foreground",
-  cleaning: "bg-amber-100 text-amber-800",
-  processing: "bg-blue-100 text-blue-800",
-  done: "bg-emerald-100 text-emerald-800",
-  failed: "bg-red-100 text-red-800",
+  cleaning: "bg-secondary text-secondary-foreground",
+  processing: "bg-primary/10 text-primary",
+  done: "bg-success/15 text-success",
+  failed: "bg-destructive/15 text-destructive",
 };
 
 export default function AdminSeedAudio() {
@@ -222,7 +222,7 @@ export default function AdminSeedAudio() {
                     </div>
                     <Progress value={pct} className="h-1.5" />
                     {d.seed_audio_error && (
-                      <div className="text-xs text-red-600 flex items-start gap-1.5 mt-1">
+                      <div className="text-xs text-destructive flex items-start gap-1.5 mt-1">
                         <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                         <span className="break-all">{d.seed_audio_error}</span>
                       </div>
