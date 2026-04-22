@@ -91,26 +91,44 @@ function chunkText(text: string): string[] {
   return chunks;
 }
 
+class RateLimitedError extends Error {
+  constructor(msg: string) { super(msg); this.name = "RateLimitedError"; }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
   const ssml = buildSSML(text);
-  const res = await fetch(
-    `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
-    {
-      method: "POST",
-      headers: {
-        "Ocp-Apim-Subscription-Key": apiKey,
-        "Content-Type": "application/ssml+xml",
-        "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
-        "User-Agent": "studysound-seeder",
+  // Up to 4 attempts with exponential backoff on 429/5xx.
+  const delays = [1500, 4000, 9000, 20000];
+  let lastErr = "";
+  for (let attempt = 0; attempt < delays.length; attempt++) {
+    const res = await fetch(
+      `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
+      {
+        method: "POST",
+        headers: {
+          "Ocp-Apim-Subscription-Key": apiKey,
+          "Content-Type": "application/ssml+xml",
+          "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+          "User-Agent": "studysound-seeder",
+        },
+        body: ssml,
       },
-      body: ssml,
-    },
-  );
-  if (!res.ok) {
+    );
+    if (res.ok) return res.arrayBuffer();
     const body = await res.text();
-    throw new Error(`Azure ${res.status}: ${body.slice(0, 200)}`);
+    lastErr = `Azure ${res.status}: ${body.slice(0, 200)}`;
+    const retryable = res.status === 429 || res.status >= 500;
+    if (!retryable) throw new Error(lastErr);
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const wait = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : delays[attempt];
+    console.warn(`[seed-audio-assets] Azure ${res.status}, backoff ${wait}ms (attempt ${attempt + 1})`);
+    await sleep(wait);
   }
-  return res.arrayBuffer();
+  throw new RateLimitedError(lastErr || "Azure rate limited");
 }
 
 type DocRow = {
