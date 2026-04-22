@@ -225,7 +225,7 @@ export default function UploadPage() {
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="e.g. Macbeth, Great Expectations, World War II…"
+                placeholder="e.g. Hamlet, Great Expectations, World War II…"
                 className="pl-9"
               />
               {searching && (
