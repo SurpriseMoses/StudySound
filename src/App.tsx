@@ -28,6 +28,7 @@ import AdminErrors from "./pages/admin/AdminErrors";
 import AdminEconomy from "./pages/admin/AdminEconomy";
 import AdminAbuse from "./pages/admin/AdminAbuse";
 import AdminTopDocuments from "./pages/admin/AdminTopDocuments";
+import AdminSeedAudio from "./pages/admin/AdminSeedAudio";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -68,6 +69,7 @@ const App = () => (
               <Route index element={<AdminOverview />} />
               <Route path="documents" element={<AdminDocuments />} />
               <Route path="top-documents" element={<AdminTopDocuments />} />
+              <Route path="seed-audio" element={<AdminSeedAudio />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="economy" element={<AdminEconomy />} />
               <Route path="abuse" element={<AdminAbuse />} />
