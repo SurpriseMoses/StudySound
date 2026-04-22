@@ -345,7 +345,11 @@ Deno.serve(async (req) => {
         }).eq("id", doc.id);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        const isRateLimited = e instanceof RateLimitedError || /\b429\b/.test(msg);
+        const isStorageBlip = /Storage upload:/.test(msg) && (
+          /Unexpected token/.test(msg) || /<!DOCTYPE/.test(msg) ||
+          /\b50\d\b/.test(msg) || /timeout/i.test(msg) || /fetch failed/i.test(msg)
+        );
+        const isRateLimited = e instanceof RateLimitedError || /\b429\b/.test(msg) || isStorageBlip;
         console.error(`[seed-audio-assets] doc=${doc.id} chunk=${i} failed:`, msg);
 
         if (isRateLimited) {
