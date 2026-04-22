@@ -76,6 +76,14 @@ export default function Preview() {
     if (audioRef.current) audioRef.current.playbackRate = speed;
   }, [speed]);
 
+  // Reload the <audio> element when the source URL changes (preview swap).
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setIsPlaying(false);
+    audio.load();
+  }, [audioSrc]);
+
   const togglePlay = async () => {
     const audio = audioRef.current;
     if (!audio) return;
