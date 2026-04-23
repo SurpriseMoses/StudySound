@@ -577,7 +577,7 @@ Deno.serve(async (req) => {
         audio_url: signed.signedUrl,
         chunk_index,
         total_chunks: totalChunks,
-        text: chunks[chunk_index],
+        text: finalText,
         language: lang,
         provider,
         voice_name: voiceName,
