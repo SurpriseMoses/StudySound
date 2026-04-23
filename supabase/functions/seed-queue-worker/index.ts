@@ -387,10 +387,12 @@ Deno.serve(async (req) => {
         if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
         await sleep(INTER_CHUNK_DELAY_MS);
       } else if (res.result === "rate_limited") {
+        // Chunk was deferred. Track it but DO NOT stop — pick the next available chunk.
         rateLimited = true;
-        // Exit immediately so caller re-invokes after a pause.
-        console.warn("[worker] rate limited — exiting invocation for caller-side backoff");
-        break;
+        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
+        if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
+        // Brief pause before trying the next chunk to avoid hammering Azure.
+        await sleep(INTER_CHUNK_DELAY_MS);
       } else {
         // error: small pause then continue if time allows
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
