@@ -527,39 +527,28 @@ Deno.serve(async (req) => {
 
     let storagePath: string;
     let reused = false;
+    // Resolve translated text up-front so we can return it for display in ALL cases
+    // (cached audio AND fresh generation). NATIVE_VOICE_LANGS gates the audio voice,
+    // but text translation should happen for every non-source language.
+    const sourceLang = (doc.language ?? "en").toLowerCase();
+    const finalText =
+      lang !== sourceLang ? await resolveDisplayText() : chunks[chunk_index];
     if (cached) {
       storagePath = cached.storage_path;
       reused = true;
     } else {
-      let text = chunks[chunk_index];
-      const sourceLang = (doc.language ?? "en").toLowerCase();
-      if (lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)) {
-        const { data: tr } = await admin
-          .from("translation_assets")
-          .select("translated_text")
-          .eq("document_id", doc.id)
-          .eq("chunk_index", chunk_index)
-          .eq("target_language", lang)
-          .maybeSingle();
-        if (tr?.translated_text) {
-          text = tr.translated_text;
-        } else {
-          const { data: trData, error: trErr } = await admin.functions.invoke("generate-translation", {
-            body: { lesson_id, chunk_index, target_language: lang },
-            headers: { Authorization: authHeader },
-          });
-          if (trErr || !trData?.translated_text) {
-            throw new Error(`Auto-translate failed for ${lang} chunk ${chunk_index}: ${trErr?.message ?? "no text"}`);
-          }
-          text = trData.translated_text;
-        }
-      }
+      // Use translated text for TTS only when we have a native voice for that lang;
+      // otherwise narrate the source text with the fallback voice.
+      const ttsText =
+        lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)
+          ? finalText
+          : chunks[chunk_index];
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
       if (!apiKey) throw new Error(`${provider} API key not configured`);
       const audio =
         provider === "azure"
-          ? await ttsAzure(text, lang, apiKey, mode)
-          : await ttsElevenLabs(text, apiKey);
+          ? await ttsAzure(ttsText, lang, apiKey, mode)
+          : await ttsElevenLabs(ttsText, apiKey);
       storagePath = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
       const { error: upErr } = await admin.storage
         .from("assets")
@@ -573,7 +562,7 @@ Deno.serve(async (req) => {
         voice_name: voiceName,
         speaking_style: speakingStyle,
         storage_path: storagePath,
-        char_count: text.length,
+        char_count: ttsText.length,
       });
     }
 
