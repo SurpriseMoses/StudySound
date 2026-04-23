@@ -372,20 +372,16 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (tr?.translated_text) return tr.translated_text;
       // Otherwise generate (also caches it for the audio step below).
-      try {
-        const { data: trData, error: trErr } = await admin.functions.invoke("generate-translation", {
-          body: { lesson_id, chunk_index, target_language: lang },
-          headers: { Authorization: authHeader },
-        });
-        if (trErr || !trData?.translated_text) {
-          console.warn(`[audio] translation fallback to source for ${lang} chunk ${chunk_index}: ${trErr?.message ?? "no text"}`);
-          return chunks[chunk_index];
-        }
-        return trData.translated_text;
-      } catch (e) {
-        console.warn(`[audio] translation error, falling back to source: ${(e as Error).message}`);
-        return chunks[chunk_index];
+      const { data: trData, error: trErr } = await admin.functions.invoke("generate-translation", {
+        body: { lesson_id, chunk_index, target_language: lang },
+        headers: { Authorization: authHeader },
+      });
+      if (trErr || !trData?.translated_text) {
+        const details = trData?.error ?? trErr?.message ?? `Translation unavailable for ${lang}`;
+        console.error(`[audio] translation failed for ${lang} chunk ${chunk_index}: ${details}`);
+        throw new Error(details);
       }
+      return trData.translated_text;
     }
 
     // Lightweight per-chunk status check — no charge, no generation.
