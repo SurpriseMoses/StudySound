@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, BookOpenCheck, Sparkles, RefreshCw, Play, Pause, ListPlus, AlertCircle, Trash2 } from "lucide-react";
+import { Loader2, BookOpenCheck, Sparkles, RefreshCw, Play, Pause, ListPlus, AlertCircle, Trash2, FileText } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -14,7 +21,19 @@ type SeedDoc = {
   seed_audio_status: "pending" | "cleaning" | "processing" | "done" | "failed";
   seed_audio_progress: number;
   seed_audio_error: string | null;
+  current_chunk_index: number | null;
+  last_error: string | null;
   cached_chunks: number;
+};
+
+type SeedLog = {
+  id: number;
+  document_id: string;
+  chunk_index: number;
+  status: "started" | "success" | "failed" | "rate_limited";
+  error_message: string | null;
+  retry_count: number;
+  created_at: string;
 };
 
 type QueueStatus = {
@@ -43,12 +62,15 @@ export default function AdminSeedAudio() {
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [enqueuingDoc, setEnqueuingDoc] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [logsDoc, setLogsDoc] = useState<SeedDoc | null>(null);
+  const [logs, setLogs] = useState<SeedLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
   const tickRef = useRef<number | null>(null);
 
   async function loadDocs() {
     const { data: docRows, error } = await supabase
       .from("documents")
-      .select("id, title, char_count, seed_audio_status, seed_audio_progress, seed_audio_error")
+      .select("id, title, char_count, seed_audio_status, seed_audio_progress, seed_audio_error, current_chunk_index, last_error")
       .eq("seed_audio", true)
       .order("title", { ascending: true });
     if (error) { toast.error(error.message); return; }
@@ -73,6 +95,21 @@ export default function AdminSeedAudio() {
         cached_chunks: cachedCounts.get(d.id) ?? 0,
       })),
     );
+  }
+
+  async function openLogs(doc: SeedDoc) {
+    setLogsDoc(doc);
+    setLogsLoading(true);
+    setLogs([]);
+    const { data, error } = await supabase
+      .from("seed_logs")
+      .select("id, document_id, chunk_index, status, error_message, retry_count, created_at")
+      .eq("document_id", doc.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) toast.error(error.message);
+    else setLogs((data ?? []) as SeedLog[]);
+    setLogsLoading(false);
   }
 
   async function loadQueueStatus() {
@@ -330,10 +367,25 @@ export default function AdminSeedAudio() {
                             : <ListPlus className="w-3.5 h-3.5 mr-1.5" />}
                           Add to queue
                         </Button>
+                        <Button size="sm" variant="ghost" onClick={() => openLogs(d)}>
+                          <FileText className="w-3.5 h-3.5 mr-1.5" />
+                          View logs
+                        </Button>
                       </div>
                     </div>
                     <Progress value={pct} className="h-1.5" />
-                    {d.seed_audio_error && (
+                    <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                      <span>Current chunk: <span className="font-mono text-foreground">{d.current_chunk_index ?? "—"}</span></span>
+                      <span>Progress: <span className="font-mono text-foreground">{d.cached_chunks}/{totalEst}</span></span>
+                      {isCurrent && <span className="text-primary">● live</span>}
+                    </div>
+                    {d.last_error && (
+                      <div className="text-xs text-destructive flex items-start gap-1.5 mt-1">
+                        <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                        <span className="break-all">{d.last_error}</span>
+                      </div>
+                    )}
+                    {d.seed_audio_error && d.seed_audio_error !== d.last_error && (
                       <div className="text-xs text-destructive flex items-start gap-1.5 mt-1">
                         <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                         <span className="break-all">{d.seed_audio_error}</span>
@@ -346,9 +398,54 @@ export default function AdminSeedAudio() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!logsDoc} onOpenChange={(o) => !o && setLogsDoc(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Logs — {logsDoc?.title}</DialogTitle>
+            <DialogDescription>Last 20 chunk events for this book.</DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto -mx-6 px-6">
+            {logsLoading ? (
+              <div className="flex items-center justify-center py-10 text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…
+              </div>
+            ) : logs.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">No logs yet.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {logs.map((l) => (
+                  <div key={l.id} className="text-xs border rounded-md p-2 flex items-start gap-3">
+                    <Badge variant="secondary" className={logStatusColors[l.status]}>
+                      {l.status}
+                    </Badge>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono">chunk #{l.chunk_index}</span>
+                        <span className="text-muted-foreground">retry: {l.retry_count}</span>
+                        <span className="text-muted-foreground">{new Date(l.created_at).toLocaleTimeString()}</span>
+                      </div>
+                      {l.error_message && (
+                        <div className="text-destructive break-all mt-0.5">{l.error_message}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+const logStatusColors: Record<SeedLog["status"], string> = {
+  started: "bg-muted text-muted-foreground",
+  success: "bg-success/15 text-success",
+  failed: "bg-destructive/15 text-destructive",
+  rate_limited: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
+};
 
 function StatTile({ label, value, tone }: { label: string; value: number; tone: "default" | "primary" | "success" | "destructive" }) {
   const toneCls = {
