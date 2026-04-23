@@ -257,23 +257,48 @@ async function processOneChunk(admin: any, azureKey: string): Promise<{ result: 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const attempts = (queueRow.attempts ?? 0) + 1;
+    const docId = queueRow.document_id;
+    const chunkIdx = queueRow.chunk_index;
+
     if (e instanceof RateLimitedError) {
-      // Put back to pending so we try again later.
+      // DEFER: schedule a retry 60-120s in the future and move on.
+      const exhausted = attempts >= MAX_ATTEMPTS;
+      const baseDelay = e.retryAfterMs ?? RATE_LIMIT_DELAY_MIN_MS;
+      const jitter = Math.floor(Math.random() * (RATE_LIMIT_DELAY_MAX_MS - RATE_LIMIT_DELAY_MIN_MS));
+      const delayMs = Math.min(Math.max(baseDelay, RATE_LIMIT_DELAY_MIN_MS) + jitter, RATE_LIMIT_DELAY_MAX_MS * 2);
+      const delayedUntil = new Date(Date.now() + delayMs).toISOString();
+
       await admin.from("seed_queue").update({
-        status: "pending", started_at: null, attempts, last_error: `rate-limited: ${msg}`,
+        status: exhausted ? "failed" : "pending",
+        started_at: null,
+        attempts,
+        delayed_until: exhausted ? null : delayedUntil,
+        last_error: `rate-limited (attempt ${attempts}/${MAX_ATTEMPTS}): ${msg}`,
       }).eq("id", queueRow.id);
-      console.warn(`[worker] rate-limited on doc=${doc.id} chunk=${queueRow.chunk_index} — re-queued`);
-      return { result: "rate_limited", detail: msg };
+
+      console.warn(
+        `[worker] current_chunk_id=${queueRow.id} doc=${docId} chunk=${chunkIdx} ` +
+        `retry_count=${attempts}/${MAX_ATTEMPTS} last_error="rate-limited" ` +
+        (exhausted ? "→ MARKED FAILED (queue continues)" : `→ deferred ${Math.round(delayMs / 1000)}s`)
+      );
+      return { result: "rate_limited", detail: msg, queue_id: queueRow.id };
     }
-    // Hard failure
+
+    // Hard failure (non-rate-limit). After MAX_ATTEMPTS mark failed.
+    const exhausted = attempts >= MAX_ATTEMPTS;
     await admin.from("seed_queue").update({
-      status: attempts >= 3 ? "failed" : "pending",
+      status: exhausted ? "failed" : "pending",
       started_at: null,
       attempts,
+      delayed_until: exhausted ? null : new Date(Date.now() + 30_000).toISOString(),
       last_error: msg,
     }).eq("id", queueRow.id);
-    console.error(`[worker] ✗ doc=${doc.id} chunk=${queueRow.chunk_index} failed (attempt ${attempts}): ${msg}`);
-    return { result: "error", detail: msg };
+    console.error(
+      `[worker] current_chunk_id=${queueRow.id} doc=${docId} chunk=${chunkIdx} ` +
+      `retry_count=${attempts}/${MAX_ATTEMPTS} last_error="${msg}" ` +
+      (exhausted ? "→ MARKED FAILED (queue continues)" : "→ will retry in 30s")
+    );
+    return { result: "error", detail: msg, queue_id: queueRow.id };
   }
 }
 
