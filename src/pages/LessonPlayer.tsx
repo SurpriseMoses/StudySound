@@ -21,7 +21,6 @@ import { useProgressionContext } from "@/contexts/ProgressionContext";
 import QuizBonusCard from "@/components/QuizBonusCard";
 import { useLessonProgress } from "@/hooks/use-lesson-progress";
 import StoryModeTab from "@/components/StoryModeTab";
-import { TranslationSection } from "@/components/TranslationSection";
 import { AudioSection } from "@/components/AudioSection";
 
 const LANGS = [
@@ -440,13 +439,6 @@ function ListenTab(props: {
             onSeekChunk={goChunk}
           />
 
-          {chunkText && (
-            <TranslationSection
-              lessonId={lessonId}
-              chunkIndex={chunkIndex}
-              language={language}
-            />
-          )}
         </CardContent>
       </Card>
     </>
