@@ -90,7 +90,7 @@ export default function AdminSeedAudio() {
     docId: string,
   ): Promise<{ done: boolean; error?: string; rateLimited?: boolean; retryAfterMs?: number }> {
     const { data, error } = await supabase.functions.invoke("seed-audio-assets", {
-      body: { document_id: docId, max_chunks: 25 },
+      body: { document_id: docId, max_chunks: 5 },
     });
     if (error) return { done: false, error: error.message };
     if (data?.rate_limited) {
