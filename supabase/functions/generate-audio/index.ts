@@ -76,7 +76,7 @@ function buildSSML(text: string, voice: string, locale: string, mode: "story" | 
     return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">
   <voice name="${voice}">
     <mstts:express-as style="narration-professional" styledegree="2.0">
-      <prosody rate="0.82" pitch="-2%" contour="(0%,+0%) (50%,+8%) (100%,-4%)">${processed}</prosody>
+      <prosody rate="0.75" pitch="-2%" contour="(0%,+0%) (50%,+8%) (100%,-4%)">${processed}</prosody>
     </mstts:express-as>
   </voice>
 </speak>`;
