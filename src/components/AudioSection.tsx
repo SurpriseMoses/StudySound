@@ -284,21 +284,41 @@ export function AudioSection({
               <Volume2 className="w-4 h-4 text-primary" />
               Audio narration
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs tabular-nums">
-                  <Gauge className="w-3.5 h-3.5" />
-                  {playbackRate}x
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {SPEEDS.map((s) => (
-                  <DropdownMenuItem key={s} onClick={() => setPlaybackRate(s)}>
-                    {s}x {playbackRate === s && <Check className="w-3.5 h-3.5 ml-auto" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex items-center gap-1">
+              <TooltipProvider delayDuration={250}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Toggle
+                      size="sm"
+                      pressed={autoplay}
+                      onPressedChange={setAutoplay}
+                      aria-label="Autoplay"
+                      className="h-7 px-2 gap-1 text-xs data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+                      disabled={chunkIndex >= totalChunks - 1}
+                    >
+                      <Repeat className="w-3.5 h-3.5" />
+                      Autoplay
+                    </Toggle>
+                  </TooltipTrigger>
+                  <TooltipContent>Auto-play unlocked sections</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs tabular-nums">
+                    <Gauge className="w-3.5 h-3.5" />
+                    {playbackRate}x
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {SPEEDS.map((s) => (
+                    <DropdownMenuItem key={s} onClick={() => setPlaybackRate(s)}>
+                      {s}x {playbackRate === s && <Check className="w-3.5 h-3.5 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
