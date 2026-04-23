@@ -92,39 +92,28 @@ class RateLimitedError extends Error {
 
 async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
   const ssml = buildSSML(text);
-  let lastErr = "";
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(
-      `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
-      {
-        method: "POST",
-        headers: {
-          "Ocp-Apim-Subscription-Key": apiKey,
-          "Content-Type": "application/ssml+xml",
-          "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
-          "User-Agent": "studysound-queue-worker",
-        },
-        body: ssml,
+  const res = await fetch(
+    `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
+    {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": apiKey,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+        "User-Agent": "studysound-queue-worker",
       },
-    );
-    if (res.ok) {
-      if (attempt > 0) console.log(`[worker] Azure recovered after ${attempt} retr${attempt === 1 ? "y" : "ies"}`);
-      return res.arrayBuffer();
-    }
-    const body = await res.text();
-    lastErr = `Azure ${res.status}: ${body.slice(0, 200)}`;
-    if (res.status !== 429 && res.status < 500) throw new Error(lastErr);
-    if (attempt === MAX_RETRIES) {
-      throw new RateLimitedError(lastErr, RETRY_DELAYS[RETRY_DELAYS.length - 1]);
-    }
+      body: ssml,
+    },
+  );
+  if (res.ok) return res.arrayBuffer();
+  const body = await res.text();
+  const errMsg = `Azure ${res.status}: ${body.slice(0, 200)}`;
+  if (res.status === 429 || res.status >= 500) {
     const retryAfter = Number(res.headers.get("retry-after"));
-    const wait = Number.isFinite(retryAfter) && retryAfter > 0
-      ? Math.max(retryAfter * 1000, RETRY_DELAYS[attempt])
-      : RETRY_DELAYS[attempt];
-    console.warn(`[worker] Azure ${res.status} — backoff ${wait}ms (retry ${attempt + 1}/${MAX_RETRIES})`);
-    await sleep(wait);
+    const retryAfterMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : undefined;
+    throw new RateLimitedError(errMsg, retryAfterMs);
   }
-  throw new RateLimitedError(lastErr || "Azure rate limited");
+  throw new Error(errMsg);
 }
 
 // deno-lint-ignore no-explicit-any
