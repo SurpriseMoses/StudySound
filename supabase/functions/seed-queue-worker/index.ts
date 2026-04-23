@@ -444,9 +444,9 @@ Deno.serve(async (req) => {
         // Chunk was deferred. Track it but DO NOT stop — pick the next available chunk.
         rateLimited = true;
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
-        if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
-        // Brief pause before trying the next chunk to avoid hammering Azure.
-        await sleep(INTER_CHUNK_DELAY_MS);
+        if (remaining < POST_RATELIMIT_COOLDOWN_MS + 5_000) break;
+        // Brief cooldown before next chunk so we don't immediately re-trigger 429.
+        await sleep(POST_RATELIMIT_COOLDOWN_MS);
       } else {
         // error: small pause then continue if time allows
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
