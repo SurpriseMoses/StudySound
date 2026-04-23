@@ -62,12 +62,15 @@ export default function AdminSeedAudio() {
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [enqueuingDoc, setEnqueuingDoc] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [logsDoc, setLogsDoc] = useState<SeedDoc | null>(null);
+  const [logs, setLogs] = useState<SeedLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
   const tickRef = useRef<number | null>(null);
 
   async function loadDocs() {
     const { data: docRows, error } = await supabase
       .from("documents")
-      .select("id, title, char_count, seed_audio_status, seed_audio_progress, seed_audio_error")
+      .select("id, title, char_count, seed_audio_status, seed_audio_progress, seed_audio_error, current_chunk_index, last_error")
       .eq("seed_audio", true)
       .order("title", { ascending: true });
     if (error) { toast.error(error.message); return; }
@@ -92,6 +95,21 @@ export default function AdminSeedAudio() {
         cached_chunks: cachedCounts.get(d.id) ?? 0,
       })),
     );
+  }
+
+  async function openLogs(doc: SeedDoc) {
+    setLogsDoc(doc);
+    setLogsLoading(true);
+    setLogs([]);
+    const { data, error } = await supabase
+      .from("seed_logs")
+      .select("id, document_id, chunk_index, status, error_message, retry_count, created_at")
+      .eq("document_id", doc.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) toast.error(error.message);
+    else setLogs((data ?? []) as SeedLog[]);
+    setLogsLoading(false);
   }
 
   async function loadQueueStatus() {
