@@ -548,9 +548,24 @@ Deno.serve(async (req) => {
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-  } catch (e) {
+  } catch (e: any) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     console.error("generate-audio error:", msg);
+    if (e?.code === "RATE_LIMITED" || /Azure 429/i.test(msg)) {
+      const retryAfter = Number(e?.retryAfter) || 30;
+      return new Response(
+        JSON.stringify({
+          error: "RATE_LIMITED",
+          message: "Audio service is busy. Please try again in a moment.",
+          retry_after_seconds: retryAfter,
+          fallback: true,
+        }),
+        {
+          status: 503,
+          headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": String(retryAfter) },
+        },
+      );
+    }
     return new Response(JSON.stringify({ error: msg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
