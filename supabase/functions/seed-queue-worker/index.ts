@@ -39,8 +39,8 @@ const RATE_LIMIT_DELAY_MIN_MS = 5_000;   // defer 5s (was 15s)
 const RATE_LIMIT_DELAY_MAX_MS = 15_000;  // up to 15s (was 30s)
 const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000; // hard cap 30s (was 60s)
 const LOCK_TIMEOUT_MS = 90_000;
-const HARD_DEADLINE_MS = 90_000;         // exit well before CPU/wall limit
-const MAX_CHUNKS_PER_INVOCATION = 25;    // stay under edge CPU budget (was 80 → caused WORKER_RESOURCE_LIMIT)
+const HARD_DEADLINE_MS = 50_000;         // stay well below runtime budget
+const MAX_CHUNKS_PER_INVOCATION = 12;    // smaller batches avoid cumulative CPU exhaustion
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
@@ -118,8 +118,17 @@ async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
   throw new Error(errMsg);
 }
 
+type ChunkCacheEntry = {
+  title: string;
+  chunks: string[];
+};
+
 // deno-lint-ignore no-explicit-any
-async function processOneChunk(admin: any, azureKey: string): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string; queue_id?: string }> {
+async function processOneChunk(
+  admin: any,
+  azureKey: string,
+  chunkCache: Map<string, ChunkCacheEntry>,
+): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string; queue_id?: string }> {
   // Pick the next pending row globally that is NOT delayed.
   // delayed_until IS NULL OR delayed_until <= now()
   const nowIso = new Date().toISOString();
@@ -168,28 +177,38 @@ async function processOneChunk(admin: any, azureKey: string): Promise<{ result: 
   }).eq("id", queueRow.document_id);
 
   // Load doc + clean_text + chunk text
-  const { data: doc, error: docErr } = await admin
-    .from("documents")
-    .select("id, title, clean_text")
-    .eq("id", queueRow.document_id)
-    .maybeSingle();
-  if (docErr) throw docErr;
-  if (!doc?.clean_text) {
-    await admin.from("seed_queue").update({
-      status: "failed", last_error: "Document missing clean_text",
-      attempts: (queueRow.attempts ?? 0) + 1,
-    }).eq("id", queueRow.id);
-    return { result: "error", detail: "missing clean_text" };
+  let docEntry = chunkCache.get(queueRow.document_id);
+  if (!docEntry) {
+    const { data: doc, error: docErr } = await admin
+      .from("documents")
+      .select("id, title, clean_text")
+      .eq("id", queueRow.document_id)
+      .maybeSingle();
+    if (docErr) throw docErr;
+    if (!doc?.clean_text) {
+      await admin.from("seed_queue").update({
+        status: "failed", last_error: "Document missing clean_text",
+        attempts: (queueRow.attempts ?? 0) + 1,
+      }).eq("id", queueRow.id);
+      return { result: "error", detail: "missing clean_text" };
+    }
+
+    docEntry = {
+      title: doc.title,
+      chunks: chunkText(doc.clean_text),
+    };
+    chunkCache.set(queueRow.document_id, docEntry);
   }
-  const chunks = chunkText(doc.clean_text);
-  if (queueRow.chunk_index >= chunks.length) {
+
+  if (queueRow.chunk_index >= docEntry.chunks.length) {
     await admin.from("seed_queue").update({
-      status: "failed", last_error: `chunk_index ${queueRow.chunk_index} out of range (${chunks.length})`,
+      status: "failed", last_error: `chunk_index ${queueRow.chunk_index} out of range (${docEntry.chunks.length})`,
       attempts: (queueRow.attempts ?? 0) + 1,
     }).eq("id", queueRow.id);
     return { result: "error", detail: "out of range" };
   }
-  const text = chunks[queueRow.chunk_index];
+  const doc = { id: queueRow.document_id, title: docEntry.title };
+  const text = docEntry.chunks[queueRow.chunk_index];
 
   // Idempotency: skip if already cached.
   const { data: existing } = await admin
@@ -419,12 +438,14 @@ Deno.serve(async (req) => {
     let rateLimited = false;
     let lastResult: { result: string; detail?: string } | null = null;
 
+    const chunkCache = new Map<string, ChunkCacheEntry>();
+
     while (Date.now() - startedAt < HARD_DEADLINE_MS && processed < MAX_CHUNKS_PER_INVOCATION) {
       // Re-check is_running so pause takes effect mid-run.
       const { data: liveState } = await admin.from("seed_worker_state").select("is_running").eq("id", 1).maybeSingle();
       if (!liveState?.is_running) break;
 
-      const res = await processOneChunk(admin, AZURE_KEY);
+      const res = await processOneChunk(admin, AZURE_KEY, chunkCache);
       lastResult = res;
 
       if (res.result === "empty") break;
