@@ -150,6 +150,21 @@ async function processOneChunk(admin: any, azureKey: string): Promise<{ result: 
     last_heartbeat: new Date().toISOString(),
   }).eq("id", 1);
 
+  const retryCount = queueRow.attempts ?? 0;
+
+  // Log: started
+  await admin.from("seed_logs").insert({
+    document_id: queueRow.document_id,
+    chunk_index: queueRow.chunk_index,
+    status: "started",
+    retry_count: retryCount,
+  });
+  // Live debug fields on documents
+  await admin.from("documents").update({
+    current_chunk_index: queueRow.chunk_index,
+    last_error: null,
+  }).eq("id", queueRow.document_id);
+
   // Load doc + clean_text + chunk text
   const { data: doc, error: docErr } = await admin
     .from("documents")
