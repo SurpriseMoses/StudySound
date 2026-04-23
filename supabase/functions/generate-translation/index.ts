@@ -63,15 +63,24 @@ function injectWatermark(text: string, mark: string): string {
 }
 
 // Map our internal language codes to Azure Translator codes.
-// Azure supports: af, zu, xh, nso (Sepedi/Northern Sotho), ts (Tsonga) on the GLOBAL endpoint.
-// Regional endpoints (e.g. southafricanorth) do NOT host all SA languages — use global.
+// Azure Translator currently supports af, zu, xh, nso and fr for our target set.
+// Xitsonga (ts) is offered in Azure Speech in some setups, but not in Azure Translator.
 const AZURE_TRANSLATOR_LANG: Record<string, string> = {
   en: "en", af: "af", zu: "zu", xh: "xh",
-  ts: "ts", nso: "nso", fr: "fr",
+  nso: "nso", fr: "fr",
 };
 // Region of the Azure resource. South Africa North resources usually require the
 // region header, while global resources reject it. Try both paths safely.
 const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "southafricanorth";
+
+function isUnsupportedAzureLanguageError(message: string): boolean {
+  return /AZURE_LANG_UNSUPPORTED|target language is not valid|400036/i.test(message);
+}
+
+function buildUnsupportedLanguageMessage(targetLang: string): string {
+  const languageLabel = LANG_NAMES[targetLang] ?? targetLang.toUpperCase();
+  return `Azure translation is not available for ${languageLabel} right now.`;
+}
 
 async function translateWithAzure(text: string, sourceLang: string, targetLang: string): Promise<string> {
   const key = Deno.env.get("Azure_Secret_Key_Translator");
@@ -136,6 +145,8 @@ async function translateWithAI(text: string, sourceLang: string, targetLang: str
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  let requestBody: Record<string, unknown> | null = null;
+
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -162,6 +173,7 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceKey);
 
     const body = await req.json();
+    requestBody = body ?? null;
     const { lesson_id, chunk_index, target_language, preview_only, check_only } = body ?? {};
 
     if (!lesson_id || typeof lesson_id !== "string") {
@@ -415,6 +427,16 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error("generate-translation error:", e);
     const msg = e instanceof Error ? e.message : "Unknown error";
+    if (isUnsupportedAzureLanguageError(msg)) {
+      const targetLanguage = typeof requestBody?.target_language === "string" ? requestBody.target_language : "";
+      return new Response(JSON.stringify({
+        error: buildUnsupportedLanguageMessage(targetLanguage),
+        code: "TRANSLATION_UNSUPPORTED",
+        target_language: targetLanguage,
+      }), {
+        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify({ error: msg }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
