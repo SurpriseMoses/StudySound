@@ -103,8 +103,8 @@ class RateLimitedError extends Error {
   }
 }
 
-async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
-  const ssml = buildSSML(text);
+async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", voiceName: string): Promise<ArrayBuffer> {
+  const ssml = buildSSML(text, mode, voiceName);
   const res = await fetch(
     `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
     {
