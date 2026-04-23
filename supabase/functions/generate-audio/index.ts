@@ -88,6 +88,66 @@ function buildTranslationFallbackPayload(args: {
   };
 }
 
+async function describeError(error: unknown): Promise<{
+  code?: string;
+  fallback: boolean;
+  message: string;
+  status?: number;
+}> {
+  if (error instanceof Response) {
+    let bodyText = "";
+    let payload: Record<string, unknown> | null = null;
+    try {
+      bodyText = await error.clone().text();
+      if (bodyText) payload = JSON.parse(bodyText);
+    } catch {
+      // Ignore parse failures and fall back to plain text/status below.
+    }
+    return {
+      code: typeof payload?.code === "string" ? payload.code : undefined,
+      fallback: payload?.fallback === true || error.status >= 500,
+      message:
+        (typeof payload?.error === "string" && payload.error) ||
+        (typeof payload?.message === "string" && payload.message) ||
+        bodyText ||
+        `HTTP ${error.status}`,
+      status: error.status,
+    };
+  }
+
+  const err = error as {
+    code?: unknown;
+    context?: unknown;
+    fallback?: unknown;
+    message?: unknown;
+    status?: unknown;
+  } | null;
+
+  if (err?.context instanceof Response) {
+    const described = await describeError(err.context);
+    return {
+      code: typeof err.code === "string" ? err.code : described.code,
+      fallback: err.fallback === true || described.fallback,
+      message: described.message,
+      status: typeof err.status === "number" ? err.status : described.status,
+    };
+  }
+
+  const message =
+    typeof err?.message === "string"
+      ? err.message
+      : error instanceof Error
+        ? error.message
+        : String(error ?? "Unknown error");
+
+  return {
+    code: typeof err?.code === "string" ? err.code : undefined,
+    fallback: err?.fallback === true,
+    message,
+    status: typeof err?.status === "number" ? err.status : undefined,
+  };
+}
+
 function addNaturalPauses(text: string): string {
   return text
     .replace(/\.(?!\s)/g, ". ")
@@ -416,9 +476,20 @@ Deno.serve(async (req) => {
         headers: { Authorization: authHeader },
       });
       if (trErr || !trData?.translated_text) {
-        const details = trData?.error ?? trErr?.context ?? trErr?.message ?? `Translation unavailable for ${lang}`;
+        const describedError = trErr ? await describeError(trErr) : null;
+        const details =
+          (typeof trData?.error === "string" && trData.error) ||
+          describedError?.message ||
+          `Translation unavailable for ${lang}`;
+        const shouldFallback =
+          trData?.fallback === true ||
+          describedError?.fallback === true ||
+          describedError?.status === 429 ||
+          (describedError?.status ?? 0) >= 500 ||
+          isUnsupportedTranslationError(details) ||
+          describedError?.code === "TRANSLATION_UNSUPPORTED";
         console.error(`[audio] translation failed for ${lang} chunk ${chunk_index}: ${details}`);
-        if (isUnsupportedTranslationError(details)) {
+        if (shouldFallback) {
           return chunks[chunk_index];
         }
         throw new Error(details);
@@ -651,7 +722,8 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {
-    const msg = e instanceof Error ? e.message : "Unknown error";
+    const described = await describeError(e);
+    const msg = described.message;
     console.error("generate-audio error:", msg);
     if (e?.code === "RATE_LIMITED" || /Azure 429/i.test(msg)) {
       const retryAfter = Number(e?.retryAfter) || 30;

@@ -92,6 +92,13 @@ function buildUnsupportedLanguagePayload(targetLanguage: string) {
   };
 }
 
+function jsonResponse(payload: Record<string, unknown>, status = 200, extraHeaders: Record<string, string> = {}) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
+  });
+}
+
 async function translateWithAzure(text: string, sourceLang: string, targetLang: string): Promise<string> {
   const key = Deno.env.get("Azure_Secret_Key_Translator");
   if (!key) throw new Error("AZURE_TRANSLATOR_NOT_CONFIGURED");
@@ -198,9 +205,7 @@ Deno.serve(async (req) => {
     }
 
     if (!AZURE_TRANSLATOR_LANG[target_language]) {
-      return new Response(JSON.stringify(buildUnsupportedLanguagePayload(target_language)), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse(buildUnsupportedLanguagePayload(target_language));
     }
 
     // Load lesson + document
@@ -445,12 +450,20 @@ Deno.serve(async (req) => {
     const msg = e instanceof Error ? e.message : "Unknown error";
     if (isUnsupportedAzureLanguageError(msg)) {
       const targetLanguage = typeof requestBody?.target_language === "string" ? requestBody.target_language : "";
-      return new Response(JSON.stringify(buildUnsupportedLanguagePayload(targetLanguage)), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse(buildUnsupportedLanguagePayload(targetLanguage));
     }
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    if (/Azure Translator 5\d\d:|AZURE_TRANSLATOR_NOT_CONFIGURED/i.test(msg)) {
+      return jsonResponse(
+        {
+          success: false,
+          fallback: true,
+          error: "SERVICE_UNAVAILABLE",
+          message: "Translation service is temporarily unavailable.",
+          code: "SERVICE_UNAVAILABLE",
+        },
+        200,
+      );
+    }
+    return jsonResponse({ error: msg, fallback: false }, 500);
   }
 });
