@@ -61,6 +61,20 @@ export function AudioSection({
   const [duration, setDuration] = useState(0);
   const [seekProgress, setSeekProgress] = useState([0]);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [autoplay, setAutoplay] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("audio_autoplay") === "1";
+  });
+  const autoplayRef = useRef(autoplay);
+  useEffect(() => {
+    autoplayRef.current = autoplay;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("audio_autoplay", autoplay ? "1" : "0");
+    }
+  }, [autoplay]);
+
+  // Set when previous section ended via autoplay — current section should auto-start if unlocked.
+  const autoStartPendingRef = useRef(false);
 
   // ---- Status check (no charge, no generation) ----
   const runCheck = useCallback(async () => {
