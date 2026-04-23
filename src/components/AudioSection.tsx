@@ -175,6 +175,13 @@ export function AudioSection({
     const onLoad = () => setDuration(audio.duration);
     const onEnd = () => {
       setIsPlaying(false);
+      // If autoplay is on and there is a next section, mark it for auto-start.
+      if (autoplayRef.current && chunkIndex < totalChunks - 1) {
+        sessionStorage.setItem(
+          "audio_autostart",
+          `${lessonId}:${chunkIndex + 1}:${language}`,
+        );
+      }
       onChunkEnded?.();
     };
     audio.addEventListener("timeupdate", onTime);
