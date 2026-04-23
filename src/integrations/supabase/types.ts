@@ -610,6 +610,89 @@ export type Database = {
           },
         ]
       }
+      seed_queue: {
+        Row: {
+          attempts: number
+          chunk_index: number
+          completed_at: string | null
+          created_at: string
+          document_id: string
+          id: string
+          last_error: string | null
+          priority: number
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          chunk_index: number
+          completed_at?: string | null
+          created_at?: string
+          document_id: string
+          id?: string
+          last_error?: string | null
+          priority?: number
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          chunk_index?: number
+          completed_at?: string | null
+          created_at?: string
+          document_id?: string
+          id?: string
+          last_error?: string | null
+          priority?: number
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seed_queue_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seed_worker_state: {
+        Row: {
+          current_document_id: string | null
+          current_queue_id: string | null
+          id: number
+          is_running: boolean
+          last_error: string | null
+          last_heartbeat: string | null
+          total_processed: number
+          updated_at: string
+        }
+        Insert: {
+          current_document_id?: string | null
+          current_queue_id?: string | null
+          id?: number
+          is_running?: boolean
+          last_error?: string | null
+          last_heartbeat?: string | null
+          total_processed?: number
+          updated_at?: string
+        }
+        Update: {
+          current_document_id?: string | null
+          current_queue_id?: string | null
+          id?: number
+          is_running?: boolean
+          last_error?: string | null
+          last_heartbeat?: string | null
+          total_processed?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       translation_assets: {
         Row: {
           char_count: number
