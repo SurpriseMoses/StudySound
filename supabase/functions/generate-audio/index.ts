@@ -125,7 +125,7 @@ async function ttsElevenLabs(text: string, apiKey: string): Promise<ArrayBuffer>
 }
 
 async function ttsAzure(text: string, lang: string, apiKey: string, mode: "story" | "study"): Promise<ArrayBuffer> {
-  const voice = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+  const voice = pickVoice(lang, mode);
   const locale = AZURE_LANG_LOCALE[lang] ?? "en-GB";
   const ssml = buildSSML(text, voice, locale, mode);
   const res = await fetch(`https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
