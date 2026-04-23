@@ -78,6 +78,10 @@ export function AudioSection({
     setChecking(true);
     setAudioUrl(null);
     setIsPlaying(false);
+    // Always clear any pending autostart intent so it doesn't linger across remounts.
+    const pendingKey = `${lessonId}:${chunkIndex}:${language}`;
+    const pending = sessionStorage.getItem("audio_autostart") === pendingKey;
+    sessionStorage.removeItem("audio_autostart");
     try {
       const { data, error } = await supabase.functions.invoke("generate-audio", {
         body: { lesson_id: lessonId, chunk_index: chunkIndex, language, check_only: true },
@@ -89,8 +93,6 @@ export function AudioSection({
         credits_balance: data.credits_balance ?? 0,
       });
       onMeta?.({ text: data.text ?? "", totalChunks: data.total_chunks ?? 1 });
-      const pending = sessionStorage.getItem("audio_autostart") === lessonId + ":" + chunkIndex + ":" + language;
-      if (pending) sessionStorage.removeItem("audio_autostart");
       if (data.already_paid) {
         await loadAudio({ autoPlay: pending });
       } else if (pending) {
