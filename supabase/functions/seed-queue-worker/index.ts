@@ -36,7 +36,8 @@ const BATCH_SIZE = 10;
 const RETRY_DELAYS = [10_000, 20_000, 40_000]; // 429 backoff
 const MAX_RETRIES = 3;
 const LOCK_TIMEOUT_MS = 90_000;          // stale lock
-const HARD_DEADLINE_MS = 130_000;        // exit before 150s edge limit
+const HARD_DEADLINE_MS = 110_000;        // exit well before 150s edge limit
+const MAX_CHUNKS_PER_INVOCATION = 8;     // bound work per invocation
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
