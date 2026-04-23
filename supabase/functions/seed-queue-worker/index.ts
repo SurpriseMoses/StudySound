@@ -132,6 +132,7 @@ async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", v
 type ChunkCacheEntry = {
   title: string;
   chunks: string[];
+  mode: "story" | "study";
 };
 
 // deno-lint-ignore no-explicit-any
