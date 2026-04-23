@@ -58,11 +58,20 @@ function addNaturalPauses(text: string) {
     .replace(/\?(?!\s)/g, "? ").replace(/!(?!\s)/g, "! ")
     .replace(/\s+/g, " ").trim();
 }
-function buildSSML(text: string) {
+function buildSSML(text: string, mode: "story" | "study", voiceName: string) {
   const processed = escapeXml(addNaturalPauses(text));
+  if (mode === "story") {
+    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${VOICE_LOCALE}">
+  <voice name="${voiceName}">
+    <mstts:express-as style="${STORY_SPEAKING_STYLE}" styledegree="2.0">
+      <prosody rate="0.82" pitch="-2%" contour="(0%,+0%) (50%,+8%) (100%,-4%)">${processed}</prosody>
+    </mstts:express-as>
+  </voice>
+</speak>`;
+  }
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${VOICE_LOCALE}">
-  <voice name="${VOICE_NAME}">
-    <mstts:express-as style="${SPEAKING_STYLE}" styledegree="1.0">
+  <voice name="${voiceName}">
+    <mstts:express-as style="${STUDY_SPEAKING_STYLE}" styledegree="1.0">
       <prosody rate="0.95">${processed}</prosody>
     </mstts:express-as>
   </voice>
