@@ -296,7 +296,7 @@ async function processOneChunk(admin: any, azureKey: string): Promise<{ result: 
       const exhausted = attempts >= MAX_ATTEMPTS;
       const baseDelay = e.retryAfterMs ?? RATE_LIMIT_DELAY_MIN_MS;
       const jitter = Math.floor(Math.random() * (RATE_LIMIT_DELAY_MAX_MS - RATE_LIMIT_DELAY_MIN_MS));
-      const delayMs = Math.min(Math.max(baseDelay, RATE_LIMIT_DELAY_MIN_MS) + jitter, RATE_LIMIT_DELAY_MAX_MS * 2);
+      const delayMs = Math.min(Math.max(baseDelay, RATE_LIMIT_DELAY_MIN_MS) + jitter, RATE_LIMIT_DELAY_HARD_CAP_MS);
       const delayedUntil = new Date(Date.now() + delayMs).toISOString();
 
       await admin.from("seed_queue").update({
