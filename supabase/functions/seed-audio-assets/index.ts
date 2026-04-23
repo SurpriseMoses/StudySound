@@ -233,9 +233,9 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // ---------- Re-clean if needed ----------
+    // ---------- Re-clean if needed (or forced) ----------
     let cleanText = doc.clean_text;
-    if (!cleanText || cleanText.length < 1000) {
+    if (forceReclean || !cleanText || cleanText.length < 1000) {
       if (!doc.raw_text) {
         await admin.from("documents").update({
           seed_audio_status: "failed",
