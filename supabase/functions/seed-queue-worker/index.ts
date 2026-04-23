@@ -205,6 +205,13 @@ async function processOneChunk(admin: any, azureKey: string): Promise<{ result: 
       status: "done", completed_at: new Date().toISOString(),
       attempts: (queueRow.attempts ?? 0) + 1,
     }).eq("id", queueRow.id);
+    await admin.from("seed_logs").insert({
+      document_id: doc.id,
+      chunk_index: queueRow.chunk_index,
+      status: "success",
+      error_message: "cached",
+      retry_count: retryCount,
+    });
     console.log(`[worker] skip (cached) doc=${doc.id} chunk=${queueRow.chunk_index}`);
     return { result: "done", detail: "cached" };
   }
@@ -250,6 +257,13 @@ async function processOneChunk(admin: any, azureKey: string): Promise<{ result: 
       attempts: (queueRow.attempts ?? 0) + 1, last_error: null,
     }).eq("id", queueRow.id);
 
+    await admin.from("seed_logs").insert({
+      document_id: doc.id,
+      chunk_index: queueRow.chunk_index,
+      status: "success",
+      retry_count: retryCount,
+    });
+
     // Update document progress
     await admin.from("documents").update({
       seed_audio_progress: queueRow.chunk_index,
@@ -291,6 +305,17 @@ async function processOneChunk(admin: any, azureKey: string): Promise<{ result: 
         last_error: `rate-limited (attempt ${attempts}/${MAX_ATTEMPTS}): ${msg}`,
       }).eq("id", queueRow.id);
 
+      await admin.from("seed_logs").insert({
+        document_id: docId,
+        chunk_index: chunkIdx,
+        status: "rate_limited",
+        error_message: msg,
+        retry_count: attempts,
+      });
+      await admin.from("documents").update({
+        last_error: `rate-limited: ${msg}`,
+      }).eq("id", docId);
+
       console.warn(
         `[worker] current_chunk_id=${queueRow.id} doc=${docId} chunk=${chunkIdx} ` +
         `retry_count=${attempts}/${MAX_ATTEMPTS} last_error="rate-limited" ` +
@@ -308,6 +333,18 @@ async function processOneChunk(admin: any, azureKey: string): Promise<{ result: 
       delayed_until: exhausted ? null : new Date(Date.now() + 30_000).toISOString(),
       last_error: msg,
     }).eq("id", queueRow.id);
+
+    await admin.from("seed_logs").insert({
+      document_id: docId,
+      chunk_index: chunkIdx,
+      status: "failed",
+      error_message: msg,
+      retry_count: attempts,
+    });
+    await admin.from("documents").update({
+      last_error: msg,
+    }).eq("id", docId);
+
     console.error(
       `[worker] current_chunk_id=${queueRow.id} doc=${docId} chunk=${chunkIdx} ` +
       `retry_count=${attempts}/${MAX_ATTEMPTS} last_error="${msg}" ` +
