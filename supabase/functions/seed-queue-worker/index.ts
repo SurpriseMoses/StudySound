@@ -23,9 +23,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const VOICE_NAME = "en-GB-LibbyNeural";
+const STUDY_VOICE_NAME = "en-GB-LibbyNeural";
+const STORY_VOICE_NAME = "en-GB-RyanNeural";
 const VOICE_LOCALE = "en-GB";
-const SPEAKING_STYLE = "general";
+const STUDY_SPEAKING_STYLE = "general";
+const STORY_SPEAKING_STYLE = "narration-professional";
 const LANGUAGE = "en";
 const VOICE_PROVIDER = "azure";
 const AZURE_REGION = "southafricanorth";
