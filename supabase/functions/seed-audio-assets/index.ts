@@ -36,7 +36,9 @@ const SPEAKING_STYLE = "general";
 const LANGUAGE = "en";
 const VOICE_PROVIDER = "azure";
 const AZURE_REGION = "southafricanorth";
-const DEFAULT_MAX_CHUNKS = 25;
+const DEFAULT_MAX_CHUNKS = 5;
+// Pause between successful chunks to stay under Azure's per-second quota.
+const INTER_CHUNK_DELAY_MS = 2500;
 
 function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
