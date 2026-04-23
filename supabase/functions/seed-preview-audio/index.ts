@@ -118,8 +118,8 @@ Deno.serve(async (req) => {
     if (!AZURE_LANGS.has(lang)) throw new Error(`Language ${lang} not supported by Azure`);
     const provider = "azure" as const;
     const mode: "story" | "study" = doc.subject_type === "novel" ? "story" : "study";
-    const voiceName = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
-    const speakingStyle = mode === "story" ? "narration-relaxed" : "general";
+    const voiceName = pickVoice(lang, mode);
+    const speakingStyle = mode === "story" ? "narration-professional" : "general";
 
     const chunks = chunkText(doc.clean_text);
     const limit = Math.min(chunkCount, chunks.length);
