@@ -90,7 +90,7 @@ export default function AdminSeedAudio() {
     docId: string,
   ): Promise<{ done: boolean; error?: string; rateLimited?: boolean; retryAfterMs?: number }> {
     const { data, error } = await supabase.functions.invoke("seed-audio-assets", {
-      body: { document_id: docId, max_chunks: 25 },
+      body: { document_id: docId, max_chunks: 5 },
     });
     if (error) return { done: false, error: error.message };
     if (data?.rate_limited) {
@@ -115,9 +115,10 @@ export default function AdminSeedAudio() {
 
   async function runAutoLoop(docId: string) {
     setAutoLoop(docId);
+    const BATCH_PAUSE_MS = 15000; // wait 15s between batches to stay under Azure quota
     try {
-      // Up to 80 iterations * 25 chunks = 2000 chunks max. Pauses on rate limit.
-      for (let i = 0; i < 80; i++) {
+      // Up to 400 iterations * 5 chunks = 2000 chunks max. Pauses on rate limit.
+      for (let i = 0; i < 400; i++) {
         const res = await runOneBatch(docId);
         await load();
         if (res.rateLimited) {
@@ -134,6 +135,8 @@ export default function AdminSeedAudio() {
           toast.success("Document fully narrated 🎉");
           break;
         }
+        // Slow, steady cadence: pause 15s between batches.
+        await new Promise((r) => setTimeout(r, BATCH_PAUSE_MS));
       }
     } finally {
       setAutoLoop(null);
