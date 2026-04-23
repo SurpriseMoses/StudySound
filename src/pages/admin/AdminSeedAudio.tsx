@@ -367,10 +367,25 @@ export default function AdminSeedAudio() {
                             : <ListPlus className="w-3.5 h-3.5 mr-1.5" />}
                           Add to queue
                         </Button>
+                        <Button size="sm" variant="ghost" onClick={() => openLogs(d)}>
+                          <FileText className="w-3.5 h-3.5 mr-1.5" />
+                          View logs
+                        </Button>
                       </div>
                     </div>
                     <Progress value={pct} className="h-1.5" />
-                    {d.seed_audio_error && (
+                    <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                      <span>Current chunk: <span className="font-mono text-foreground">{d.current_chunk_index ?? "—"}</span></span>
+                      <span>Progress: <span className="font-mono text-foreground">{d.cached_chunks}/{totalEst}</span></span>
+                      {isCurrent && <span className="text-primary">● live</span>}
+                    </div>
+                    {d.last_error && (
+                      <div className="text-xs text-destructive flex items-start gap-1.5 mt-1">
+                        <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                        <span className="break-all">{d.last_error}</span>
+                      </div>
+                    )}
+                    {d.seed_audio_error && d.seed_audio_error !== d.last_error && (
                       <div className="text-xs text-destructive flex items-start gap-1.5 mt-1">
                         <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                         <span className="break-all">{d.seed_audio_error}</span>
@@ -383,9 +398,54 @@ export default function AdminSeedAudio() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!logsDoc} onOpenChange={(o) => !o && setLogsDoc(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Logs — {logsDoc?.title}</DialogTitle>
+            <DialogDescription>Last 20 chunk events for this book.</DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto -mx-6 px-6">
+            {logsLoading ? (
+              <div className="flex items-center justify-center py-10 text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…
+              </div>
+            ) : logs.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">No logs yet.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {logs.map((l) => (
+                  <div key={l.id} className="text-xs border rounded-md p-2 flex items-start gap-3">
+                    <Badge variant="secondary" className={logStatusColors[l.status]}>
+                      {l.status}
+                    </Badge>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono">chunk #{l.chunk_index}</span>
+                        <span className="text-muted-foreground">retry: {l.retry_count}</span>
+                        <span className="text-muted-foreground">{new Date(l.created_at).toLocaleTimeString()}</span>
+                      </div>
+                      {l.error_message && (
+                        <div className="text-destructive break-all mt-0.5">{l.error_message}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+const logStatusColors: Record<SeedLog["status"], string> = {
+  started: "bg-muted text-muted-foreground",
+  success: "bg-success/15 text-success",
+  failed: "bg-destructive/15 text-destructive",
+  rate_limited: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
+};
 
 function StatTile({ label, value, tone }: { label: string; value: number; tone: "default" | "primary" | "success" | "destructive" }) {
   const toneCls = {
