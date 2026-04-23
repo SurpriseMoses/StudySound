@@ -126,56 +126,11 @@ async function translateWithAzure(text: string, sourceLang: string, targetLang: 
   throw new Error(lastError);
 }
 
-async function translateWithGemini(text: string, sourceLang: string, targetLang: string): Promise<string> {
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
-  if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
-
-  const sourceName = LANG_NAMES[sourceLang] ?? sourceLang;
-  const targetName = LANG_NAMES[targetLang] ?? targetLang;
-
-  const systemPrompt =
-    `You are a precise translator for South African high-school study material. ` +
-    `Translate the user's text from ${sourceName} into ${targetName}. ` +
-    `Preserve meaning, tone, names, numbers, and paragraph breaks. ` +
-    `Do NOT add commentary, notes, or quotation marks around the output. ` +
-    `Return ONLY the translated text.`;
-
-  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "google/gemini-3-flash-preview",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: text },
-      ],
-    }),
-  });
-
-  if (resp.status === 429) throw new Error("Rate limit exceeded. Please try again shortly.");
-  if (resp.status === 402) throw new Error("AI credits exhausted. Please top up your workspace.");
-  if (!resp.ok) {
-    const t = await resp.text();
-    throw new Error(`AI gateway error ${resp.status}: ${t.slice(0, 200)}`);
-  }
-
-  const json = await resp.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") throw new Error("Empty translation response");
-  return content.trim();
-}
-
-// Try Azure first (fast + cheap, native SA-language support); fall back to Gemini.
+// Azure-only translation. No AI gateway fallback — surface real errors to the client.
 async function translateWithAI(text: string, sourceLang: string, targetLang: string): Promise<string> {
-  try {
-    const out = await translateWithAzure(text, sourceLang, targetLang);
-    console.log(`[translate] azure ok ${sourceLang}->${targetLang} (${text.length} chars)`);
-    return out;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.warn(`[translate] azure failed, falling back to gemini: ${msg}`);
-    return await translateWithGemini(text, sourceLang, targetLang);
-  }
+  const out = await translateWithAzure(text, sourceLang, targetLang);
+  console.log(`[translate] azure ok ${sourceLang}->${targetLang} (${text.length} chars)`);
+  return out;
 }
 
 Deno.serve(async (req) => {
