@@ -234,8 +234,8 @@ async function processOneChunk(
     .eq("chunk_index", queueRow.chunk_index)
     .eq("language", LANGUAGE)
     .eq("voice_provider", VOICE_PROVIDER)
-    .eq("voice_name", VOICE_NAME)
-    .eq("speaking_style", SPEAKING_STYLE)
+    .eq("voice_name", voiceName)
+    .eq("speaking_style", speakingStyle)
     .maybeSingle();
   if (existing) {
     await admin.from("seed_queue").update({
