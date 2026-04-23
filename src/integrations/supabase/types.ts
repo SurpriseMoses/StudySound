@@ -183,11 +183,13 @@ export type Database = {
           clean_text: string | null
           content_hash: string
           created_at: string
+          current_chunk_index: number | null
           doc_type: string | null
           grade_level: string | null
           id: string
           is_seeded: boolean
           language: string
+          last_error: string | null
           page_count: number | null
           raw_text: string | null
           seed_audio: boolean
@@ -205,11 +207,13 @@ export type Database = {
           clean_text?: string | null
           content_hash: string
           created_at?: string
+          current_chunk_index?: number | null
           doc_type?: string | null
           grade_level?: string | null
           id?: string
           is_seeded?: boolean
           language?: string
+          last_error?: string | null
           page_count?: number | null
           raw_text?: string | null
           seed_audio?: boolean
@@ -227,11 +231,13 @@ export type Database = {
           clean_text?: string | null
           content_hash?: string
           created_at?: string
+          current_chunk_index?: number | null
           doc_type?: string | null
           grade_level?: string | null
           id?: string
           is_seeded?: boolean
           language?: string
+          last_error?: string | null
           page_count?: number | null
           raw_text?: string | null
           seed_audio?: boolean
@@ -609,6 +615,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      seed_logs: {
+        Row: {
+          chunk_index: number
+          created_at: string
+          document_id: string
+          error_message: string | null
+          id: number
+          retry_count: number
+          status: string
+        }
+        Insert: {
+          chunk_index: number
+          created_at?: string
+          document_id: string
+          error_message?: string | null
+          id?: number
+          retry_count?: number
+          status: string
+        }
+        Update: {
+          chunk_index?: number
+          created_at?: string
+          document_id?: string
+          error_message?: string | null
+          id?: number
+          retry_count?: number
+          status?: string
+        }
+        Relationships: []
       }
       seed_queue: {
         Row: {
