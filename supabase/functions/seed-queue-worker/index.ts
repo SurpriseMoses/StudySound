@@ -39,8 +39,8 @@ const RATE_LIMIT_DELAY_MIN_MS = 5_000;   // defer 5s (was 15s)
 const RATE_LIMIT_DELAY_MAX_MS = 15_000;  // up to 15s (was 30s)
 const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000; // hard cap 30s (was 60s)
 const LOCK_TIMEOUT_MS = 90_000;
-const HARD_DEADLINE_MS = 130_000;        // exit before edge timeout
-const MAX_CHUNKS_PER_INVOCATION = 80;    // more work per invocation (was 30)
+const HARD_DEADLINE_MS = 90_000;         // exit well before CPU/wall limit
+const MAX_CHUNKS_PER_INVOCATION = 25;    // stay under edge CPU budget (was 80 → caused WORKER_RESOURCE_LIMIT)
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
