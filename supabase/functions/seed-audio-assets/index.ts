@@ -345,11 +345,16 @@ Deno.serve(async (req) => {
           }
         } else {
           generated++;
+          console.log(`[seed-audio-assets] ✓ chunk ${i}/${totalChunks - 1} cached (doc=${doc.id})`);
         }
         if (i > highestCompleted) highestCompleted = i;
         await admin.from("documents").update({
           seed_audio_progress: highestCompleted,
         }).eq("id", doc.id);
+        // Throttle to avoid Azure per-second quota — skip wait on the final chunk of this batch.
+        if (generated < maxChunks && i < totalChunks - 1) {
+          await sleep(INTER_CHUNK_DELAY_MS);
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         const isStorageBlip = /Storage upload:/.test(msg) && (
