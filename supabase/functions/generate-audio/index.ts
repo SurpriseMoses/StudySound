@@ -118,7 +118,16 @@ async function ttsAzure(text: string, lang: string, apiKey: string, mode: "story
     },
     body: ssml,
   });
-  if (!res.ok) throw new Error(`Azure ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 429) {
+      const err: any = new Error(`Azure 429: ${body || "Quota Exceeded"}`);
+      err.code = "RATE_LIMITED";
+      err.retryAfter = Number(res.headers.get("retry-after")) || 30;
+      throw err;
+    }
+    throw new Error(`Azure ${res.status}: ${body}`);
+  }
   return res.arrayBuffer();
 }
 
