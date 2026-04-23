@@ -7,19 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 const COST = 1;
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
-const SKIP_CONFIRM_KEY = "studysound:skip-audio-unlock-confirm";
 
 type Props = {
   lessonId: string;
@@ -58,8 +53,6 @@ export function AudioSection({
 
   const [check, setCheck] = useState<CheckResult | null>(null);
   const [checking, setChecking] = useState(true);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [dontShowAgain, setDontShowAgain] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -135,7 +128,6 @@ export function AudioSection({
       toast({ title: "Audio failed", description: msg, variant: "destructive" });
     } finally {
       setGenerating(false);
-      setConfirmOpen(false);
       inflightRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -191,19 +183,11 @@ export function AudioSection({
       else loadAudio({ autoPlay: true });
       return;
     }
-    // Locked — check first-time skip preference.
-    const skip = typeof window !== "undefined" && localStorage.getItem(SKIP_CONFIRM_KEY) === "1";
-    if (skip) {
-      loadAudio({ autoPlay: true });
-    } else {
-      setConfirmOpen(true);
-    }
-  };
-
-  const handleConfirmPlay = () => {
-    if (dontShowAgain && typeof window !== "undefined") {
-      localStorage.setItem(SKIP_CONFIRM_KEY, "1");
-    }
+    // Locked — notify + start narration immediately.
+    toast({
+      title: "1 credit used",
+      description: "Narration starting — replay anytime, no repeat charges.",
+    });
     loadAudio({ autoPlay: true });
   };
 
@@ -347,51 +331,6 @@ export function AudioSection({
           </p>
         </CardContent>
       </Card>
-
-      <Dialog open={confirmOpen} onOpenChange={(o) => { if (!generating) setConfirmOpen(o); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Volume2 className="w-5 h-5 text-primary" /> Play audio
-            </DialogTitle>
-            <DialogDescription>
-              This will use <strong>{COST} credit</strong>. Continue?
-            </DialogDescription>
-          </DialogHeader>
-          <ul className="text-sm space-y-1.5 my-1">
-            <li className="flex items-start gap-2">
-              <Check className="w-4 h-4 text-success mt-0.5 shrink-0" />
-              <span>Replay anytime — no repeat charges</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <Check className="w-4 h-4 text-success mt-0.5 shrink-0" />
-              <span>Works offline if downloaded</span>
-            </li>
-          </ul>
-          <p className="text-xs text-muted-foreground">
-            Your balance: <strong className="text-foreground">{check?.credits_balance ?? 0}</strong> credits
-          </p>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none mt-1">
-            <Checkbox
-              checked={dontShowAgain}
-              onCheckedChange={(v) => setDontShowAgain(v === true)}
-            />
-            Don't show again
-          </label>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={generating}>
-              Cancel
-            </Button>
-            <Button onClick={handleConfirmPlay} disabled={generating}>
-              {generating ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading…</>
-              ) : (
-                <><Play className="w-4 h-4 mr-2" /> Play & Use Credit</>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
