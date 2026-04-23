@@ -295,17 +295,11 @@ export default function LessonPlayer() {
                 </div>
               </div>
             </div>
-            <Select value={language} onValueChange={setLanguage}>
-              <SelectTrigger className="w-40">
-                <Globe className="w-4 h-4 mr-1" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {LANGS.map((l) => (
-                  <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <LanguagePickerWithHint
+              language={language}
+              onChange={setLanguage}
+            />
+
           </div>
         </div>
 
