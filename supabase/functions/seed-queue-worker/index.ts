@@ -280,8 +280,8 @@ async function processOneChunk(
       chunk_index: queueRow.chunk_index,
       language: LANGUAGE,
       voice_provider: VOICE_PROVIDER,
-      voice_name: VOICE_NAME,
-      speaking_style: SPEAKING_STYLE,
+      voice_name: voiceName,
+      speaking_style: speakingStyle,
       storage_path: path,
       char_count: text.length,
     });
