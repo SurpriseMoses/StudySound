@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, BookOpenCheck, Sparkles, RefreshCw, Play, Pause, ListPlus, AlertCircle, Trash2 } from "lucide-react";
+import { Loader2, BookOpenCheck, Sparkles, RefreshCw, Play, Pause, ListPlus, AlertCircle, Trash2, FileText } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -14,7 +21,19 @@ type SeedDoc = {
   seed_audio_status: "pending" | "cleaning" | "processing" | "done" | "failed";
   seed_audio_progress: number;
   seed_audio_error: string | null;
+  current_chunk_index: number | null;
+  last_error: string | null;
   cached_chunks: number;
+};
+
+type SeedLog = {
+  id: number;
+  document_id: string;
+  chunk_index: number;
+  status: "started" | "success" | "failed" | "rate_limited";
+  error_message: string | null;
+  retry_count: number;
+  created_at: string;
 };
 
 type QueueStatus = {
