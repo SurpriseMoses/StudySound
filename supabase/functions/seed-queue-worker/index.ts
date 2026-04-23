@@ -193,7 +193,7 @@ async function processOneChunk(
   if (!docEntry) {
     const { data: doc, error: docErr } = await admin
       .from("documents")
-      .select("id, title, clean_text")
+      .select("id, title, clean_text, subject_type")
       .eq("id", queueRow.document_id)
       .maybeSingle();
     if (docErr) throw docErr;
@@ -208,9 +208,13 @@ async function processOneChunk(
     docEntry = {
       title: doc.title,
       chunks: chunkText(doc.clean_text),
+      mode: doc.subject_type === "novel" ? "story" : "study",
     };
     chunkCache.set(queueRow.document_id, docEntry);
   }
+  const mode = docEntry.mode;
+  const voiceName = mode === "story" ? STORY_VOICE_NAME : STUDY_VOICE_NAME;
+  const speakingStyle = mode === "story" ? STORY_SPEAKING_STYLE : STUDY_SPEAKING_STYLE;
 
   if (queueRow.chunk_index >= docEntry.chunks.length) {
     await admin.from("seed_queue").update({
