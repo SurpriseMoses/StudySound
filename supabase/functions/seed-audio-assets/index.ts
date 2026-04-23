@@ -208,6 +208,7 @@ Deno.serve(async (req) => {
     // ---------- Parse body ----------
     const body = await req.json().catch(() => ({}));
     const requestedDocId: string | undefined = body?.document_id;
+    const forceReclean: boolean = body?.force_reclean === true;
     const maxChunks = Math.max(
       1,
       Math.min(200, Number(body?.max_chunks ?? DEFAULT_MAX_CHUNKS)),
