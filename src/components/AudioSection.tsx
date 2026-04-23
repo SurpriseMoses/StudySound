@@ -78,6 +78,10 @@ export function AudioSection({
     setChecking(true);
     setAudioUrl(null);
     setIsPlaying(false);
+    // Always clear any pending autostart intent so it doesn't linger across remounts.
+    const pendingKey = `${lessonId}:${chunkIndex}:${language}`;
+    const pending = sessionStorage.getItem("audio_autostart") === pendingKey;
+    sessionStorage.removeItem("audio_autostart");
     try {
       const { data, error } = await supabase.functions.invoke("generate-audio", {
         body: { lesson_id: lessonId, chunk_index: chunkIndex, language, check_only: true },
@@ -89,8 +93,6 @@ export function AudioSection({
         credits_balance: data.credits_balance ?? 0,
       });
       onMeta?.({ text: data.text ?? "", totalChunks: data.total_chunks ?? 1 });
-      const pending = sessionStorage.getItem("audio_autostart") === lessonId + ":" + chunkIndex + ":" + language;
-      if (pending) sessionStorage.removeItem("audio_autostart");
       if (data.already_paid) {
         await loadAudio({ autoPlay: pending });
       } else if (pending) {
@@ -290,14 +292,16 @@ export function AudioSection({
                       pressed={autoplay}
                       onPressedChange={setAutoplay}
                       aria-label="Autoplay"
-                      className="h-7 px-2 gap-1 text-xs data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+                      className="h-7 px-2 gap-1 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=off]:bg-transparent data-[state=off]:text-muted-foreground transition-colors"
                       disabled={chunkIndex >= totalChunks - 1}
                     >
                       <Repeat className="w-3.5 h-3.5" />
-                      Autoplay
+                      {autoplay ? "On" : "Off"}
                     </Toggle>
                   </TooltipTrigger>
-                  <TooltipContent>Auto-play unlocked sections</TooltipContent>
+                  <TooltipContent>
+                    {autoplay ? "Autoplay is on — will play unlocked sections" : "Autoplay is off"}
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <DropdownMenu>
