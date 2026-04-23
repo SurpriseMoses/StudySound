@@ -18,6 +18,7 @@ const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "ts", "nso"]);
 
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
+const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "fr"]);
 
 // Languages with native Azure voices. Others (xh, ts, nso) fall back to the English
 // voice AND read the original English text (no translation lookup), so pronunciation stays correct.
@@ -366,6 +367,7 @@ Deno.serve(async (req) => {
     async function resolveDisplayText(): Promise<string> {
       const sourceLang = (doc.language ?? "en").toLowerCase();
       if (lang === sourceLang) return chunks[chunk_index];
+      if (!TRANSLATABLE_LANGS.has(lang)) return chunks[chunk_index];
       // Try cached translation first.
       const { data: tr } = await admin
         .from("translation_assets")
