@@ -146,12 +146,14 @@ export default function LessonPlayer() {
   useEffect(() => {
     // Reset chunk + reward state on language / lesson change
     setChunkIndex(0);
+    setChunkText(""); // clear stale text so previous-language text doesn't bleed into the new card
     listenRewardFired.current = false;
     lastTickRef.current = 0;
   }, [language, lesson?.id]);
 
   useEffect(() => {
     // Reset per-chunk reward flag whenever the section changes
+    setChunkText(""); // clear stale text immediately on chunk change
     listenRewardFired.current = false;
     lastTickRef.current = 0;
   }, [chunkIndex]);
