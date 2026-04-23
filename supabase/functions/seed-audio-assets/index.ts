@@ -101,8 +101,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
   const ssml = buildSSML(text);
-  // Up to 4 attempts with exponential backoff on 429/5xx.
-  const delays = [1500, 4000, 9000, 20000];
+  // Up to 4 attempts (=> 3 retries) with exponential backoff on 429/5xx: 2s, 5s, 10s, 20s.
+  const delays = [2000, 5000, 10000, 20000];
   let lastErr = "";
   for (let attempt = 0; attempt < delays.length; attempt++) {
     const res = await fetch(
@@ -118,19 +118,24 @@ async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
         body: ssml,
       },
     );
-    if (res.ok) return res.arrayBuffer();
+    if (res.ok) {
+      if (attempt > 0) {
+        console.log(`[seed-audio-assets] Azure recovered after ${attempt} retr${attempt === 1 ? "y" : "ies"}`);
+      }
+      return res.arrayBuffer();
+    }
     const body = await res.text();
     lastErr = `Azure ${res.status}: ${body.slice(0, 200)}`;
     const retryable = res.status === 429 || res.status >= 500;
     if (!retryable) throw new Error(lastErr);
     const retryAfter = Number(res.headers.get("retry-after"));
     const wait = Number.isFinite(retryAfter) && retryAfter > 0
-      ? retryAfter * 1000
+      ? Math.max(retryAfter * 1000, delays[attempt])
       : delays[attempt];
-    console.warn(`[seed-audio-assets] Azure ${res.status}, backoff ${wait}ms (attempt ${attempt + 1})`);
+    console.warn(`[seed-audio-assets] Azure ${res.status} (rate limit), backoff ${wait}ms (attempt ${attempt + 1}/${delays.length})`);
     await sleep(wait);
   }
-  throw new RateLimitedError(lastErr || "Azure rate limited");
+  throw new RateLimitedError(lastErr || "Azure rate limited after 3 retries");
 }
 
 type DocRow = {
