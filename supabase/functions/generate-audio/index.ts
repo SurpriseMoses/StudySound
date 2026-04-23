@@ -118,7 +118,16 @@ async function ttsAzure(text: string, lang: string, apiKey: string, mode: "story
     },
     body: ssml,
   });
-  if (!res.ok) throw new Error(`Azure ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 429) {
+      const err: any = new Error(`Azure 429: ${body || "Quota Exceeded"}`);
+      err.code = "RATE_LIMITED";
+      err.retryAfter = Number(res.headers.get("retry-after")) || 30;
+      throw err;
+    }
+    throw new Error(`Azure ${res.status}: ${body}`);
+  }
   return res.arrayBuffer();
 }
 
@@ -539,9 +548,24 @@ Deno.serve(async (req) => {
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-  } catch (e) {
+  } catch (e: any) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     console.error("generate-audio error:", msg);
+    if (e?.code === "RATE_LIMITED" || /Azure 429/i.test(msg)) {
+      const retryAfter = Number(e?.retryAfter) || 30;
+      return new Response(
+        JSON.stringify({
+          error: "RATE_LIMITED",
+          message: "Audio service is busy. Please try again in a moment.",
+          retry_after_seconds: retryAfter,
+          fallback: true,
+        }),
+        {
+          status: 503,
+          headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": String(retryAfter) },
+        },
+      );
+    }
     return new Response(JSON.stringify({ error: msg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
