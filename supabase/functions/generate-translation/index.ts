@@ -21,7 +21,7 @@ const PER_MINUTE_SOFT_LIMIT = 5;
 
 const LANG_NAMES: Record<string, string> = {
   en: "English", af: "Afrikaans", zu: "isiZulu", xh: "isiXhosa",
-  ts: "Xitsonga (Tsonga)", nso: "Sepedi (Northern Sotho)", fr: "French",
+  nso: "Sepedi (Northern Sotho)", tn: "Setswana", ve: "Tshivenda", fr: "French",
 };
 
 function chunkText(text: string, size = CHUNK_SIZE): string[] {
@@ -63,11 +63,11 @@ function injectWatermark(text: string, mark: string): string {
 }
 
 // Map our internal language codes to Azure Translator codes.
-// Azure Translator currently supports af, zu, xh, nso and fr for our target set.
-// Xitsonga (ts) is offered in Azure Speech in some setups, but not in Azure Translator.
+// Azure Translator supports: af, zu, xh, nso, tn (Setswana), ve (Tshivenda), fr.
+// Xitsonga (ts) is NOT supported by Azure Translator.
 const AZURE_TRANSLATOR_LANG: Record<string, string> = {
   en: "en", af: "af", zu: "zu", xh: "xh",
-  nso: "nso", fr: "fr",
+  nso: "nso", tn: "tn", ve: "ve", fr: "fr",
 };
 // Region of the Azure resource. South Africa North resources usually require the
 // region header, while global resources reject it. Try both paths safely.

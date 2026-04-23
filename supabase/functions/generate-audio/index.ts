@@ -14,21 +14,22 @@ const corsHeaders = {
 
 const CHUNK_SIZE = 1800;
 // All languages route to Azure. Languages without a native voice fall back to English voice.
-const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "ts", "nso"]);
+const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "nso", "tn", "ve"]);
 
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
-const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "fr"]);
+const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "tn", "ve", "fr"]);
 
-// Languages with native Azure voices. Others (xh, ts, nso) fall back to the English
-// voice AND read the original English text (no translation lookup), so pronunciation stays correct.
+// Languages with native Azure voices. Others fall back to the English voice
+// for narration but display the translated text on screen.
 const NATIVE_VOICE_LANGS = new Set(["zu", "af", "en", "fr"]);
 const AZURE_VOICES: Record<string, string> = {
   zu: "zu-ZA-ThandoNeural",
   af: "af-ZA-AdriNeural",
   xh: "en-GB-LibbyNeural",
-  ts: "en-GB-LibbyNeural",
   nso: "en-GB-LibbyNeural",
+  tn: "en-GB-LibbyNeural",
+  ve: "en-GB-LibbyNeural",
   en: "en-GB-LibbyNeural",
   fr: "fr-FR-DeniseNeural",
 };
@@ -37,15 +38,17 @@ const AZURE_VOICES: Record<string, string> = {
 const AZURE_STORY_VOICES: Record<string, string> = {
   en: "en-GB-RyanNeural",
   xh: "en-GB-RyanNeural",
-  ts: "en-GB-RyanNeural",
   nso: "en-GB-RyanNeural",
+  tn: "en-GB-RyanNeural",
+  ve: "en-GB-RyanNeural",
 };
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
   af: "af-ZA",
   xh: "en-GB",
-  ts: "en-GB",
   nso: "en-GB",
+  tn: "en-GB",
+  ve: "en-GB",
   en: "en-GB",
   fr: "fr-FR",
 };

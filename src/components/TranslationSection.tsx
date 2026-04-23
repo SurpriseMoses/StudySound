@@ -21,7 +21,7 @@ const TRANSLATION_COST = 2;
 
 const LANG_LABELS: Record<string, string> = {
   en: "English", af: "Afrikaans", zu: "isiZulu", xh: "isiXhosa",
-  ts: "Xitsonga", nso: "Sepedi", fr: "French",
+  nso: "Sepedi", tn: "Setswana", ve: "Tshivenda", fr: "French",
 };
 
 interface Props {
