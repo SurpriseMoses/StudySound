@@ -228,8 +228,8 @@ Deno.serve(async (req) => {
 
     const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
     const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
-    const voiceName = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
-    const speakingStyle = mode === "story" ? "narration-relaxed" : "general";
+    const voiceName = pickVoice(lang, mode);
+    const speakingStyle = mode === "story" ? "narration-professional" : "general";
 
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
