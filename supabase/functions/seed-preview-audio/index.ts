@@ -19,6 +19,16 @@ const AZURE_VOICES: Record<string, string> = {
   en: "en-GB-LibbyNeural",
   fr: "fr-FR-DeniseNeural",
 };
+const AZURE_STORY_VOICES: Record<string, string> = {
+  en: "en-GB-RyanNeural",
+  xh: "en-GB-RyanNeural",
+  ts: "en-GB-RyanNeural",
+  nso: "en-GB-RyanNeural",
+};
+function pickVoice(lang: string, mode: "story" | "study"): string {
+  if (mode === "story" && AZURE_STORY_VOICES[lang]) return AZURE_STORY_VOICES[lang];
+  return AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+}
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA", af: "af-ZA", xh: "en-GB", ts: "en-GB", nso: "en-GB", en: "en-GB", fr: "fr-FR",
 };
