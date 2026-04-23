@@ -73,9 +73,6 @@ export function AudioSection({
     }
   }, [autoplay]);
 
-  // Set when previous section ended via autoplay — current section should auto-start if unlocked.
-  const autoStartPendingRef = useRef(false);
-
   // ---- Status check (no charge, no generation) ----
   const runCheck = useCallback(async () => {
     setChecking(true);
