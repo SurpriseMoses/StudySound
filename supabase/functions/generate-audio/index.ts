@@ -31,6 +31,14 @@ const AZURE_VOICES: Record<string, string> = {
   en: "en-GB-LibbyNeural",
   fr: "fr-FR-DeniseNeural",
 };
+// For "story" mode (novels/plays) use a more theatrical narrator where supported.
+// Other languages keep their default voice (no expressive variant available).
+const AZURE_STORY_VOICES: Record<string, string> = {
+  en: "en-GB-RyanNeural",
+  xh: "en-GB-RyanNeural",
+  ts: "en-GB-RyanNeural",
+  nso: "en-GB-RyanNeural",
+};
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
   af: "af-ZA",
