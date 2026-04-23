@@ -1,11 +1,24 @@
 // Shared text cleaner for public-domain seeded books.
-// Strips Project Gutenberg boilerplate, drops licence/URL lines, and starts the
-// usable text at the first real story marker (ACT I for plays, CHAPTER 1 for
-// novels). Output is the narration-ready text we feed to Azure TTS.
 //
-// IMPORTANT: this runs both inside `seed-curriculum` (during initial seeding)
-// and `seed-audio-assets` (lazy re-clean if `clean_text` is null). Keep it
-// pure and Deno-safe — no network, no Supabase imports.
+// Pipeline (Shakespeare-grade for plays, generic for novels):
+//   1. Strip Project Gutenberg header/footer + licence/URL noise lines
+//   2. For plays: remove front-matter (Dramatis Personae, scene/location lists,
+//      table of contents) BEFORE we jump to ACT I
+//   3. Start at first ACT I (plays) or CHAPTER 1 (novels)
+//   4. Trim at end-of-book markers ("End of Project Gutenberg", FINIS)
+//   5. Strip non-speakable artifacts: footnotes, asterisks/daggers, page nums,
+//      stray underscores `_word_`, OCR junk
+//   6. Normalise stage directions: `[Exit]`, `(Enter Iago)`, `_Exeunt._`, etc.
+//      → spoken-friendly form: `Exit.` / `They exit.` / `Enter Iago.`
+//   7. Normalise speaker labels:
+//        IAGO.  → IAGO:\n
+//        IAGO. Tush…  → IAGO:\nTush…
+//   8. Merge broken verse lines under a speaker into a single paragraph for
+//      audio narration (preserves verse structure for novels via blank lines)
+//   9. Pad ACT / SCENE headings with blank lines for clear audio structure
+//
+// Pure & Deno-safe. Used by `seed-curriculum`, `seed-audio-assets`,
+// `seed-queue-manager`. Output is the narration-ready text fed to Azure TTS.
 
 const DROP_LINE_PATTERNS: RegExp[] = [
   /project gutenberg/i,
@@ -52,10 +65,11 @@ const PLAY_FRONTMATTER_HEADINGS: RegExp[] = [
   /^\s*CHARACTERS?\s+(?:OF\s+THE\s+PLAY|IN\s+THE\s+PLAY|REPRESENTED)\b/i,
   /^\s*THE\s+SCENE\b/i,
   /^\s*SCENE[:\.]\s*$/i, // standalone "SCENE." heading for the location list
+  /^\s*CONTENTS?\b/i,
+  /^\s*TABLE\s+OF\s+CONTENTS?\b/i,
 ];
 
 function stripGutenbergBoilerplate(raw: string): string {
-  // Cut everything before "*** START OF ..." and after "*** END OF ..." if present.
   const startMarker = /\*{3,}\s*START OF (?:THE|THIS) PROJECT GUTENBERG[^\n]*\*{3,}/i;
   const endMarker = /\*{3,}\s*END OF (?:THE|THIS) PROJECT GUTENBERG[^\n]*\*{3,}/i;
   let text = raw;
@@ -117,16 +131,31 @@ function normaliseWhitespace(text: string): string {
     .trim();
 }
 
-// Strip front-matter sections (Dramatis Personae, scene/location lists, etc.)
+// Strip non-speakable artifacts: page numbers, footnote markers, stray symbols,
+// and Gutenberg-style `_italics_` underscores.
+function stripArtifacts(text: string): string {
+  return text
+    // `_italic phrase_` → `italic phrase`
+    .replace(/_([^_\n]{1,200})_/g, "$1")
+    // standalone footnote refs like [1], [12], [*]
+    .replace(/\[\s*(?:\d{1,3}|\*|†|‡)\s*\]/g, "")
+    // inline footnote symbols
+    .replace(/[†‡§¶]/g, "")
+    // line-end asterisk runs (footnote separators)
+    .replace(/^\s*\*\s*$/gm, "")
+    // bare page numbers on their own line
+    .replace(/^\s*\d{1,4}\s*$/gm, "")
+    // collapse double-spaces left behind
+    .replace(/[ \t]{2,}/g, " ");
+}
+
+// Strip front-matter sections (Dramatis Personae, scene/location lists, TOC)
 // that appear *before* ACT I. We scan from the start of the text up to the
-// first ACT marker and excise any block headed by a known front-matter heading.
+// first ACT marker and excise blocks headed by a known front-matter heading.
 function stripPlayFrontMatter(text: string): string {
   const firstAct = text.match(/^\s*ACT\s+(?:I|1|THE\s+FIRST)\b/im);
   const cutoff = firstAct?.index ?? text.length;
 
-  // Walk lines in the pre-ACT region. When we hit a front-matter heading,
-  // skip until we hit a blank line followed by another structural marker
-  // (ACT, SCENE, or another all-caps heading we don't recognise as content).
   const head = text.slice(0, cutoff);
   const tail = text.slice(cutoff);
 
@@ -144,13 +173,10 @@ function stripPlayFrontMatter(text: string): string {
     }
 
     if (skipping) {
-      // Stop skipping when we reach an ACT marker (shouldn't happen in head,
-      // but defensive) or a clearly new top-level heading after a blank line.
       if (/^\s*ACT\s+(?:I|1|[IVX]+|\d+|THE\s+\w+)\b/i.test(trimmed)) {
         skipping = false;
         kept.push(line);
       }
-      // Otherwise drop the line.
       continue;
     }
 
@@ -173,7 +199,6 @@ function collapseUppercaseBlocks(text: string): string {
     const t = s.trim();
     if (t.length < 4) return false;
     if (isHeading(t)) return false;
-    // mostly uppercase letters; allow punctuation/digits/spaces
     const letters = t.replace(/[^A-Za-z]/g, "");
     if (letters.length < 4) return false;
     return letters === letters.toUpperCase() && /[A-Z]/.test(letters);
@@ -201,30 +226,103 @@ function collapseUppercaseBlocks(text: string): string {
   return out.join("\n");
 }
 
-// Make plays read better:
-//  - Speaker label `IAGO.` or `IAGO` on its own line → `IAGO:`
-//  - ACT / SCENE markers preserved on their own lines with blank-line padding
-//  - Stage directions `(…)` → `[…]` for clearer audio cues
-function normalisePlayFormatting(text: string): string {
-  // Speaker label: 1-3 uppercase words (≤30 chars) on its own line, optional trailing period.
-  const speakerLine = /^([A-Z][A-Z'\- ]{1,30})\.?\s*$/gm;
-  text = text.replace(speakerLine, (_m, name) => {
-    const n = name.trim();
-    // Don't touch real headings.
-    if (/^(ACT|SCENE|PROLOGUE|EPILOGUE|CHORUS)\b/i.test(n)) return _m;
-    return `${n}:`;
-  });
+// --- Stage direction normalisation ----------------------------------------
+// Convert bracketed/parenthesised stage directions to spoken-friendly form.
+// We standardise to a sentence terminated by a period, on its own line.
+function normaliseStageDirection(inner: string): string {
+  let t = inner.trim().replace(/\s+/g, " ").replace(/[.\s]+$/, "");
+  if (!t) return "";
 
-  // Inline speaker form like `IAGO. Tush, never tell me.` → `IAGO: Tush…`
+  // Common shorthand → narration
+  // "Exeunt" / "Exuent" (typo) → "They exit"
+  if (/^exeunt\b/i.test(t) || /^exuent\b/i.test(t)) {
+    const rest = t.replace(/^exe?unt\b/i, "").trim();
+    return rest ? `They exit ${rest}.` : "They exit.";
+  }
+  // "Exit" alone or "Exit Iago"
+  if (/^exit\b/i.test(t)) {
+    return `${t.charAt(0).toUpperCase() + t.slice(1)}.`;
+  }
+  // "Enter Iago" / "Enter Iago and Roderigo"
+  if (/^enter\b/i.test(t)) {
+    return `${t.charAt(0).toUpperCase() + t.slice(1)}.`;
+  }
+  // "Re-enter…", "Aside", "Within", "Flourish", etc. — keep as terse cue.
+  return `${t.charAt(0).toUpperCase() + t.slice(1)}.`;
+}
+
+function normaliseStageDirections(text: string): string {
+  // [stage direction]  or  (stage direction)  → its own line, narration form.
+  // Length-bounded to avoid swallowing long parenthetical asides in prose.
+  const rx = /[\[\(]\s*([^\[\]\(\)\n]{2,200})\s*[\]\)]/g;
+  return text.replace(rx, (_m, inner) => `\n${normaliseStageDirection(inner)}\n`);
+}
+
+// --- Speaker labels & line merging ----------------------------------------
+// Detect speaker labels and ensure the format:
+//   IAGO:
+//   line of dialogue continuing on this line and the next
+//   second line of dialogue is merged onto the same paragraph
+function normalisePlayDialogue(text: string): string {
+  // 1. Speaker on its own line: `IAGO.` or `IAGO` → `IAGO:`
   text = text.replace(
-    /^([A-Z][A-Z'\- ]{1,30})\.\s+(?=[A-Z“"'\(\[])/gm,
-    (_m, name) => `${name.trim()}: `,
+    /^([A-Z][A-Z'\- ]{1,30})\.?\s*$/gm,
+    (m, name) => {
+      const n = name.trim();
+      if (/^(ACT|SCENE|PROLOGUE|EPILOGUE|CHORUS)\b/i.test(n)) return m;
+      return `${n}:`;
+    },
   );
 
-  // (stage direction) → [stage direction]
-  text = text.replace(/\(([^()\n]{2,120})\)/g, (_m, inner) => `[${inner.trim()}]`);
+  // 2. Inline speaker form: `IAGO. Tush, never tell me.` → `IAGO:\nTush…`
+  text = text.replace(
+    /^([A-Z][A-Z'\- ]{1,30})\.\s+(?=[A-Z“"'\(\[])/gm,
+    (_m, name) => `${name.trim()}:\n`,
+  );
 
-  // Pad ACT and SCENE headings with blank lines for clear structure.
+  // 3. Merge broken verse lines under a speaker into one paragraph.
+  //    A "speaker block" runs from `NAME:` until the next blank line, the next
+  //    speaker label, an ACT/SCENE heading, or a normalised stage direction.
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  const speakerLine = /^([A-Z][A-Z'\- ]{1,30}):\s*$/;
+  const isStructural = (s: string) =>
+    /^(ACT|SCENE|PROLOGUE|EPILOGUE|CHORUS)\b/i.test(s.trim()) ||
+    speakerLine.test(s) ||
+    /^(Exit|Enter|Re-enter|They exit|Exeunt|Aside|Within|Flourish)\b/.test(s.trim());
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const m = line.match(speakerLine);
+    if (!m) {
+      out.push(line);
+      i++;
+      continue;
+    }
+    out.push(line); // the `NAME:` header
+    i++;
+    const buf: string[] = [];
+    while (i < lines.length) {
+      const next = lines[i];
+      if (next.trim() === "") {
+        i++;
+        break;
+      }
+      if (isStructural(next)) break;
+      buf.push(next.trim());
+      i++;
+    }
+    if (buf.length) {
+      // Merge verse lines into a single flowing paragraph for narration.
+      out.push(buf.join(" ").replace(/\s{2,}/g, " "));
+      out.push(""); // blank line after dialogue paragraph
+    }
+  }
+  return out.join("\n");
+}
+
+function padStructuralHeadings(text: string): string {
   text = text.replace(
     /^[ \t]*(ACT\s+[IVX\d]+(?:\.[^\n]*)?)[ \t]*$/gim,
     "\n\n$1\n",
@@ -233,11 +331,7 @@ function normalisePlayFormatting(text: string): string {
     /^[ \t]*(SCENE\s+[IVX\d]+\.?[^\n]*)$/gim,
     "\n$1\n",
   );
-
-  // Tidy excessive blank lines created above.
-  text = text.replace(/\n{3,}/g, "\n\n");
-
-  return text;
+  return text.replace(/\n{3,}/g, "\n\n");
 }
 
 export type DocKind = "play" | "novel";
@@ -280,29 +374,25 @@ function extractPlayStructure(text: string): SceneRef[] {
 }
 
 /**
- * Clean raw public-domain text (e.g. from Project Gutenberg) into
- * narration-ready content.
+ * Clean raw public-domain text into narration-ready content.
  *
- *  - Strips Gutenberg header/footer
- *  - Drops licence / URL / boilerplate lines
- *  - Starts at ACT I (plays) or CHAPTER 1 (novels)
- *  - For plays: strips Dramatis Personae & scene/location front-matter,
- *    preserves ACT/SCENE markers, normalises speaker labels (`IAGO:`),
- *    converts stage directions `(…)` → `[…]`, collapses uppercase blocks.
- *  - Cuts trailing "End of Project Gutenberg…" tails
- *  - Normalises whitespace
+ * Plays get the full Shakespeare pipeline:
+ *   - Strip Gutenberg + Dramatis Personae + scene lists + TOC
+ *   - Start at ACT I, end at "End of Project Gutenberg"
+ *   - Remove footnotes / page numbers / stray underscores
+ *   - Normalise stage directions to spoken form (Exit. / They exit. / Enter X.)
+ *   - Normalise speaker labels (IAGO:) on their own line
+ *   - Merge broken verse lines into paragraphs for fluid audio
+ *   - Pad ACT/SCENE headings for clear audio breaks
  *
- * For plays, also returns an optional `structure` array (act/scene/location)
- * which callers may persist separately — it is NOT included in `text` beyond
- * the inline ACT/SCENE headings already needed for narration cues.
+ * Novels get a lighter pass (boilerplate strip, start at CHAPTER 1, artifact
+ * removal, whitespace normalisation).
  */
 export function cleanRawText(raw: string, kind: DocKind): CleanResult {
   let text = raw ?? "";
   text = stripGutenbergBoilerplate(text);
   text = dropNoiseLines(text);
 
-  // For plays, strip Dramatis Personae / location lists BEFORE we jump to ACT I,
-  // so any stragglers between front-matter and ACT I are removed too.
   if (kind === "play") text = stripPlayFrontMatter(text);
 
   const beforeStart = text.length;
@@ -310,10 +400,13 @@ export function cleanRawText(raw: string, kind: DocKind): CleanResult {
   const startedAt: CleanResult["startedAt"] = text.length === beforeStart ? "none" : kind;
 
   text = trimAtEnd(text);
+  text = stripArtifacts(text);
 
   if (kind === "play") {
     text = collapseUppercaseBlocks(text);
-    text = normalisePlayFormatting(text);
+    text = normaliseStageDirections(text);
+    text = normalisePlayDialogue(text);
+    text = padStructuralHeadings(text);
   }
 
   text = normaliseWhitespace(text);

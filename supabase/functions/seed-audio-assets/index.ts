@@ -208,6 +208,7 @@ Deno.serve(async (req) => {
     // ---------- Parse body ----------
     const body = await req.json().catch(() => ({}));
     const requestedDocId: string | undefined = body?.document_id;
+    const forceReclean: boolean = body?.force_reclean === true;
     const maxChunks = Math.max(
       1,
       Math.min(200, Number(body?.max_chunks ?? DEFAULT_MAX_CHUNKS)),
@@ -232,9 +233,9 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // ---------- Re-clean if needed ----------
+    // ---------- Re-clean if needed (or forced) ----------
     let cleanText = doc.clean_text;
-    if (!cleanText || cleanText.length < 1000) {
+    if (forceReclean || !cleanText || cleanText.length < 1000) {
       if (!doc.raw_text) {
         await admin.from("documents").update({
           seed_audio_status: "failed",
