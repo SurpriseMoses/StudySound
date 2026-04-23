@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Play, Pause, SkipBack, SkipForward, Loader2, Lock, Volume2, Coins, Gauge, Check,
+  Play, Pause, SkipBack, SkipForward, Loader2, Lock, Volume2, Coins, Gauge, Check, Repeat,
 } from "lucide-react";
+import { Toggle } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
@@ -60,6 +61,17 @@ export function AudioSection({
   const [duration, setDuration] = useState(0);
   const [seekProgress, setSeekProgress] = useState([0]);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [autoplay, setAutoplay] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("audio_autoplay") === "1";
+  });
+  const autoplayRef = useRef(autoplay);
+  useEffect(() => {
+    autoplayRef.current = autoplay;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("audio_autoplay", autoplay ? "1" : "0");
+    }
+  }, [autoplay]);
 
   // ---- Status check (no charge, no generation) ----
   const runCheck = useCallback(async () => {
@@ -77,8 +89,16 @@ export function AudioSection({
         credits_balance: data.credits_balance ?? 0,
       });
       onMeta?.({ text: data.text ?? "", totalChunks: data.total_chunks ?? 1 });
+      const pending = sessionStorage.getItem("audio_autostart") === lessonId + ":" + chunkIndex + ":" + language;
+      if (pending) sessionStorage.removeItem("audio_autostart");
       if (data.already_paid) {
-        await loadAudio({ autoPlay: false });
+        await loadAudio({ autoPlay: pending });
+      } else if (pending) {
+        // Next section requires payment — stop autoplay chain.
+        toast({
+          title: "Autoplay paused",
+          description: `Next section requires ${COST} credit. Tap play to continue.`,
+        });
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Status check failed";
@@ -152,6 +172,13 @@ export function AudioSection({
     const onLoad = () => setDuration(audio.duration);
     const onEnd = () => {
       setIsPlaying(false);
+      // If autoplay is on and there is a next section, mark it for auto-start.
+      if (autoplayRef.current && chunkIndex < totalChunks - 1) {
+        sessionStorage.setItem(
+          "audio_autostart",
+          `${lessonId}:${chunkIndex + 1}:${language}`,
+        );
+      }
       onChunkEnded?.();
     };
     audio.addEventListener("timeupdate", onTime);
@@ -254,21 +281,41 @@ export function AudioSection({
               <Volume2 className="w-4 h-4 text-primary" />
               Audio narration
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs tabular-nums">
-                  <Gauge className="w-3.5 h-3.5" />
-                  {playbackRate}x
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {SPEEDS.map((s) => (
-                  <DropdownMenuItem key={s} onClick={() => setPlaybackRate(s)}>
-                    {s}x {playbackRate === s && <Check className="w-3.5 h-3.5 ml-auto" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex items-center gap-1">
+              <TooltipProvider delayDuration={250}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Toggle
+                      size="sm"
+                      pressed={autoplay}
+                      onPressedChange={setAutoplay}
+                      aria-label="Autoplay"
+                      className="h-7 px-2 gap-1 text-xs data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+                      disabled={chunkIndex >= totalChunks - 1}
+                    >
+                      <Repeat className="w-3.5 h-3.5" />
+                      Autoplay
+                    </Toggle>
+                  </TooltipTrigger>
+                  <TooltipContent>Auto-play unlocked sections</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs tabular-nums">
+                    <Gauge className="w-3.5 h-3.5" />
+                    {playbackRate}x
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {SPEEDS.map((s) => (
+                    <DropdownMenuItem key={s} onClick={() => setPlaybackRate(s)}>
+                      {s}x {playbackRate === s && <Check className="w-3.5 h-3.5 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
