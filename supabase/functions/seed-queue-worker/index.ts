@@ -30,15 +30,17 @@ const LANGUAGE = "en";
 const VOICE_PROVIDER = "azure";
 const AZURE_REGION = "southafricanorth";
 
-const INTER_CHUNK_DELAY_MS = 5000;       // 5s between chunks
-const LONG_PAUSE_MS = 30_000;            // every 10 chunks
-const BATCH_SIZE = 10;
-const MAX_ATTEMPTS = 3;                  // mark failed after 3 attempts
-const RATE_LIMIT_DELAY_MIN_MS = 60_000;  // defer 60s
-const RATE_LIMIT_DELAY_MAX_MS = 120_000; // defer up to 120s
+// Tuned for Azure Neural TTS South Africa North (~20 concurrent req/s soft limit).
+// Single global worker → safe to push faster than before.
+const INTER_CHUNK_DELAY_MS = 1500;       // 1.5s between successful chunks (was 5s)
+const POST_RATELIMIT_COOLDOWN_MS = 4000;  // brief pause after a 429 before next chunk
+const MAX_ATTEMPTS = 5;                  // more retries since defers are now short
+const RATE_LIMIT_DELAY_MIN_MS = 15_000;  // defer 15s (was 60s)
+const RATE_LIMIT_DELAY_MAX_MS = 30_000;  // defer up to 30s (was 120s)
+const RATE_LIMIT_DELAY_HARD_CAP_MS = 60_000; // never defer longer than 60s
 const LOCK_TIMEOUT_MS = 90_000;          // stale lock
-const HARD_DEADLINE_MS = 110_000;        // exit well before 150s edge limit
-const MAX_CHUNKS_PER_INVOCATION = 8;     // bound work per invocation
+const HARD_DEADLINE_MS = 120_000;        // exit before 150s edge limit
+const MAX_CHUNKS_PER_INVOCATION = 30;    // more work per invocation (was 8)
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
