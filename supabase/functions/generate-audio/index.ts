@@ -50,6 +50,10 @@ const AZURE_LANG_LOCALE: Record<string, string> = {
 };
 const AZURE_REGION = "southafricanorth";
 
+function isUnsupportedTranslationError(message: string): boolean {
+  return /TRANSLATION_UNSUPPORTED|Azure translation is not available/i.test(message);
+}
+
 function addNaturalPauses(text: string): string {
   return text
     .replace(/\.(?!\s)/g, ". ")
@@ -379,6 +383,9 @@ Deno.serve(async (req) => {
       if (trErr || !trData?.translated_text) {
         const details = trData?.error ?? trErr?.message ?? `Translation unavailable for ${lang}`;
         console.error(`[audio] translation failed for ${lang} chunk ${chunk_index}: ${details}`);
+        if (isUnsupportedTranslationError(details)) {
+          return chunks[chunk_index];
+        }
         throw new Error(details);
       }
       return trData.translated_text;
