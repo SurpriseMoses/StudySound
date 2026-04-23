@@ -63,11 +63,15 @@ function injectWatermark(text: string, mark: string): string {
 }
 
 // Map our internal language codes to Azure Translator codes.
+// Azure supports: af, zu, xh, nso (Sepedi/Northern Sotho), ts (Tsonga) on the GLOBAL endpoint.
+// Regional endpoints (e.g. southafricanorth) do NOT host all SA languages — use global.
 const AZURE_TRANSLATOR_LANG: Record<string, string> = {
   en: "en", af: "af", zu: "zu", xh: "xh",
   ts: "ts", nso: "nso", fr: "fr",
 };
-const AZURE_TRANSLATOR_REGION = "southafricanorth";
+// Region of the Azure resource. If the key was created as a "Global" Translator
+// resource, omit the region header. Set AZURE_TRANSLATOR_REGION secret to override.
+const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "global";
 
 async function translateWithAzure(text: string, sourceLang: string, targetLang: string): Promise<string> {
   const key = Deno.env.get("Azure_Secret_Key_Translator");
@@ -77,14 +81,19 @@ async function translateWithAzure(text: string, sourceLang: string, targetLang: 
   const to = AZURE_TRANSLATOR_LANG[targetLang];
   if (!from || !to) throw new Error(`AZURE_LANG_UNSUPPORTED:${sourceLang}->${targetLang}`);
 
+  // Always hit the global endpoint — supports all SA languages including nso & ts.
   const url = `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=${from}&to=${to}&textType=plain`;
+  const headers: Record<string, string> = {
+    "Ocp-Apim-Subscription-Key": key,
+    "Content-Type": "application/json",
+  };
+  // Only send region header if not "global" (global resources reject the header).
+  if (AZURE_TRANSLATOR_REGION && AZURE_TRANSLATOR_REGION !== "global") {
+    headers["Ocp-Apim-Subscription-Region"] = AZURE_TRANSLATOR_REGION;
+  }
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Ocp-Apim-Subscription-Key": key,
-      "Ocp-Apim-Subscription-Region": AZURE_TRANSLATOR_REGION,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify([{ Text: text }]),
   });
   if (!res.ok) {
