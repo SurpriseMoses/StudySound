@@ -53,13 +53,13 @@ function chunkText(text: string, size = CHUNK_SIZE): string[] {
 }
 function buildSSML(text: string, voice: string, locale: string, mode: "story" | "study") {
   const processed = escapeXml(addNaturalPauses(text));
-  const rate = mode === "story" ? "0.85" : "0.90";
-  const style = mode === "story" ? "narration-relaxed" : "general";
-  const styleDegree = mode === "story" ? "1.5" : "1.0";
-  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}"><voice name="${voice}"><mstts:express-as style="${style}" styledegree="${styleDegree}"><prosody rate="${rate}">${processed}</prosody></mstts:express-as></voice></speak>`;
+  if (mode === "story") {
+    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}"><voice name="${voice}"><mstts:express-as style="narration-professional" styledegree="2.0"><prosody rate="0.82" pitch="-2%" contour="(0%,+0%) (50%,+8%) (100%,-4%)">${processed}</prosody></mstts:express-as></voice></speak>`;
+  }
+  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}"><voice name="${voice}"><mstts:express-as style="general" styledegree="1.0"><prosody rate="0.90">${processed}</prosody></mstts:express-as></voice></speak>`;
 }
 async function ttsAzure(text: string, lang: string, apiKey: string, mode: "story" | "study") {
-  const voice = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+  const voice = pickVoice(lang, mode);
   const locale = AZURE_LANG_LOCALE[lang] ?? "en-GB";
   const ssml = buildSSML(text, voice, locale, mode);
   const res = await fetch(`https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
