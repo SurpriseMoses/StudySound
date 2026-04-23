@@ -21,7 +21,6 @@ import { useProgressionContext } from "@/contexts/ProgressionContext";
 import QuizBonusCard from "@/components/QuizBonusCard";
 import { useLessonProgress } from "@/hooks/use-lesson-progress";
 import StoryModeTab from "@/components/StoryModeTab";
-import { TranslationSection } from "@/components/TranslationSection";
 import { AudioSection } from "@/components/AudioSection";
 
 const LANGS = [
@@ -296,17 +295,11 @@ export default function LessonPlayer() {
                 </div>
               </div>
             </div>
-            <Select value={language} onValueChange={setLanguage}>
-              <SelectTrigger className="w-40">
-                <Globe className="w-4 h-4 mr-1" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {LANGS.map((l) => (
-                  <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <LanguagePickerWithHint
+              language={language}
+              onChange={setLanguage}
+            />
+
           </div>
         </div>
 
@@ -440,13 +433,6 @@ function ListenTab(props: {
             onSeekChunk={goChunk}
           />
 
-          {chunkText && (
-            <TranslationSection
-              lessonId={lessonId}
-              chunkIndex={chunkIndex}
-              language={language}
-            />
-          )}
         </CardContent>
       </Card>
     </>
@@ -666,6 +652,85 @@ function QuizTab({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ===================== Language picker with first-time "Translate +2" hint =====================
+function LanguagePickerWithHint({
+  language,
+  onChange,
+}: {
+  language: string;
+  onChange: (lang: string) => void;
+}) {
+  // Show hint until the user has switched to a non-English language at least once.
+  const [hasTranslated, setHasTranslated] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("has_translated_once") === "1";
+  });
+  const [showHint, setShowHint] = useState(false);
+  const [fading, setFading] = useState(false);
+
+  // Pulse the hint on mount (and re-pulse periodically) until they translate once.
+  useEffect(() => {
+    if (hasTranslated) return;
+    let fadeTimer: ReturnType<typeof setTimeout>;
+    let hideTimer: ReturnType<typeof setTimeout>;
+    const cycle = () => {
+      setShowHint(true);
+      setFading(false);
+      fadeTimer = setTimeout(() => setFading(true), 2500);
+      hideTimer = setTimeout(() => setShowHint(false), 3000);
+    };
+    cycle();
+    const interval = setInterval(cycle, 12000);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(fadeTimer);
+      clearTimeout(hideTimer);
+    };
+  }, [hasTranslated]);
+
+  const handleChange = (next: string) => {
+    if (next !== "en" && !hasTranslated) {
+      localStorage.setItem("has_translated_once", "1");
+      setHasTranslated(true);
+      setShowHint(false);
+    }
+    onChange(next);
+  };
+
+  return (
+    <div className="relative flex items-center gap-2">
+      {showHint && !hasTranslated && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary text-[11px] font-semibold shadow-sm transition-opacity duration-500 ${
+            fading ? "opacity-0" : "opacity-100 animate-pulse"
+          }`}
+        >
+          <Sparkles className="w-3 h-3" />
+          Translate +2
+        </div>
+      )}
+      <Select value={language} onValueChange={handleChange}>
+        <SelectTrigger className="w-40">
+          <Globe className="w-4 h-4 mr-1" />
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {LANGS.map((l) => (
+            <SelectItem key={l.code} value={l.code}>
+              {l.label}
+              {l.code !== "en" && (
+                <span className="ml-2 text-[10px] text-muted-foreground">+2/sec</span>
+              )}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
