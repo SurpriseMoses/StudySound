@@ -33,8 +33,9 @@ const AZURE_REGION = "southafricanorth";
 const INTER_CHUNK_DELAY_MS = 5000;       // 5s between chunks
 const LONG_PAUSE_MS = 30_000;            // every 10 chunks
 const BATCH_SIZE = 10;
-const RETRY_DELAYS = [10_000, 20_000, 40_000]; // 429 backoff
-const MAX_RETRIES = 3;
+const MAX_ATTEMPTS = 3;                  // mark failed after 3 attempts
+const RATE_LIMIT_DELAY_MIN_MS = 60_000;  // defer 60s
+const RATE_LIMIT_DELAY_MAX_MS = 120_000; // defer up to 120s
 const LOCK_TIMEOUT_MS = 90_000;          // stale lock
 const HARD_DEADLINE_MS = 110_000;        // exit well before 150s edge limit
 const MAX_CHUNKS_PER_INVOCATION = 8;     // bound work per invocation
@@ -91,48 +92,40 @@ class RateLimitedError extends Error {
 
 async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
   const ssml = buildSSML(text);
-  let lastErr = "";
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(
-      `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
-      {
-        method: "POST",
-        headers: {
-          "Ocp-Apim-Subscription-Key": apiKey,
-          "Content-Type": "application/ssml+xml",
-          "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
-          "User-Agent": "studysound-queue-worker",
-        },
-        body: ssml,
+  const res = await fetch(
+    `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
+    {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": apiKey,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+        "User-Agent": "studysound-queue-worker",
       },
-    );
-    if (res.ok) {
-      if (attempt > 0) console.log(`[worker] Azure recovered after ${attempt} retr${attempt === 1 ? "y" : "ies"}`);
-      return res.arrayBuffer();
-    }
-    const body = await res.text();
-    lastErr = `Azure ${res.status}: ${body.slice(0, 200)}`;
-    if (res.status !== 429 && res.status < 500) throw new Error(lastErr);
-    if (attempt === MAX_RETRIES) {
-      throw new RateLimitedError(lastErr, RETRY_DELAYS[RETRY_DELAYS.length - 1]);
-    }
+      body: ssml,
+    },
+  );
+  if (res.ok) return res.arrayBuffer();
+  const body = await res.text();
+  const errMsg = `Azure ${res.status}: ${body.slice(0, 200)}`;
+  if (res.status === 429 || res.status >= 500) {
     const retryAfter = Number(res.headers.get("retry-after"));
-    const wait = Number.isFinite(retryAfter) && retryAfter > 0
-      ? Math.max(retryAfter * 1000, RETRY_DELAYS[attempt])
-      : RETRY_DELAYS[attempt];
-    console.warn(`[worker] Azure ${res.status} — backoff ${wait}ms (retry ${attempt + 1}/${MAX_RETRIES})`);
-    await sleep(wait);
+    const retryAfterMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : undefined;
+    throw new RateLimitedError(errMsg, retryAfterMs);
   }
-  throw new RateLimitedError(lastErr || "Azure rate limited");
+  throw new Error(errMsg);
 }
 
 // deno-lint-ignore no-explicit-any
-async function processOneChunk(admin: any, azureKey: string): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string }> {
-  // Pick the next pending row globally (FIFO by priority then created_at).
+async function processOneChunk(admin: any, azureKey: string): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string; queue_id?: string }> {
+  // Pick the next pending row globally that is NOT delayed.
+  // delayed_until IS NULL OR delayed_until <= now()
+  const nowIso = new Date().toISOString();
   const { data: queueRow, error: pickErr } = await admin
     .from("seed_queue")
     .select("id, document_id, chunk_index, attempts")
     .eq("status", "pending")
+    .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
     .order("priority", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(1)
@@ -264,23 +257,48 @@ async function processOneChunk(admin: any, azureKey: string): Promise<{ result: 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const attempts = (queueRow.attempts ?? 0) + 1;
+    const docId = queueRow.document_id;
+    const chunkIdx = queueRow.chunk_index;
+
     if (e instanceof RateLimitedError) {
-      // Put back to pending so we try again later.
+      // DEFER: schedule a retry 60-120s in the future and move on.
+      const exhausted = attempts >= MAX_ATTEMPTS;
+      const baseDelay = e.retryAfterMs ?? RATE_LIMIT_DELAY_MIN_MS;
+      const jitter = Math.floor(Math.random() * (RATE_LIMIT_DELAY_MAX_MS - RATE_LIMIT_DELAY_MIN_MS));
+      const delayMs = Math.min(Math.max(baseDelay, RATE_LIMIT_DELAY_MIN_MS) + jitter, RATE_LIMIT_DELAY_MAX_MS * 2);
+      const delayedUntil = new Date(Date.now() + delayMs).toISOString();
+
       await admin.from("seed_queue").update({
-        status: "pending", started_at: null, attempts, last_error: `rate-limited: ${msg}`,
+        status: exhausted ? "failed" : "pending",
+        started_at: null,
+        attempts,
+        delayed_until: exhausted ? null : delayedUntil,
+        last_error: `rate-limited (attempt ${attempts}/${MAX_ATTEMPTS}): ${msg}`,
       }).eq("id", queueRow.id);
-      console.warn(`[worker] rate-limited on doc=${doc.id} chunk=${queueRow.chunk_index} — re-queued`);
-      return { result: "rate_limited", detail: msg };
+
+      console.warn(
+        `[worker] current_chunk_id=${queueRow.id} doc=${docId} chunk=${chunkIdx} ` +
+        `retry_count=${attempts}/${MAX_ATTEMPTS} last_error="rate-limited" ` +
+        (exhausted ? "→ MARKED FAILED (queue continues)" : `→ deferred ${Math.round(delayMs / 1000)}s`)
+      );
+      return { result: "rate_limited", detail: msg, queue_id: queueRow.id };
     }
-    // Hard failure
+
+    // Hard failure (non-rate-limit). After MAX_ATTEMPTS mark failed.
+    const exhausted = attempts >= MAX_ATTEMPTS;
     await admin.from("seed_queue").update({
-      status: attempts >= 3 ? "failed" : "pending",
+      status: exhausted ? "failed" : "pending",
       started_at: null,
       attempts,
+      delayed_until: exhausted ? null : new Date(Date.now() + 30_000).toISOString(),
       last_error: msg,
     }).eq("id", queueRow.id);
-    console.error(`[worker] ✗ doc=${doc.id} chunk=${queueRow.chunk_index} failed (attempt ${attempts}): ${msg}`);
-    return { result: "error", detail: msg };
+    console.error(
+      `[worker] current_chunk_id=${queueRow.id} doc=${docId} chunk=${chunkIdx} ` +
+      `retry_count=${attempts}/${MAX_ATTEMPTS} last_error="${msg}" ` +
+      (exhausted ? "→ MARKED FAILED (queue continues)" : "→ will retry in 30s")
+    );
+    return { result: "error", detail: msg, queue_id: queueRow.id };
   }
 }
 
@@ -369,10 +387,12 @@ Deno.serve(async (req) => {
         if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
         await sleep(INTER_CHUNK_DELAY_MS);
       } else if (res.result === "rate_limited") {
+        // Chunk was deferred. Track it but DO NOT stop — pick the next available chunk.
         rateLimited = true;
-        // Exit immediately so caller re-invokes after a pause.
-        console.warn("[worker] rate limited — exiting invocation for caller-side backoff");
-        break;
+        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
+        if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
+        // Brief pause before trying the next chunk to avoid hammering Azure.
+        await sleep(INTER_CHUNK_DELAY_MS);
       } else {
         // error: small pause then continue if time allows
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);

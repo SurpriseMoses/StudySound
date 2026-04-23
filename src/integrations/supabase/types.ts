@@ -616,6 +616,7 @@ export type Database = {
           chunk_index: number
           completed_at: string | null
           created_at: string
+          delayed_until: string | null
           document_id: string
           id: string
           last_error: string | null
@@ -629,6 +630,7 @@ export type Database = {
           chunk_index: number
           completed_at?: string | null
           created_at?: string
+          delayed_until?: string | null
           document_id: string
           id?: string
           last_error?: string | null
@@ -642,6 +644,7 @@ export type Database = {
           chunk_index?: number
           completed_at?: string | null
           created_at?: string
+          delayed_until?: string | null
           document_id?: string
           id?: string
           last_error?: string | null
