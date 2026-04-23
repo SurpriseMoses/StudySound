@@ -191,19 +191,11 @@ export function AudioSection({
       else loadAudio({ autoPlay: true });
       return;
     }
-    // Locked — check first-time skip preference.
-    const skip = typeof window !== "undefined" && localStorage.getItem(SKIP_CONFIRM_KEY) === "1";
-    if (skip) {
-      loadAudio({ autoPlay: true });
-    } else {
-      setConfirmOpen(true);
-    }
-  };
-
-  const handleConfirmPlay = () => {
-    if (dontShowAgain && typeof window !== "undefined") {
-      localStorage.setItem(SKIP_CONFIRM_KEY, "1");
-    }
+    // Locked — notify + start narration immediately.
+    toast({
+      title: "1 credit used",
+      description: "Narration starting — replay anytime, no repeat charges.",
+    });
     loadAudio({ autoPlay: true });
   };
 
