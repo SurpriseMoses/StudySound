@@ -58,6 +58,10 @@ export default function Profile() {
                         <SelectItem value="en">English</SelectItem>
                         <SelectItem value="af">Afrikaans</SelectItem>
                         <SelectItem value="zu">isiZulu</SelectItem>
+                        <SelectItem value="xh">isiXhosa</SelectItem>
+                        <SelectItem value="nso">Sepedi</SelectItem>
+                        <SelectItem value="tn">Setswana</SelectItem>
+                        <SelectItem value="ve">Tshivenda</SelectItem>
                         <SelectItem value="fr">French</SelectItem>
                       </SelectContent>
                     </Select>

@@ -25,8 +25,10 @@ const LANGS = [
   { code: "en", label: "English" },
   { code: "af", label: "Afrikaans" },
   { code: "zu", label: "isiZulu" },
-  { code: "ts", label: "Xitsonga" },
+  { code: "xh", label: "isiXhosa" },
   { code: "nso", label: "Sepedi" },
+  { code: "tn", label: "Setswana" },
+  { code: "ve", label: "Tshivenda" },
 ];
 
 interface ListenProps {
