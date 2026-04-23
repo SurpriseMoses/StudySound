@@ -357,8 +357,40 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Resolve display text for this chunk: translate when lang differs from source.
+    // Used by both check_only response and final response so the UI can show translated text.
+    async function resolveDisplayText(): Promise<string> {
+      const sourceLang = (doc.language ?? "en").toLowerCase();
+      if (lang === sourceLang) return chunks[chunk_index];
+      // Try cached translation first.
+      const { data: tr } = await admin
+        .from("translation_assets")
+        .select("translated_text")
+        .eq("document_id", doc.id)
+        .eq("chunk_index", chunk_index)
+        .eq("target_language", lang)
+        .maybeSingle();
+      if (tr?.translated_text) return tr.translated_text;
+      // Otherwise generate (also caches it for the audio step below).
+      try {
+        const { data: trData, error: trErr } = await admin.functions.invoke("generate-translation", {
+          body: { lesson_id, chunk_index, target_language: lang },
+          headers: { Authorization: authHeader },
+        });
+        if (trErr || !trData?.translated_text) {
+          console.warn(`[audio] translation fallback to source for ${lang} chunk ${chunk_index}: ${trErr?.message ?? "no text"}`);
+          return chunks[chunk_index];
+        }
+        return trData.translated_text;
+      } catch (e) {
+        console.warn(`[audio] translation error, falling back to source: ${(e as Error).message}`);
+        return chunks[chunk_index];
+      }
+    }
+
     // Lightweight per-chunk status check — no charge, no generation.
     if (check_only) {
+      const displayText = await resolveDisplayText();
       const { data: cachedRow } = await admin
         .from("audio_assets")
         .select("id")
