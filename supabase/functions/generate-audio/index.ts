@@ -31,6 +31,14 @@ const AZURE_VOICES: Record<string, string> = {
   en: "en-GB-LibbyNeural",
   fr: "fr-FR-DeniseNeural",
 };
+// For "story" mode (novels/plays) use a more theatrical narrator where supported.
+// Other languages keep their default voice (no expressive variant available).
+const AZURE_STORY_VOICES: Record<string, string> = {
+  en: "en-GB-RyanNeural",
+  xh: "en-GB-RyanNeural",
+  ts: "en-GB-RyanNeural",
+  nso: "en-GB-RyanNeural",
+};
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
   af: "af-ZA",
@@ -56,15 +64,27 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
+function pickVoice(lang: string, mode: "story" | "study"): string {
+  if (mode === "story" && AZURE_STORY_VOICES[lang]) return AZURE_STORY_VOICES[lang];
+  return AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+}
+
 function buildSSML(text: string, voice: string, locale: string, mode: "story" | "study"): string {
   const processed = escapeXml(addNaturalPauses(text));
-  const rate = mode === "story" ? "0.85" : "0.90";
-  const style = mode === "story" ? "narration-relaxed" : "general";
-  const styleDegree = mode === "story" ? "1.5" : "1.0";
+  if (mode === "story") {
+    // Theatrical storyteller: slower, warmer pitch, stronger expressive style.
+    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">
+  <voice name="${voice}">
+    <mstts:express-as style="narration-professional" styledegree="2.0">
+      <prosody rate="0.82" pitch="-2%" contour="(0%,+0%) (50%,+8%) (100%,-4%)">${processed}</prosody>
+    </mstts:express-as>
+  </voice>
+</speak>`;
+  }
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">
   <voice name="${voice}">
-    <mstts:express-as style="${style}" styledegree="${styleDegree}">
-      <prosody rate="${rate}">${processed}</prosody>
+    <mstts:express-as style="general" styledegree="1.0">
+      <prosody rate="0.90">${processed}</prosody>
     </mstts:express-as>
   </voice>
 </speak>`;
@@ -105,7 +125,7 @@ async function ttsElevenLabs(text: string, apiKey: string): Promise<ArrayBuffer>
 }
 
 async function ttsAzure(text: string, lang: string, apiKey: string, mode: "story" | "study"): Promise<ArrayBuffer> {
-  const voice = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+  const voice = pickVoice(lang, mode);
   const locale = AZURE_LANG_LOCALE[lang] ?? "en-GB";
   const ssml = buildSSML(text, voice, locale, mode);
   const res = await fetch(`https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
@@ -208,8 +228,8 @@ Deno.serve(async (req) => {
 
     const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
     const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
-    const voiceName = AZURE_VOICES[lang] ?? AZURE_VOICES.en;
-    const speakingStyle = mode === "story" ? "narration-relaxed" : "general";
+    const voiceName = pickVoice(lang, mode);
+    const speakingStyle = mode === "story" ? "narration-professional" : "general";
 
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;

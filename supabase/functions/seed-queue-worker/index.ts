@@ -23,9 +23,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const VOICE_NAME = "en-GB-LibbyNeural";
+const STUDY_VOICE_NAME = "en-GB-LibbyNeural";
+const STORY_VOICE_NAME = "en-GB-RyanNeural";
 const VOICE_LOCALE = "en-GB";
-const SPEAKING_STYLE = "general";
+const STUDY_SPEAKING_STYLE = "general";
+const STORY_SPEAKING_STYLE = "narration-professional";
 const LANGUAGE = "en";
 const VOICE_PROVIDER = "azure";
 const AZURE_REGION = "southafricanorth";
@@ -56,11 +58,20 @@ function addNaturalPauses(text: string) {
     .replace(/\?(?!\s)/g, "? ").replace(/!(?!\s)/g, "! ")
     .replace(/\s+/g, " ").trim();
 }
-function buildSSML(text: string) {
+function buildSSML(text: string, mode: "story" | "study", voiceName: string) {
   const processed = escapeXml(addNaturalPauses(text));
+  if (mode === "story") {
+    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${VOICE_LOCALE}">
+  <voice name="${voiceName}">
+    <mstts:express-as style="${STORY_SPEAKING_STYLE}" styledegree="2.0">
+      <prosody rate="0.82" pitch="-2%" contour="(0%,+0%) (50%,+8%) (100%,-4%)">${processed}</prosody>
+    </mstts:express-as>
+  </voice>
+</speak>`;
+  }
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${VOICE_LOCALE}">
-  <voice name="${VOICE_NAME}">
-    <mstts:express-as style="${SPEAKING_STYLE}" styledegree="1.0">
+  <voice name="${voiceName}">
+    <mstts:express-as style="${STUDY_SPEAKING_STYLE}" styledegree="1.0">
       <prosody rate="0.95">${processed}</prosody>
     </mstts:express-as>
   </voice>
@@ -92,8 +103,8 @@ class RateLimitedError extends Error {
   }
 }
 
-async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
-  const ssml = buildSSML(text);
+async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", voiceName: string): Promise<ArrayBuffer> {
+  const ssml = buildSSML(text, mode, voiceName);
   const res = await fetch(
     `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
     {
@@ -121,6 +132,7 @@ async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
 type ChunkCacheEntry = {
   title: string;
   chunks: string[];
+  mode: "story" | "study";
 };
 
 // deno-lint-ignore no-explicit-any
@@ -181,7 +193,7 @@ async function processOneChunk(
   if (!docEntry) {
     const { data: doc, error: docErr } = await admin
       .from("documents")
-      .select("id, title, clean_text")
+      .select("id, title, clean_text, subject_type")
       .eq("id", queueRow.document_id)
       .maybeSingle();
     if (docErr) throw docErr;
@@ -196,9 +208,13 @@ async function processOneChunk(
     docEntry = {
       title: doc.title,
       chunks: chunkText(doc.clean_text),
+      mode: doc.subject_type === "novel" ? "story" : "study",
     };
     chunkCache.set(queueRow.document_id, docEntry);
   }
+  const mode = docEntry.mode;
+  const voiceName = mode === "story" ? STORY_VOICE_NAME : STUDY_VOICE_NAME;
+  const speakingStyle = mode === "story" ? STORY_SPEAKING_STYLE : STUDY_SPEAKING_STYLE;
 
   if (queueRow.chunk_index >= docEntry.chunks.length) {
     await admin.from("seed_queue").update({
@@ -218,8 +234,8 @@ async function processOneChunk(
     .eq("chunk_index", queueRow.chunk_index)
     .eq("language", LANGUAGE)
     .eq("voice_provider", VOICE_PROVIDER)
-    .eq("voice_name", VOICE_NAME)
-    .eq("speaking_style", SPEAKING_STYLE)
+    .eq("voice_name", voiceName)
+    .eq("speaking_style", speakingStyle)
     .maybeSingle();
   if (existing) {
     await admin.from("seed_queue").update({
@@ -240,7 +256,7 @@ async function processOneChunk(
   const path = `audio/${doc.id}/${LANGUAGE}/${VOICE_PROVIDER}/${queueRow.chunk_index}.mp3`;
 
   try {
-    const audio = await ttsAzure(text, azureKey);
+    const audio = await ttsAzure(text, azureKey, mode, voiceName);
 
     // Storage upload with 3 retries for transient gateway errors.
     let upErr: { message: string } | null = null;
@@ -264,8 +280,8 @@ async function processOneChunk(
       chunk_index: queueRow.chunk_index,
       language: LANGUAGE,
       voice_provider: VOICE_PROVIDER,
-      voice_name: VOICE_NAME,
-      speaking_style: SPEAKING_STYLE,
+      voice_name: voiceName,
+      speaking_style: speakingStyle,
       storage_path: path,
       char_count: text.length,
     });
