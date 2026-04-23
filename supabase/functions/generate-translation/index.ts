@@ -62,7 +62,42 @@ function injectWatermark(text: string, mark: string): string {
   return text + mark;
 }
 
-async function translateWithAI(text: string, sourceLang: string, targetLang: string): Promise<string> {
+// Map our internal language codes to Azure Translator codes.
+const AZURE_TRANSLATOR_LANG: Record<string, string> = {
+  en: "en", af: "af", zu: "zu", xh: "xh",
+  ts: "ts", nso: "nso", fr: "fr",
+};
+const AZURE_TRANSLATOR_REGION = "southafricanorth";
+
+async function translateWithAzure(text: string, sourceLang: string, targetLang: string): Promise<string> {
+  const key = Deno.env.get("Azure_Secret_Key_Translator");
+  if (!key) throw new Error("AZURE_TRANSLATOR_NOT_CONFIGURED");
+
+  const from = AZURE_TRANSLATOR_LANG[sourceLang];
+  const to = AZURE_TRANSLATOR_LANG[targetLang];
+  if (!from || !to) throw new Error(`AZURE_LANG_UNSUPPORTED:${sourceLang}->${targetLang}`);
+
+  const url = `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=${from}&to=${to}&textType=plain`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Ocp-Apim-Subscription-Key": key,
+      "Ocp-Apim-Subscription-Region": AZURE_TRANSLATOR_REGION,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify([{ Text: text }]),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Azure Translator ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const json = await res.json();
+  const out = json?.[0]?.translations?.[0]?.text;
+  if (!out || typeof out !== "string") throw new Error("Empty Azure translation response");
+  return out.trim();
+}
+
+async function translateWithGemini(text: string, sourceLang: string, targetLang: string): Promise<string> {
   const apiKey = Deno.env.get("LOVABLE_API_KEY");
   if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
 
@@ -99,6 +134,19 @@ async function translateWithAI(text: string, sourceLang: string, targetLang: str
   const content = json?.choices?.[0]?.message?.content;
   if (!content || typeof content !== "string") throw new Error("Empty translation response");
   return content.trim();
+}
+
+// Try Azure first (fast + cheap, native SA-language support); fall back to Gemini.
+async function translateWithAI(text: string, sourceLang: string, targetLang: string): Promise<string> {
+  try {
+    const out = await translateWithAzure(text, sourceLang, targetLang);
+    console.log(`[translate] azure ok ${sourceLang}->${targetLang} (${text.length} chars)`);
+    return out;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[translate] azure failed, falling back to gemini: ${msg}`);
+    return await translateWithGemini(text, sourceLang, targetLang);
+  }
 }
 
 Deno.serve(async (req) => {
