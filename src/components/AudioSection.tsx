@@ -133,7 +133,6 @@ export function AudioSection({
       toast({ title: "Audio failed", description: msg, variant: "destructive" });
     } finally {
       setGenerating(false);
-      setConfirmOpen(false);
       inflightRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
