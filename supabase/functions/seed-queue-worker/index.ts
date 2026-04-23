@@ -256,7 +256,7 @@ async function processOneChunk(
   const path = `audio/${doc.id}/${LANGUAGE}/${VOICE_PROVIDER}/${queueRow.chunk_index}.mp3`;
 
   try {
-    const audio = await ttsAzure(text, azureKey);
+    const audio = await ttsAzure(text, azureKey, mode, voiceName);
 
     // Storage upload with 3 retries for transient gateway errors.
     let upErr: { message: string } | null = null;
