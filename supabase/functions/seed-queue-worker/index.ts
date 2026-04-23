@@ -117,12 +117,15 @@ async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
 }
 
 // deno-lint-ignore no-explicit-any
-async function processOneChunk(admin: any, azureKey: string): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string }> {
-  // Pick the next pending row globally (FIFO by priority then created_at).
+async function processOneChunk(admin: any, azureKey: string): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string; queue_id?: string }> {
+  // Pick the next pending row globally that is NOT delayed.
+  // delayed_until IS NULL OR delayed_until <= now()
+  const nowIso = new Date().toISOString();
   const { data: queueRow, error: pickErr } = await admin
     .from("seed_queue")
     .select("id, document_id, chunk_index, attempts")
     .eq("status", "pending")
+    .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
     .order("priority", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(1)
