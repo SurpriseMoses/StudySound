@@ -58,6 +58,36 @@ function isUnsupportedTranslationError(message: string): boolean {
   return /TRANSLATION_UNSUPPORTED|Azure translation is not available/i.test(message);
 }
 
+function buildTranslationFallbackPayload(args: {
+  text: string;
+  totalChunks: number;
+  chunkIndex: number;
+  language: string;
+  provider: "azure" | "elevenlabs";
+  voiceName: string;
+  speakingStyle: string;
+  reason: string;
+}) {
+  return {
+    success: true,
+    fallback: true,
+    audio_unavailable: true,
+    audio_url: null,
+    chunk_index: args.chunkIndex,
+    total_chunks: args.totalChunks,
+    text: args.text,
+    language: args.language,
+    provider: args.provider,
+    voice_name: args.voiceName,
+    speaking_style: args.speakingStyle,
+    reused: false,
+    source: "fallback",
+    cache_state: "Unavailable",
+    credits_charged: 0,
+    error: args.reason,
+  };
+}
+
 function addNaturalPauses(text: string): string {
   return text
     .replace(/\.(?!\s)/g, ". ")
@@ -386,7 +416,7 @@ Deno.serve(async (req) => {
         headers: { Authorization: authHeader },
       });
       if (trErr || !trData?.translated_text) {
-        const details = trData?.error ?? trErr?.message ?? `Translation unavailable for ${lang}`;
+        const details = trData?.error ?? trErr?.context ?? trErr?.message ?? `Translation unavailable for ${lang}`;
         console.error(`[audio] translation failed for ${lang} chunk ${chunk_index}: ${details}`);
         if (isUnsupportedTranslationError(details)) {
           return chunks[chunk_index];
@@ -553,10 +583,33 @@ Deno.serve(async (req) => {
           : chunks[chunk_index];
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
       if (!apiKey) throw new Error(`${provider} API key not configured`);
-      const audio =
-        provider === "azure"
-          ? await ttsAzure(ttsText, lang, apiKey, mode)
-          : await ttsElevenLabs(ttsText, apiKey);
+      let audio: ArrayBuffer;
+      try {
+        audio =
+          provider === "azure"
+            ? await ttsAzure(ttsText, lang, apiKey, mode)
+            : await ttsElevenLabs(ttsText, apiKey);
+      } catch (error) {
+        const details = error instanceof Error ? error.message : "Audio generation failed";
+        if (isUnsupportedTranslationError(details)) {
+          return new Response(
+            JSON.stringify(
+              buildTranslationFallbackPayload({
+                text: finalText,
+                totalChunks,
+                chunkIndex: chunk_index,
+                language: lang,
+                provider,
+                voiceName,
+                speakingStyle,
+                reason: details,
+              }),
+            ),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        throw error;
+      }
       storagePath = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
       const { error: upErr } = await admin.storage
         .from("assets")
@@ -615,7 +668,7 @@ Deno.serve(async (req) => {
         },
       );
     }
-    return new Response(JSON.stringify({ error: msg }), {
+    return new Response(JSON.stringify({ error: msg, fallback: false }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
