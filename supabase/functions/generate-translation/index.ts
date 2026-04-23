@@ -69,9 +69,9 @@ const AZURE_TRANSLATOR_LANG: Record<string, string> = {
   en: "en", af: "af", zu: "zu", xh: "xh",
   ts: "ts", nso: "nso", fr: "fr",
 };
-// Region of the Azure resource. If the key was created as a "Global" Translator
-// resource, omit the region header. Set AZURE_TRANSLATOR_REGION secret to override.
-const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "global";
+// Region of the Azure resource. South Africa North resources usually require the
+// region header, while global resources reject it. Try both paths safely.
+const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "southafricanorth";
 
 async function translateWithAzure(text: string, sourceLang: string, targetLang: string): Promise<string> {
   const key = Deno.env.get("Azure_Secret_Key_Translator");
@@ -81,29 +81,49 @@ async function translateWithAzure(text: string, sourceLang: string, targetLang: 
   const to = AZURE_TRANSLATOR_LANG[targetLang];
   if (!from || !to) throw new Error(`AZURE_LANG_UNSUPPORTED:${sourceLang}->${targetLang}`);
 
-  // Always hit the global endpoint — supports all SA languages including nso & ts.
   const url = `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=${from}&to=${to}&textType=plain`;
-  const headers: Record<string, string> = {
-    "Ocp-Apim-Subscription-Key": key,
-    "Content-Type": "application/json",
-  };
-  // Only send region header if not "global" (global resources reject the header).
-  if (AZURE_TRANSLATOR_REGION && AZURE_TRANSLATOR_REGION !== "global") {
-    headers["Ocp-Apim-Subscription-Region"] = AZURE_TRANSLATOR_REGION;
-  }
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify([{ Text: text }]),
-  });
-  if (!res.ok) {
+  const regionCandidates = Array.from(new Set([
+    AZURE_TRANSLATOR_REGION,
+    "southafricanorth",
+    "global",
+  ].filter(Boolean)));
+
+  let lastError = "Azure Translator request failed";
+  for (const region of regionCandidates) {
+    const headers: Record<string, string> = {
+      "Ocp-Apim-Subscription-Key": key,
+      "Content-Type": "application/json",
+    };
+
+    if (region && region !== "global") {
+      headers["Ocp-Apim-Subscription-Region"] = region;
+    }
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify([{ Text: text }]),
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      const out = json?.[0]?.translations?.[0]?.text;
+      if (!out || typeof out !== "string") throw new Error("Empty Azure translation response");
+      console.log(`[translate] azure auth ok via ${region === "global" ? "global" : region}`);
+      return out.trim();
+    }
+
     const body = await res.text();
-    throw new Error(`Azure Translator ${res.status}: ${body.slice(0, 200)}`);
+    lastError = `Azure Translator ${res.status}: ${body.slice(0, 200)}`;
+
+    if (res.status !== 401 && res.status !== 403) {
+      throw new Error(lastError);
+    }
+
+    console.warn(`[translate] azure auth failed via ${region === "global" ? "global" : region}: ${lastError}`);
   }
-  const json = await res.json();
-  const out = json?.[0]?.translations?.[0]?.text;
-  if (!out || typeof out !== "string") throw new Error("Empty Azure translation response");
-  return out.trim();
+
+  throw new Error(lastError);
 }
 
 async function translateWithGemini(text: string, sourceLang: string, targetLang: string): Promise<string> {
@@ -429,9 +449,7 @@ Deno.serve(async (req) => {
     }).then(() => {}, () => {});
 
     const zeroWidthMark = zeroWidthFromHash(wmHash);
-    const displayName = (profile?.display_name ?? "").split(" ")[0] || "Learner";
-    const visibleFooter = `\n\n— StudySound · ${displayName} · for personal study only`;
-    const watermarkedText = injectWatermark(translatedText, zeroWidthMark) + visibleFooter;
+    const watermarkedText = injectWatermark(translatedText, zeroWidthMark);
 
     return new Response(JSON.stringify({
       success: true, cached: !!cached, translated_text: watermarkedText,
