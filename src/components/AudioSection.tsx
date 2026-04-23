@@ -92,8 +92,16 @@ export function AudioSection({
         credits_balance: data.credits_balance ?? 0,
       });
       onMeta?.({ text: data.text ?? "", totalChunks: data.total_chunks ?? 1 });
+      const pending = sessionStorage.getItem("audio_autostart") === lessonId + ":" + chunkIndex + ":" + language;
+      if (pending) sessionStorage.removeItem("audio_autostart");
       if (data.already_paid) {
-        await loadAudio({ autoPlay: false });
+        await loadAudio({ autoPlay: pending });
+      } else if (pending) {
+        // Next section requires payment — stop autoplay chain.
+        toast({
+          title: "Autoplay paused",
+          description: `Next section requires ${COST} credit. Tap play to continue.`,
+        });
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Status check failed";
