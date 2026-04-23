@@ -58,8 +58,6 @@ export function AudioSection({
 
   const [check, setCheck] = useState<CheckResult | null>(null);
   const [checking, setChecking] = useState(true);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [dontShowAgain, setDontShowAgain] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
