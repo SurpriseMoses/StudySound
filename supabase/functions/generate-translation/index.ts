@@ -82,6 +82,16 @@ function buildUnsupportedLanguageMessage(targetLang: string): string {
   return `Azure translation is not available for ${languageLabel} right now.`;
 }
 
+function buildUnsupportedLanguagePayload(targetLanguage: string) {
+  return {
+    success: false,
+    fallback: true,
+    error: buildUnsupportedLanguageMessage(targetLanguage),
+    code: "TRANSLATION_UNSUPPORTED",
+    target_language: targetLanguage,
+  };
+}
+
 async function translateWithAzure(text: string, sourceLang: string, targetLang: string): Promise<string> {
   const key = Deno.env.get("Azure_Secret_Key_Translator");
   if (!key) throw new Error("AZURE_TRANSLATOR_NOT_CONFIGURED");
@@ -184,6 +194,12 @@ Deno.serve(async (req) => {
     if (!target_language || typeof target_language !== "string") {
       return new Response(JSON.stringify({ error: "target_language required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!AZURE_TRANSLATOR_LANG[target_language]) {
+      return new Response(JSON.stringify(buildUnsupportedLanguagePayload(target_language)), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -429,12 +445,8 @@ Deno.serve(async (req) => {
     const msg = e instanceof Error ? e.message : "Unknown error";
     if (isUnsupportedAzureLanguageError(msg)) {
       const targetLanguage = typeof requestBody?.target_language === "string" ? requestBody.target_language : "";
-      return new Response(JSON.stringify({
-        error: buildUnsupportedLanguageMessage(targetLanguage),
-        code: "TRANSLATION_UNSUPPORTED",
-        target_language: targetLanguage,
-      }), {
-        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify(buildUnsupportedLanguagePayload(targetLanguage)), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     return new Response(JSON.stringify({ error: msg }), {
