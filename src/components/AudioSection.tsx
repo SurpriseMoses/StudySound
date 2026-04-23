@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Play, Pause, SkipBack, SkipForward, Loader2, Lock, Volume2, Coins, Gauge, Check,
+  Play, Pause, SkipBack, SkipForward, Loader2, Lock, Volume2, Coins, Gauge, Check, Repeat,
 } from "lucide-react";
+import { Toggle } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
