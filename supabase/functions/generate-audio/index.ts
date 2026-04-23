@@ -64,15 +64,27 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
+function pickVoice(lang: string, mode: "story" | "study"): string {
+  if (mode === "story" && AZURE_STORY_VOICES[lang]) return AZURE_STORY_VOICES[lang];
+  return AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+}
+
 function buildSSML(text: string, voice: string, locale: string, mode: "story" | "study"): string {
   const processed = escapeXml(addNaturalPauses(text));
-  const rate = mode === "story" ? "0.85" : "0.90";
-  const style = mode === "story" ? "narration-relaxed" : "general";
-  const styleDegree = mode === "story" ? "1.5" : "1.0";
+  if (mode === "story") {
+    // Theatrical storyteller: slower, warmer pitch, stronger expressive style.
+    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">
+  <voice name="${voice}">
+    <mstts:express-as style="narration-professional" styledegree="2.0">
+      <prosody rate="0.82" pitch="-2%" contour="(0%,+0%) (50%,+8%) (100%,-4%)">${processed}</prosody>
+    </mstts:express-as>
+  </voice>
+</speak>`;
+  }
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">
   <voice name="${voice}">
-    <mstts:express-as style="${style}" styledegree="${styleDegree}">
-      <prosody rate="${rate}">${processed}</prosody>
+    <mstts:express-as style="general" styledegree="1.0">
+      <prosody rate="0.90">${processed}</prosody>
     </mstts:express-as>
   </voice>
 </speak>`;
