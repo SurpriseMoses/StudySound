@@ -36,7 +36,8 @@ const BATCH_SIZE = 10;
 const RETRY_DELAYS = [10_000, 20_000, 40_000]; // 429 backoff
 const MAX_RETRIES = 3;
 const LOCK_TIMEOUT_MS = 90_000;          // stale lock
-const HARD_DEADLINE_MS = 130_000;        // exit before 150s edge limit
+const HARD_DEADLINE_MS = 110_000;        // exit well before 150s edge limit
+const MAX_CHUNKS_PER_INVOCATION = 8;     // bound work per invocation
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
@@ -346,7 +347,7 @@ Deno.serve(async (req) => {
     let rateLimited = false;
     let lastResult: { result: string; detail?: string } | null = null;
 
-    while (Date.now() - startedAt < HARD_DEADLINE_MS) {
+    while (Date.now() - startedAt < HARD_DEADLINE_MS && processed < MAX_CHUNKS_PER_INVOCATION) {
       // Re-check is_running so pause takes effect mid-run.
       const { data: liveState } = await admin.from("seed_worker_state").select("is_running").eq("id", 1).maybeSingle();
       if (!liveState?.is_running) break;
@@ -362,21 +363,20 @@ Deno.serve(async (req) => {
           last_heartbeat: new Date().toISOString(),
           total_processed: (state.total_processed ?? 0) + processed,
         }).eq("id", 1);
-        // Long pause every BATCH_SIZE
-        if (processed % BATCH_SIZE === 0) {
-          console.log(`[worker] batch of ${BATCH_SIZE} done — pausing ${LONG_PAUSE_MS}ms`);
-          await sleep(LONG_PAUSE_MS);
-        } else {
-          await sleep(INTER_CHUNK_DELAY_MS);
-        }
+        if (processed >= MAX_CHUNKS_PER_INVOCATION) break;
+        // Only sleep if we have time for it + another chunk (~10s budget).
+        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
+        if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
+        await sleep(INTER_CHUNK_DELAY_MS);
       } else if (res.result === "rate_limited") {
         rateLimited = true;
-        // Long pause to back off, then exit so caller re-invokes.
-        console.warn("[worker] rate limited — pausing & exiting invocation");
-        await sleep(LONG_PAUSE_MS);
+        // Exit immediately so caller re-invokes after a pause.
+        console.warn("[worker] rate limited — exiting invocation for caller-side backoff");
         break;
       } else {
-        // error: small pause then continue (the row is either re-queued or failed)
+        // error: small pause then continue if time allows
+        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
+        if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
         await sleep(INTER_CHUNK_DELAY_MS);
       }
     }
