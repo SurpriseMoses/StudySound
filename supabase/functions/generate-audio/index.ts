@@ -18,6 +18,7 @@ const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "ts", "nso"]);
 
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
+const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "fr"]);
 
 // Languages with native Azure voices. Others (xh, ts, nso) fall back to the English
 // voice AND read the original English text (no translation lookup), so pronunciation stays correct.
@@ -49,6 +50,10 @@ const AZURE_LANG_LOCALE: Record<string, string> = {
   fr: "fr-FR",
 };
 const AZURE_REGION = "southafricanorth";
+
+function isUnsupportedTranslationError(message: string): boolean {
+  return /TRANSLATION_UNSUPPORTED|Azure translation is not available/i.test(message);
+}
 
 function addNaturalPauses(text: string): string {
   return text
@@ -362,6 +367,7 @@ Deno.serve(async (req) => {
     async function resolveDisplayText(): Promise<string> {
       const sourceLang = (doc.language ?? "en").toLowerCase();
       if (lang === sourceLang) return chunks[chunk_index];
+      if (!TRANSLATABLE_LANGS.has(lang)) return chunks[chunk_index];
       // Try cached translation first.
       const { data: tr } = await admin
         .from("translation_assets")
@@ -379,6 +385,9 @@ Deno.serve(async (req) => {
       if (trErr || !trData?.translated_text) {
         const details = trData?.error ?? trErr?.message ?? `Translation unavailable for ${lang}`;
         console.error(`[audio] translation failed for ${lang} chunk ${chunk_index}: ${details}`);
+        if (isUnsupportedTranslationError(details)) {
+          return chunks[chunk_index];
+        }
         throw new Error(details);
       }
       return trData.translated_text;
