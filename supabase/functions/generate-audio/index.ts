@@ -429,7 +429,7 @@ Deno.serve(async (req) => {
           already_paid: !!paidRow,
           credits_balance: profile?.credits_balance ?? 0,
           total_chunks: totalChunks,
-          text: chunks[chunk_index],
+          text: displayText,
           chunk_index,
           language: lang,
           provider,
