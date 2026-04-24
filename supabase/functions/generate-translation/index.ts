@@ -71,17 +71,51 @@ const AZURE_TRANSLATOR_LANG: Record<string, string> = {
   nso: "nso", tn: "tn", fr: "fr",
 };
 
-// Normalize ALL-CAPS standalone words (e.g. "DR JEKYLL", "MR HYDE", "CHAPTER ONE", "STORY")
-// to Title Case so Azure Translator doesn't treat them as untranslatable proper nouns/acronyms.
-// This is critical for languages like Setswana (tn) where Azure leaves ALL-CAPS tokens
-// untranslated. Preserves single-letter tokens "I" and "A".
-// Handles apostrophes/hyphens within words (e.g. "MR. HYDE'S" → "Mr. Hyde's").
+function toSentenceCaseHeading(line: string): string {
+  let out = line.toLowerCase();
+  out = out.replace(/\b(mr|mrs|ms|dr|prof|st)\./g, (abbr) => abbr.charAt(0).toUpperCase() + abbr.slice(1));
+  out = out.replace(/(^|[\s“"'‘’(\[])([a-z])/g, (_, prefix: string, chr: string) => `${prefix}${chr.toUpperCase()}`);
+  out = out.replace(/([.!?:;]\s+)([a-z])/g, (_, prefix: string, chr: string) => `${prefix}${chr.toUpperCase()}`);
+  out = out.replace(/\b([ivxlcdm]+)\b/gi, (roman) => roman.toUpperCase());
+  return out;
+}
+
+// Normalize ALL-CAPS headings and tokens before translation so Azure doesn't preserve
+// English chapter titles / character names verbatim for languages like Setswana.
 function normalizeAllCapsForTranslation(text: string): string {
-  // Match runs of uppercase letters of length 2+, possibly with internal apostrophes/hyphens.
-  return text.replace(/\b[A-Z][A-Z'’\-]*[A-Z]\b/g, (word) => {
-    // Skip "I" already handled (single letter not matched). Skip if it contains lowercase (shouldn't here).
+  const normalizedLines = text
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+
+      const letters = trimmed.match(/[A-Za-z]/g) ?? [];
+      const uppercase = trimmed.match(/[A-Z]/g) ?? [];
+      const uppercaseRatio = letters.length > 0 ? uppercase.length / letters.length : 0;
+
+      if (letters.length >= 4 && uppercaseRatio >= 0.8) {
+        const leading = line.match(/^\s*/)?.[0] ?? "";
+        const trailing = line.match(/\s*$/)?.[0] ?? "";
+        return `${leading}${toSentenceCaseHeading(trimmed)}${trailing}`;
+      }
+
+      return line;
+    })
+    .join("\n");
+
+  return normalizedLines.replace(/\b[A-Z][A-Z'’\-]*[A-Z]\b/g, (word) => {
     return word.charAt(0) + word.slice(1).toLowerCase();
   });
+}
+
+function shouldRefreshCachedTranslation(translatedText: string, targetLang: string): boolean {
+  if (targetLang !== "tn") return false;
+
+  return [
+    /\b(?:STORY|SEARCH|CONTENTS|CHAPTER|BOOK|PART|CASE|INCIDENT|LETTER|WINDOW|MURDER|NIGHT)\b/,
+    /\b(?:MR|MRS|MS|DR)\.\s+[A-Z]{2,}\b/,
+    /\b[A-Z]{2,}(?:\s+[A-Z]{2,}){2,}\b/,
+  ].some((pattern) => pattern.test(translatedText));
 }
 // Region of the Azure resource. South Africa North resources usually require the
 // region header, while global resources reject it. Try both paths safely.
@@ -390,6 +424,21 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     let translatedText = cached?.translated_text ?? null;
+
+    if (translatedText && shouldRefreshCachedTranslation(translatedText, target_language)) {
+      console.log(`[translate] refreshing stale cache for ${target_language} doc=${documentId} chunk=${idx}`);
+      translatedText = null;
+      const { error: deleteErr } = await admin
+        .from("translation_assets")
+        .delete()
+        .eq("document_id", documentId)
+        .eq("chunk_index", idx)
+        .eq("target_language", target_language);
+
+      if (deleteErr) {
+        console.error("translation_assets stale cache delete failed:", deleteErr);
+      }
+    }
 
     // 2) Generate if missing
     if (!translatedText) {
