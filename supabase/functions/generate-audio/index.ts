@@ -48,6 +48,8 @@ const VOICE_CONFIG: Record<string, VoiceConfig> = {
   tn:  { default: "tn-ZA-LesediNeural", literature: "tn-ZA-GabuhleNeural" },
 };
 
+const EXPRESSIVE_STYLE_LANGS = new Set(["en", "af", "zu", "fr"]);
+
 // Languages whose translated text should be sent to TTS in their own locale.
 // All entries in VOICE_CONFIG use native voices, so all are native-eligible.
 const NATIVE_VOICE_LANGS = new Set(Object.keys(VOICE_CONFIG));
@@ -102,6 +104,38 @@ function buildTranslationFallbackPayload(args: {
     cache_state: "Unavailable",
     credits_charged: 0,
     error: args.reason,
+  };
+}
+
+function buildAudioUnavailablePayload(args: {
+  text: string;
+  totalChunks: number;
+  chunkIndex: number;
+  language: string;
+  provider: "azure" | "elevenlabs";
+  voiceName: string;
+  speakingStyle: string;
+  reason: string;
+  code?: string;
+}) {
+  return {
+    success: true,
+    fallback: true,
+    audio_unavailable: true,
+    audio_url: null,
+    chunk_index: args.chunkIndex,
+    total_chunks: args.totalChunks,
+    text: args.text,
+    language: args.language,
+    provider: args.provider,
+    voice_name: args.voiceName,
+    speaking_style: args.speakingStyle,
+    reused: false,
+    source: "fallback",
+    cache_state: "Unavailable",
+    credits_charged: 0,
+    error: args.reason,
+    code: args.code ?? "AUDIO_UNAVAILABLE",
   };
 }
 
@@ -193,7 +227,15 @@ function pickFallbackVoice(lang: string): string | null {
 
 function buildSSML(text: string, voice: string, locale: string, mode: "story" | "study"): string {
   const processed = escapeXml(addNaturalPauses(text));
+  const supportsExpressiveStyle = EXPRESSIVE_STYLE_LANGS.has(locale.split("-")[0].toLowerCase());
   if (mode === "story") {
+    if (!supportsExpressiveStyle) {
+      return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${locale}">
+  <voice name="${voice}">
+    <prosody rate="0.78" pitch="-2%">${processed}</prosody>
+  </voice>
+</speak>`;
+    }
     // Theatrical storyteller: slower, warmer pitch, stronger expressive style.
     return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">
   <voice name="${voice}">
@@ -298,15 +340,24 @@ async function ttsAzureWithFallback(
     if (isVoiceError && fallback && fallback !== primaryVoice) {
       console.warn(`[audio] primary voice ${primaryVoice} failed (status ${status}); falling back to ${fallback}`);
       try {
-        const audio = await ttsAzure(text, lang, fallback, apiKey, "study");
+        const audio = await ttsAzure(text, lang, fallback, apiKey, mode);
         return { audio, voiceUsed: fallback };
       } catch (err2: any) {
         const status2 = err2?.status;
         if (status2 && status2 >= 400 && status2 < 500 && status2 !== 429) {
-          throw new Error(`Voice not available for selected language: ${lang}`);
+          const unsupportedError: any = new Error(`Voice not available for selected language: ${lang}`);
+          unsupportedError.code = "VOICE_UNSUPPORTED";
+          unsupportedError.fallback = true;
+          throw unsupportedError;
         }
         throw err2;
       }
+    }
+    if (isVoiceError) {
+      const unsupportedError: any = new Error(`Voice not available for selected language: ${lang}`);
+      unsupportedError.code = "VOICE_UNSUPPORTED";
+      unsupportedError.fallback = true;
+      throw unsupportedError;
     }
     throw err;
   }
@@ -396,7 +447,7 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-    const voiceName = provider === "azure" ? pickVoice(lang, isLiterature) : "elevenlabs-multilingual";
+    let voiceName = provider === "azure" ? pickVoice(lang, isLiterature) : "elevenlabs-multilingual";
     const speakingStyle = mode === "story" ? "narration-professional" : "general";
     console.log(`[audio] route lang=${lang} subject=${doc.subject_type} literature=${isLiterature} voice=${voiceName} style=${speakingStyle}`);
 
@@ -441,6 +492,7 @@ Deno.serve(async (req) => {
           provider === "azure"
             ? await ttsAzureWithFallback(text, lang, voiceName, apiKey, mode)
             : { audio: await ttsElevenLabs(text, apiKey), voiceUsed: voiceName };
+        voiceName = ttsResult.voiceUsed;
         const audio = ttsResult.audio;
         const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
         const { error: upErr } = await admin.storage
@@ -735,12 +787,16 @@ Deno.serve(async (req) => {
           audio = result.audio;
           if (result.voiceUsed !== voiceName) {
             console.warn(`[audio] voice fallback ${voiceName} -> ${result.voiceUsed} for lang=${lang}`);
+            voiceName = result.voiceUsed;
           }
         } else {
           audio = await ttsElevenLabs(ttsText, apiKey);
         }
       } catch (error) {
         const details = error instanceof Error ? error.message : "Audio generation failed";
+        const code = typeof (error as { code?: unknown })?.code === "string"
+          ? ((error as { code?: string }).code)
+          : undefined;
         if (isUnsupportedTranslationError(details)) {
           return new Response(
             JSON.stringify(
@@ -753,6 +809,26 @@ Deno.serve(async (req) => {
                 voiceName,
                 speakingStyle,
                 reason: details,
+              }),
+            ),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        if (code === "VOICE_UNSUPPORTED" || /Voice not available for selected language|Azure 400:/i.test(details)) {
+          return new Response(
+            JSON.stringify(
+              buildAudioUnavailablePayload({
+                text: finalText,
+                totalChunks,
+                chunkIndex: chunk_index,
+                language: lang,
+                provider,
+                voiceName,
+                speakingStyle,
+                reason: code === "VOICE_UNSUPPORTED"
+                  ? details
+                  : "Audio service is unavailable for the selected language right now.",
+                code: code === "VOICE_UNSUPPORTED" ? code : "AZURE_API_ERROR",
               }),
             ),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -818,6 +894,12 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": String(retryAfter) },
         },
       );
+    }
+    if (described.code === "VOICE_UNSUPPORTED" || /Voice not available for selected language|Azure 400:/i.test(msg)) {
+      return new Response(JSON.stringify({ error: msg, fallback: true, code: described.code ?? "AUDIO_UNAVAILABLE" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
     return new Response(JSON.stringify({ error: msg, fallback: false }), {
       status: 500,

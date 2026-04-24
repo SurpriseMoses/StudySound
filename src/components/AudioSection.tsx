@@ -122,6 +122,16 @@ export function AudioSection({
       });
       if (error) throw new Error(error.message);
       if (!data?.success) throw new Error(data?.error ?? "Failed");
+      if (data.audio_unavailable || !data.audio_url) {
+        setAudioUrl(null);
+        setIsPlaying(false);
+        toast({
+          title: "Audio unavailable",
+          description: data.error ?? "Audio couldn't be generated for this language right now.",
+          variant: "destructive",
+        });
+        return;
+      }
       setAudioUrl(data.audio_url);
       onAudioReady?.(data.audio_url);
       if (data.credits_charged > 0) {
