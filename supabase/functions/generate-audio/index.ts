@@ -21,28 +21,46 @@ const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
 const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "tn", "fr"]);
 
-// Languages with native Azure voices. Others fall back to the English voice
-// for narration but display the translated text on screen.
+// =========================================================================
+// VOICE ROUTING
+// Single source of truth: per-language { default, literature? } voices.
+// Literature voice is used for novel / drama / poetry subjects.
+// If a literature voice fails or doesn't exist, we fall back to the same
+// language's default voice. If THAT fails, we surface an error rather than
+// silently switching to English (per spec).
+//
+// Note: Azure currently only ships native neural voices for en, af, zu, fr.
+// xh / nso / tn / ve do not have neural voices in Azure as of 2025-Q1, so
+// their "default" / "literature" entries point to expressive English voices
+// (en-GB-Libby/Ryan). Text remains translated; only the narration voice
+// falls back. This is an intentional, documented limitation.
+// =========================================================================
+type VoiceConfig = { default: string; literature?: string };
+const VOICE_CONFIG: Record<string, VoiceConfig> = {
+  en:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+  af:  { default: "af-ZA-AdriNeural",  literature: "af-ZA-WillemNeural" },
+  zu:  { default: "zu-ZA-ThandoNeural", literature: "zu-ZA-ThembaNeural" },
+  fr:  { default: "fr-FR-DeniseNeural", literature: "fr-FR-HenriNeural" },
+  // Languages without native Azure voices — fall back to expressive English
+  // voices (text is still translated and shown on screen).
+  xh:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+  nso: { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+  tn:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+  ve:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+};
+
+// Languages that have a true native Azure voice (so it's safe to send the
+// translated text to TTS in that locale). All others narrate in English.
 const NATIVE_VOICE_LANGS = new Set(["zu", "af", "en", "fr"]);
-const AZURE_VOICES: Record<string, string> = {
-  zu: "zu-ZA-ThandoNeural",
-  af: "af-ZA-AdriNeural",
-  xh: "en-GB-LibbyNeural",
-  nso: "en-GB-LibbyNeural",
-  tn: "en-GB-LibbyNeural",
-  ve: "en-GB-LibbyNeural",
-  en: "en-GB-LibbyNeural",
-  fr: "fr-FR-DeniseNeural",
-};
-// For "story" mode (novels/plays) use a more theatrical narrator where supported.
-// Other languages keep their default voice (no expressive variant available).
-const AZURE_STORY_VOICES: Record<string, string> = {
-  en: "en-GB-RyanNeural",
-  xh: "en-GB-RyanNeural",
-  nso: "en-GB-RyanNeural",
-  tn: "en-GB-RyanNeural",
-  ve: "en-GB-RyanNeural",
-};
+
+const LITERATURE_SUBJECTS = new Set(["novel", "drama", "poetry"]);
+
+function isLiteratureContent(subjectType: string | null | undefined, subject?: string | null): boolean {
+  if (subjectType && LITERATURE_SUBJECTS.has(subjectType.toLowerCase())) return true;
+  if (subject && /english|literature|novel|drama|poetry/i.test(subject)) return true;
+  return false;
+}
+
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
   af: "af-ZA",
@@ -163,9 +181,16 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
-function pickVoice(lang: string, mode: "story" | "study"): string {
-  if (mode === "story" && AZURE_STORY_VOICES[lang]) return AZURE_STORY_VOICES[lang];
-  return AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+function pickVoice(lang: string, isLiterature: boolean): string {
+  const cfg = VOICE_CONFIG[lang];
+  if (!cfg) throw new Error(`Voice not available for selected language: ${lang}`);
+  if (isLiterature && cfg.literature) return cfg.literature;
+  return cfg.default;
+}
+
+function pickFallbackVoice(lang: string): string | null {
+  const cfg = VOICE_CONFIG[lang];
+  return cfg?.default ?? null;
 }
 
 function buildSSML(text: string, voice: string, locale: string, mode: "story" | "study"): string {
@@ -223,8 +248,7 @@ async function ttsElevenLabs(text: string, apiKey: string): Promise<ArrayBuffer>
   return res.arrayBuffer();
 }
 
-async function ttsAzure(text: string, lang: string, apiKey: string, mode: "story" | "study"): Promise<ArrayBuffer> {
-  const voice = pickVoice(lang, mode);
+async function ttsAzure(text: string, lang: string, voice: string, apiKey: string, mode: "story" | "study"): Promise<ArrayBuffer> {
   const locale = AZURE_LANG_LOCALE[lang] ?? "en-GB";
   const ssml = buildSSML(text, voice, locale, mode);
   const res = await fetch(`https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
@@ -245,9 +269,49 @@ async function ttsAzure(text: string, lang: string, apiKey: string, mode: "story
       err.retryAfter = Number(res.headers.get("retry-after")) || 30;
       throw err;
     }
-    throw new Error(`Azure ${res.status}: ${body}`);
+    const err: any = new Error(`Azure ${res.status}: ${body}`);
+    err.status = res.status;
+    err.voice = voice;
+    throw err;
   }
   return res.arrayBuffer();
+}
+
+/**
+ * Try the requested voice (literature or default). If it fails with a voice/SSML
+ * error (4xx that isn't 429), retry once with the language's default voice.
+ * If THAT fails too, surface the error rather than silently switching to English.
+ * Returns { audio, voiceUsed }.
+ */
+async function ttsAzureWithFallback(
+  text: string,
+  lang: string,
+  primaryVoice: string,
+  apiKey: string,
+  mode: "story" | "study",
+): Promise<{ audio: ArrayBuffer; voiceUsed: string }> {
+  try {
+    const audio = await ttsAzure(text, lang, primaryVoice, apiKey, mode);
+    return { audio, voiceUsed: primaryVoice };
+  } catch (err: any) {
+    const status = err?.status;
+    const isVoiceError = status && status >= 400 && status < 500 && status !== 429;
+    const fallback = pickFallbackVoice(lang);
+    if (isVoiceError && fallback && fallback !== primaryVoice) {
+      console.warn(`[audio] primary voice ${primaryVoice} failed (status ${status}); falling back to ${fallback}`);
+      try {
+        const audio = await ttsAzure(text, lang, fallback, apiKey, "study");
+        return { audio, voiceUsed: fallback };
+      } catch (err2: any) {
+        const status2 = err2?.status;
+        if (status2 && status2 >= 400 && status2 < 500 && status2 !== 429) {
+          throw new Error(`Voice not available for selected language: ${lang}`);
+        }
+        throw err2;
+      }
+    }
+    throw err;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -323,12 +387,20 @@ Deno.serve(async (req) => {
       .eq("id", docId)
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
-    const mode: "story" | "study" = doc.subject_type === "novel" ? "story" : "study";
+    const isLiterature = isLiteratureContent(doc.subject_type, body?.subject ?? body?.category);
+    const mode: "story" | "study" = isLiterature ? "story" : "study";
 
     const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
     const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
-    const voiceName = pickVoice(lang, mode);
+    if (!VOICE_CONFIG[lang] && provider === "azure") {
+      return new Response(
+        JSON.stringify({ error: `Voice not available for selected language: ${lang}`, code: "VOICE_UNSUPPORTED" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const voiceName = provider === "azure" ? pickVoice(lang, isLiterature) : "elevenlabs-multilingual";
     const speakingStyle = mode === "story" ? "narration-professional" : "general";
+    console.log(`[audio] route lang=${lang} subject=${doc.subject_type} literature=${isLiterature} voice=${voiceName} style=${speakingStyle}`);
 
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
@@ -367,10 +439,11 @@ Deno.serve(async (req) => {
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
-        const audio =
+        const ttsResult =
           provider === "azure"
-            ? await ttsAzure(text, lang, apiKey, mode)
-            : await ttsElevenLabs(text, apiKey);
+            ? await ttsAzureWithFallback(text, lang, voiceName, apiKey, mode)
+            : { audio: await ttsElevenLabs(text, apiKey), voiceUsed: voiceName };
+        const audio = ttsResult.audio;
         const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
         const { error: upErr } = await admin.storage
           .from("assets")
@@ -647,8 +720,10 @@ Deno.serve(async (req) => {
       storagePath = cached.storage_path;
       reused = true;
     } else {
-      // Use translated text for TTS only when we have a native voice for that lang;
-      // otherwise narrate the source text with the fallback voice.
+      // SINGLE SOURCE OF TRUTH: TTS always uses translated text when we have
+      // a native Azure voice for the target language. Otherwise we narrate the
+      // source text using the language's English fallback voice (text on
+      // screen still shows the translation).
       const ttsText =
         lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)
           ? finalText
@@ -657,10 +732,15 @@ Deno.serve(async (req) => {
       if (!apiKey) throw new Error(`${provider} API key not configured`);
       let audio: ArrayBuffer;
       try {
-        audio =
-          provider === "azure"
-            ? await ttsAzure(ttsText, lang, apiKey, mode)
-            : await ttsElevenLabs(ttsText, apiKey);
+        if (provider === "azure") {
+          const result = await ttsAzureWithFallback(ttsText, lang, voiceName, apiKey, mode);
+          audio = result.audio;
+          if (result.voiceUsed !== voiceName) {
+            console.warn(`[audio] voice fallback ${voiceName} -> ${result.voiceUsed} for lang=${lang}`);
+          }
+        } else {
+          audio = await ttsElevenLabs(ttsText, apiKey);
+        }
       } catch (error) {
         const details = error instanceof Error ? error.message : "Audio generation failed";
         if (isUnsupportedTranslationError(details)) {
