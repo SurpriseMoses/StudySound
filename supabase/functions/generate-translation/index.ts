@@ -487,7 +487,7 @@ Deno.serve(async (req) => {
 
     let translatedText = cached?.translated_text ?? null;
 
-    if (translatedText && shouldRefreshCachedTranslation(translatedText, target_language)) {
+    if (translatedText && shouldRefreshCachedTranslation(chunks[idx] ?? "", translatedText, target_language)) {
       console.log(`[translate] refreshing stale cache for ${target_language} doc=${documentId} chunk=${idx}`);
       translatedText = null;
       const { error: deleteErr } = await admin
