@@ -13,8 +13,7 @@ const corsHeaders = {
 };
 
 const CHUNK_SIZE = 1800;
-// All languages route to Azure. Languages without a native voice fall back to English voice.
-// NOTE: ve (Tshivenda) is NOT supported by Azure Translator (returns 400036), so it's excluded.
+// All languages route to Azure. Voices are strictly per-language — never silent English fallback.
 const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "nso", "tn"]);
 
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
@@ -25,33 +24,33 @@ const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "tn", "fr"]);
 // VOICE ROUTING
 // Single source of truth: per-language { default, literature? } voices.
 // Literature voice is used for novel / drama / poetry subjects.
-// If a literature voice fails or doesn't exist, we fall back to the same
-// language's default voice. If THAT fails, we surface an error rather than
-// silently switching to English (per spec).
 //
-// Note: Azure currently only ships native neural voices for en, af, zu, fr.
-// xh / nso / tn / ve do not have neural voices in Azure as of 2025-Q1, so
-// their "default" / "literature" entries point to expressive English voices
-// (en-GB-Libby/Ryan). Text remains translated; only the narration voice
-// falls back. This is an intentional, documented limitation.
+// Fallback chain (per spec):
+//   1. literature voice (for literature subjects)
+//   2. same-language default voice
+//   3. same-language emergency fallback (last-resort native voice)
+//   4. ERROR — never silently switch to English
+//
+// We attempt true native voices for every supported SA language. If Azure
+// rejects (HTTP 400 voice-not-found), we cascade through the same language
+// only.
 // =========================================================================
-type VoiceConfig = { default: string; literature?: string };
+type VoiceConfig = { default: string; literature?: string; emergency?: string };
 const VOICE_CONFIG: Record<string, VoiceConfig> = {
   en:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
   af:  { default: "af-ZA-AdriNeural",  literature: "af-ZA-WillemNeural" },
   zu:  { default: "zu-ZA-ThandoNeural", literature: "zu-ZA-ThembaNeural" },
   fr:  { default: "fr-FR-DeniseNeural", literature: "fr-FR-HenriNeural" },
-  // Languages without native Azure voices — fall back to expressive English
-  // voices (text is still translated and shown on screen).
-  xh:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
-  nso: { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
-  tn:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
-  ve:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+  // South African languages — native voices attempted first.
+  // If Azure rejects, we fall through the per-language chain only (no English).
+  xh:  { default: "xh-ZA-BongaNeural",  literature: "xh-ZA-ThandoNeural" },
+  nso: { default: "nso-ZA-MorenaNeural" },
+  tn:  { default: "tn-ZA-LesediNeural", literature: "tn-ZA-GabuhleNeural" },
 };
 
-// Languages that have a true native Azure voice (so it's safe to send the
-// translated text to TTS in that locale). All others narrate in English.
-const NATIVE_VOICE_LANGS = new Set(["zu", "af", "en", "fr"]);
+// Languages whose translated text should be sent to TTS in their own locale.
+// All entries in VOICE_CONFIG use native voices, so all are native-eligible.
+const NATIVE_VOICE_LANGS = new Set(Object.keys(VOICE_CONFIG));
 
 const LITERATURE_SUBJECTS = new Set(["novel", "drama", "poetry"]);
 
@@ -64,10 +63,9 @@ function isLiteratureContent(subjectType: string | null | undefined, subject?: s
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
   af: "af-ZA",
-  xh: "en-GB",
-  nso: "en-GB",
-  tn: "en-GB",
-  ve: "en-GB",
+  xh: "xh-ZA",
+  nso: "nso-ZA",
+  tn: "tn-ZA",
   en: "en-GB",
   fr: "fr-FR",
 };
