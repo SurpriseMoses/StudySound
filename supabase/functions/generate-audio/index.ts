@@ -227,7 +227,15 @@ function pickFallbackVoice(lang: string): string | null {
 
 function buildSSML(text: string, voice: string, locale: string, mode: "story" | "study"): string {
   const processed = escapeXml(addNaturalPauses(text));
+  const supportsExpressiveStyle = EXPRESSIVE_STYLE_LANGS.has(locale.split("-")[0].toLowerCase());
   if (mode === "story") {
+    if (!supportsExpressiveStyle) {
+      return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${locale}">
+  <voice name="${voice}">
+    <prosody rate="0.78" pitch="-2%">${processed}</prosody>
+  </voice>
+</speak>`;
+    }
     // Theatrical storyteller: slower, warmer pitch, stronger expressive style.
     return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">
   <voice name="${voice}">
@@ -332,15 +340,24 @@ async function ttsAzureWithFallback(
     if (isVoiceError && fallback && fallback !== primaryVoice) {
       console.warn(`[audio] primary voice ${primaryVoice} failed (status ${status}); falling back to ${fallback}`);
       try {
-        const audio = await ttsAzure(text, lang, fallback, apiKey, "study");
+        const audio = await ttsAzure(text, lang, fallback, apiKey, mode);
         return { audio, voiceUsed: fallback };
       } catch (err2: any) {
         const status2 = err2?.status;
         if (status2 && status2 >= 400 && status2 < 500 && status2 !== 429) {
-          throw new Error(`Voice not available for selected language: ${lang}`);
+          const unsupportedError: any = new Error(`Voice not available for selected language: ${lang}`);
+          unsupportedError.code = "VOICE_UNSUPPORTED";
+          unsupportedError.fallback = true;
+          throw unsupportedError;
         }
         throw err2;
       }
+    }
+    if (isVoiceError) {
+      const unsupportedError: any = new Error(`Voice not available for selected language: ${lang}`);
+      unsupportedError.code = "VOICE_UNSUPPORTED";
+      unsupportedError.fallback = true;
+      throw unsupportedError;
     }
     throw err;
   }
