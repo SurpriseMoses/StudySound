@@ -71,17 +71,16 @@ const AZURE_TRANSLATOR_LANG: Record<string, string> = {
   nso: "nso", tn: "tn", fr: "fr",
 };
 
-// Normalize ALL-CAPS standalone words (e.g. "DR JEKYLL", "MR HYDE", "CHAPTER ONE")
-// to Title Case so Azure Translator doesn't treat them as untranslatable acronyms.
-// Preserves single-letter tokens (I, A) and short acronyms (≤3 chars like "USA", "DNA").
+// Normalize ALL-CAPS standalone words (e.g. "DR JEKYLL", "MR HYDE", "CHAPTER ONE", "STORY")
+// to Title Case so Azure Translator doesn't treat them as untranslatable proper nouns/acronyms.
+// This is critical for languages like Setswana (tn) where Azure leaves ALL-CAPS tokens
+// untranslated. Preserves single-letter tokens "I" and "A".
+// Handles apostrophes/hyphens within words (e.g. "MR. HYDE'S" → "Mr. Hyde's").
 function normalizeAllCapsForTranslation(text: string): string {
-  return text.replace(/\b([A-Z]{4,})\b/g, (word) => {
+  // Match runs of uppercase letters of length 2+, possibly with internal apostrophes/hyphens.
+  return text.replace(/\b[A-Z][A-Z'’\-]*[A-Z]\b/g, (word) => {
+    // Skip "I" already handled (single letter not matched). Skip if it contains lowercase (shouldn't here).
     return word.charAt(0) + word.slice(1).toLowerCase();
-  }).replace(/\b([A-Z]{2,3})\b/g, (word, _g, offset, full) => {
-    // Translate short ALL-CAPS only when followed by another ALL-CAPS word (likely a name like "DR JEKYLL")
-    const after = full.slice(offset + word.length).match(/^\s+([A-Z]{2,})\b/);
-    if (after) return word.charAt(0) + word.slice(1).toLowerCase();
-    return word;
   });
 }
 // Region of the Azure resource. South Africa North resources usually require the
