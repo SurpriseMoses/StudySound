@@ -169,7 +169,9 @@ async function translateWithAzure(text: string, sourceLang: string, targetLang: 
 
 // Azure-only translation. No AI gateway fallback — surface real errors to the client.
 async function translateWithAI(text: string, sourceLang: string, targetLang: string): Promise<string> {
-  const out = await translateWithAzure(text, sourceLang, targetLang);
+  // Pre-process ALL-CAPS words so Azure doesn't skip them (e.g. character names in novels).
+  const normalized = normalizeAllCapsForTranslation(text);
+  const out = await translateWithAzure(normalized, sourceLang, targetLang);
   console.log(`[translate] azure ok ${sourceLang}->${targetLang} (${text.length} chars)`);
   return out;
 }
