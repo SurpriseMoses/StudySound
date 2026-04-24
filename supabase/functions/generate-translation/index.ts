@@ -63,12 +63,27 @@ function injectWatermark(text: string, mark: string): string {
 }
 
 // Map our internal language codes to Azure Translator codes.
-// Azure Translator supports: af, zu, xh, nso, tn (Setswana), ve (Tshivenda), fr.
-// Xitsonga (ts) is NOT supported by Azure Translator.
+// Azure Translator supports: af, zu, xh, nso, tn (Setswana), fr.
+// NOT supported by Azure Translator: ts (Xitsonga), ve (Tshivenda).
+// (Azure returns error 400036 "target language is not valid" for ve.)
 const AZURE_TRANSLATOR_LANG: Record<string, string> = {
   en: "en", af: "af", zu: "zu", xh: "xh",
-  nso: "nso", tn: "tn", ve: "ve", fr: "fr",
+  nso: "nso", tn: "tn", fr: "fr",
 };
+
+// Normalize ALL-CAPS standalone words (e.g. "DR JEKYLL", "MR HYDE", "CHAPTER ONE")
+// to Title Case so Azure Translator doesn't treat them as untranslatable acronyms.
+// Preserves single-letter tokens (I, A) and short acronyms (≤3 chars like "USA", "DNA").
+function normalizeAllCapsForTranslation(text: string): string {
+  return text.replace(/\b([A-Z]{4,})\b/g, (word) => {
+    return word.charAt(0) + word.slice(1).toLowerCase();
+  }).replace(/\b([A-Z]{2,3})\b/g, (word, _g, offset, full) => {
+    // Translate short ALL-CAPS only when followed by another ALL-CAPS word (likely a name like "DR JEKYLL")
+    const after = full.slice(offset + word.length).match(/^\s+([A-Z]{2,})\b/);
+    if (after) return word.charAt(0) + word.slice(1).toLowerCase();
+    return word;
+  });
+}
 // Region of the Azure resource. South Africa North resources usually require the
 // region header, while global resources reject it. Try both paths safely.
 const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "southafricanorth";
