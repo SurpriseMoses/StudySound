@@ -1,0 +1,1 @@
+DELETE FROM public.translation_assets WHERE document_id = 'af47db12-ab58-48f3-83ee-194eef239d10' AND target_language = 'tn';

@@ -145,29 +145,94 @@ function shouldRefreshCachedTranslation(sourceText: string, translatedText: stri
   ].some((pattern) => pattern.test(translatedText)) || hasSuspiciousSetswanaEnglish(sourceText, translatedText);
 }
 
-async function translateLineByLineWithAzure(text: string, sourceLang: string, targetLang: string): Promise<string> {
-  const segments = text.split(/(\r?\n+)/);
-  const translatedSegments: string[] = [];
+// Lowercase a "title-like" short sentence so Azure doesn't treat it as a proper-noun
+// block that should be preserved verbatim. We only do this for short fragments
+// (<= 12 words) where the majority of words start with a capital letter — typical
+// of headings, table-of-contents entries, and chapter titles.
+function deTitleCaseShortFragment(fragment: string): string {
+  const words = fragment.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 12) return fragment;
 
-  for (const segment of segments) {
-    if (!segment || /\r?\n+/.test(segment)) {
-      translatedSegments.push(segment);
+  const titleCaseWords = words.filter((w) => /^[A-Z][a-z'’\-]*\.?$/.test(w));
+  const titleRatio = titleCaseWords.length / words.length;
+  if (titleRatio < 0.55) return fragment;
+
+  // Convert to sentence case: first word capitalized, rest lowercased,
+  // but preserve common honorifics + standalone "I".
+  return words
+    .map((w, idx) => {
+      if (/^(Mr|Mrs|Ms|Dr|St)\.?$/i.test(w)) {
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      }
+      if (w === "I" || w === "I'm" || w === "I'll" || w === "I've" || w === "I'd") return w;
+      const lower = w.toLowerCase();
+      if (idx === 0) return lower.charAt(0).toUpperCase() + lower.slice(1);
+      return lower;
+    })
+    .join(" ");
+}
+
+// Split text into sentence-sized fragments so Azure translates each one in isolation.
+// This is critical for languages like Setswana where Azure tends to skip
+// title-cased prefixes inside long mixed paragraphs.
+function splitIntoFragments(text: string): string[] {
+  // First split on newlines to preserve paragraph structure as boundary markers.
+  const fragments: string[] = [];
+  const lines = text.split(/(\r?\n+)/);
+
+  for (const line of lines) {
+    if (!line) continue;
+    if (/^\r?\n+$/.test(line)) {
+      fragments.push(line);
       continue;
     }
 
-    const trimmed = segment.trim();
-    if (!trimmed) {
-      translatedSegments.push(segment);
-      continue;
+    // Split on sentence boundaries: . ! ? followed by whitespace + capital/quote.
+    // Keep the punctuation attached to the preceding sentence.
+    const parts = line.split(/(?<=[.!?])\s+(?=[A-Z“"‘'])/);
+    for (const part of parts) {
+      if (part.trim()) fragments.push(part);
+      else fragments.push(part);
     }
-
-    const translated = await translateWithAzure(trimmed, sourceLang, targetLang);
-    const leading = segment.match(/^\s*/)?.[0] ?? "";
-    const trailing = segment.match(/\s*$/)?.[0] ?? "";
-    translatedSegments.push(`${leading}${translated}${trailing}`);
   }
 
-  return translatedSegments.join("");
+  return fragments;
+}
+
+async function translateLineByLineWithAzure(text: string, sourceLang: string, targetLang: string): Promise<string> {
+  const fragments = splitIntoFragments(text);
+  const translated: string[] = [];
+
+  for (const fragment of fragments) {
+    if (!fragment || /^\r?\n+$/.test(fragment)) {
+      translated.push(fragment);
+      continue;
+    }
+
+    const trimmed = fragment.trim();
+    if (!trimmed) {
+      translated.push(fragment);
+      continue;
+    }
+
+    // Aggressively de-title-case short title-like fragments (table of contents, headings).
+    const prepared = deTitleCaseShortFragment(trimmed);
+
+    try {
+      const out = await translateWithAzure(prepared, sourceLang, targetLang);
+      const leading = fragment.match(/^\s*/)?.[0] ?? "";
+      const trailing = fragment.match(/\s*$/)?.[0] ?? "";
+      // Re-attach a trailing space if the original fragment was followed by another sentence
+      // on the same line (split removed the separator).
+      const needsTrailingSpace = trailing.length === 0 && fragments.indexOf(fragment) < fragments.length - 1;
+      translated.push(`${leading}${out}${trailing}${needsTrailingSpace ? " " : ""}`);
+    } catch (err) {
+      console.warn(`[translate] fragment failed, keeping original: ${(err as Error).message}`);
+      translated.push(fragment);
+    }
+  }
+
+  return translated.join("").replace(/ +\n/g, "\n").replace(/  +/g, " ");
 }
 // Region of the Azure resource. South Africa North resources usually require the
 // region header, while global resources reject it. Try both paths safely.
