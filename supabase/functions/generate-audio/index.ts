@@ -13,8 +13,7 @@ const corsHeaders = {
 };
 
 const CHUNK_SIZE = 1800;
-// All languages route to Azure. Languages without a native voice fall back to English voice.
-// NOTE: ve (Tshivenda) is NOT supported by Azure Translator (returns 400036), so it's excluded.
+// All languages route to Azure. Voices are strictly per-language — never silent English fallback.
 const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "nso", "tn"]);
 
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
