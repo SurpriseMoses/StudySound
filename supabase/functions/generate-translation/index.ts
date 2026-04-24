@@ -108,14 +108,79 @@ function normalizeAllCapsForTranslation(text: string): string {
   });
 }
 
-function shouldRefreshCachedTranslation(translatedText: string, targetLang: string): boolean {
+const SUSPICIOUS_TSWANA_PHRASES = [
+  "the strange case",
+  "contents",
+  "story of the door",
+  "search for mr",
+  "was quite at ease",
+  "the carew murder case",
+  "incident of the letter",
+  "incident at the window",
+  "the last night",
+  "full statement of the case",
+];
+
+function hasSuspiciousSetswanaEnglish(sourceText: string, translatedText: string): boolean {
+  const source = sourceText.toLowerCase();
+  const translated = translatedText.toLowerCase();
+
+  const matchedPhrases = SUSPICIOUS_TSWANA_PHRASES.filter((phrase) =>
+    source.includes(phrase) && translated.includes(phrase),
+  );
+
+  if (matchedPhrases.length >= 2) return true;
+
+  const englishCarryOvers = translated.match(/\b(?:the|and|of|for|with|story|search|contents|case|incident|window|night)\b/gi) ?? [];
+  return englishCarryOvers.length >= 8;
+}
+
+function shouldRefreshCachedTranslation(sourceText: string, translatedText: string, targetLang: string): boolean {
   if (targetLang !== "tn") return false;
 
   return [
     /\b(?:STORY|SEARCH|CONTENTS|CHAPTER|BOOK|PART|CASE|INCIDENT|LETTER|WINDOW|MURDER|NIGHT)\b/,
     /\b(?:MR|MRS|MS|DR)\.\s+[A-Z]{2,}\b/,
     /\b[A-Z]{2,}(?:\s+[A-Z]{2,}){2,}\b/,
-  ].some((pattern) => pattern.test(translatedText));
+  ].some((pattern) => pattern.test(translatedText)) || hasSuspiciousSetswanaEnglish(sourceText, translatedText);
+}
+
+async function translateWithLovableAI(text: string, sourceLang: string, targetLang: string): Promise<string> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
+
+  const targetLanguageName = LANG_NAMES[targetLang] ?? targetLang;
+  const sourceLanguageName = LANG_NAMES[sourceLang] ?? sourceLang;
+
+  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert literary translator. Translate the passage from ${sourceLanguageName} into ${targetLanguageName}. Translate headings and words that appear in ALL CAPS naturally instead of preserving them in English. Keep names of people and places recognizable. Preserve paragraph breaks. Return only the translated text.`,
+        },
+        {
+          role: "user",
+          content: text,
+        },
+      ],
+    }),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`AI gateway error ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    throw new Error("Empty AI translation response");
+  }
+
+  return content.trim();
 }
 // Region of the Azure resource. South Africa North resources usually require the
 // region header, while global resources reject it. Try both paths safely.
@@ -202,11 +267,22 @@ async function translateWithAzure(text: string, sourceLang: string, targetLang: 
 
 // Azure-only translation. No AI gateway fallback — surface real errors to the client.
 async function translateWithAI(text: string, sourceLang: string, targetLang: string): Promise<string> {
-  // Pre-process ALL-CAPS words so Azure doesn't skip them (e.g. character names in novels).
   const normalized = normalizeAllCapsForTranslation(text);
-  const out = await translateWithAzure(normalized, sourceLang, targetLang);
+  const azureOutput = await translateWithAzure(normalized, sourceLang, targetLang);
+
+  if (targetLang === "tn" && hasSuspiciousSetswanaEnglish(normalized, azureOutput)) {
+    console.warn(`[translate] azure tn output looked partially untranslated; retrying with Lovable AI (${text.length} chars)`);
+    try {
+      const aiOutput = await translateWithLovableAI(normalized, sourceLang, targetLang);
+      console.log(`[translate] ai fallback ok ${sourceLang}->${targetLang} (${text.length} chars)`);
+      return aiOutput;
+    } catch (fallbackError) {
+      console.error("[translate] tn ai fallback failed:", fallbackError);
+    }
+  }
+
   console.log(`[translate] azure ok ${sourceLang}->${targetLang} (${text.length} chars)`);
-  return out;
+  return azureOutput;
 }
 
 Deno.serve(async (req) => {
