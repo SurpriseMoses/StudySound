@@ -181,9 +181,16 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
-function pickVoice(lang: string, mode: "story" | "study"): string {
-  if (mode === "story" && AZURE_STORY_VOICES[lang]) return AZURE_STORY_VOICES[lang];
-  return AZURE_VOICES[lang] ?? AZURE_VOICES.en;
+function pickVoice(lang: string, isLiterature: boolean): string {
+  const cfg = VOICE_CONFIG[lang];
+  if (!cfg) throw new Error(`Voice not available for selected language: ${lang}`);
+  if (isLiterature && cfg.literature) return cfg.literature;
+  return cfg.default;
+}
+
+function pickFallbackVoice(lang: string): string | null {
+  const cfg = VOICE_CONFIG[lang];
+  return cfg?.default ?? null;
 }
 
 function buildSSML(text: string, voice: string, locale: string, mode: "story" | "study"): string {
