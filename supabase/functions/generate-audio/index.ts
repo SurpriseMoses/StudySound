@@ -387,12 +387,20 @@ Deno.serve(async (req) => {
       .eq("id", docId)
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
-    const mode: "story" | "study" = doc.subject_type === "novel" ? "story" : "study";
+    const isLiterature = isLiteratureContent(doc.subject_type, body?.subject ?? body?.category);
+    const mode: "story" | "study" = isLiterature ? "story" : "study";
 
     const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
     const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
-    const voiceName = pickVoice(lang, mode);
+    if (!VOICE_CONFIG[lang] && provider === "azure") {
+      return new Response(
+        JSON.stringify({ error: `Voice not available for selected language: ${lang}`, code: "VOICE_UNSUPPORTED" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const voiceName = provider === "azure" ? pickVoice(lang, isLiterature) : "elevenlabs-multilingual";
     const speakingStyle = mode === "story" ? "narration-professional" : "general";
+    console.log(`[audio] route lang=${lang} subject=${doc.subject_type} literature=${isLiterature} voice=${voiceName} style=${speakingStyle}`);
 
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
