@@ -439,10 +439,11 @@ Deno.serve(async (req) => {
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
-        const audio =
+        const ttsResult =
           provider === "azure"
-            ? await ttsAzure(text, lang, apiKey, mode)
-            : await ttsElevenLabs(text, apiKey);
+            ? await ttsAzureWithFallback(text, lang, voiceName, apiKey, mode)
+            : { audio: await ttsElevenLabs(text, apiKey), voiceUsed: voiceName };
+        const audio = ttsResult.audio;
         const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
         const { error: upErr } = await admin.storage
           .from("assets")
