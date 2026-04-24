@@ -48,6 +48,8 @@ const VOICE_CONFIG: Record<string, VoiceConfig> = {
   tn:  { default: "tn-ZA-LesediNeural", literature: "tn-ZA-GabuhleNeural" },
 };
 
+const EXPRESSIVE_STYLE_LANGS = new Set(["en", "af", "zu", "fr"]);
+
 // Languages whose translated text should be sent to TTS in their own locale.
 // All entries in VOICE_CONFIG use native voices, so all are native-eligible.
 const NATIVE_VOICE_LANGS = new Set(Object.keys(VOICE_CONFIG));
@@ -102,6 +104,38 @@ function buildTranslationFallbackPayload(args: {
     cache_state: "Unavailable",
     credits_charged: 0,
     error: args.reason,
+  };
+}
+
+function buildAudioUnavailablePayload(args: {
+  text: string;
+  totalChunks: number;
+  chunkIndex: number;
+  language: string;
+  provider: "azure" | "elevenlabs";
+  voiceName: string;
+  speakingStyle: string;
+  reason: string;
+  code?: string;
+}) {
+  return {
+    success: true,
+    fallback: true,
+    audio_unavailable: true,
+    audio_url: null,
+    chunk_index: args.chunkIndex,
+    total_chunks: args.totalChunks,
+    text: args.text,
+    language: args.language,
+    provider: args.provider,
+    voice_name: args.voiceName,
+    speaking_style: args.speakingStyle,
+    reused: false,
+    source: "fallback",
+    cache_state: "Unavailable",
+    credits_charged: 0,
+    error: args.reason,
+    code: args.code ?? "AUDIO_UNAVAILABLE",
   };
 }
 
