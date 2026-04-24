@@ -64,10 +64,9 @@ function isLiteratureContent(subjectType: string | null | undefined, subject?: s
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
   af: "af-ZA",
-  xh: "en-GB",
-  nso: "en-GB",
-  tn: "en-GB",
-  ve: "en-GB",
+  xh: "xh-ZA",
+  nso: "nso-ZA",
+  tn: "tn-ZA",
   en: "en-GB",
   fr: "fr-FR",
 };
