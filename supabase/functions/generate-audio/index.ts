@@ -447,7 +447,7 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-    const voiceName = provider === "azure" ? pickVoice(lang, isLiterature) : "elevenlabs-multilingual";
+    let voiceName = provider === "azure" ? pickVoice(lang, isLiterature) : "elevenlabs-multilingual";
     const speakingStyle = mode === "story" ? "narration-professional" : "general";
     console.log(`[audio] route lang=${lang} subject=${doc.subject_type} literature=${isLiterature} voice=${voiceName} style=${speakingStyle}`);
 
@@ -492,6 +492,7 @@ Deno.serve(async (req) => {
           provider === "azure"
             ? await ttsAzureWithFallback(text, lang, voiceName, apiKey, mode)
             : { audio: await ttsElevenLabs(text, apiKey), voiceUsed: voiceName };
+        voiceName = ttsResult.voiceUsed;
         const audio = ttsResult.audio;
         const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
         const { error: upErr } = await admin.storage
@@ -786,12 +787,16 @@ Deno.serve(async (req) => {
           audio = result.audio;
           if (result.voiceUsed !== voiceName) {
             console.warn(`[audio] voice fallback ${voiceName} -> ${result.voiceUsed} for lang=${lang}`);
+            voiceName = result.voiceUsed;
           }
         } else {
           audio = await ttsElevenLabs(ttsText, apiKey);
         }
       } catch (error) {
         const details = error instanceof Error ? error.message : "Audio generation failed";
+        const code = typeof (error as { code?: unknown })?.code === "string"
+          ? ((error as { code?: string }).code)
+          : undefined;
         if (isUnsupportedTranslationError(details)) {
           return new Response(
             JSON.stringify(
@@ -804,6 +809,26 @@ Deno.serve(async (req) => {
                 voiceName,
                 speakingStyle,
                 reason: details,
+              }),
+            ),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        if (code === "VOICE_UNSUPPORTED" || /Voice not available for selected language|Azure 400:/i.test(details)) {
+          return new Response(
+            JSON.stringify(
+              buildAudioUnavailablePayload({
+                text: finalText,
+                totalChunks,
+                chunkIndex: chunk_index,
+                language: lang,
+                provider,
+                voiceName,
+                speakingStyle,
+                reason: code === "VOICE_UNSUPPORTED"
+                  ? details
+                  : "Audio service is unavailable for the selected language right now.",
+                code: code === "VOICE_UNSUPPORTED" ? code : "AZURE_API_ERROR",
               }),
             ),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -869,6 +894,12 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": String(retryAfter) },
         },
       );
+    }
+    if (described.code === "VOICE_UNSUPPORTED" || /Voice not available for selected language|Azure 400:/i.test(msg)) {
+      return new Response(JSON.stringify({ error: msg, fallback: true, code: described.code ?? "AUDIO_UNAVAILABLE" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
     return new Response(JSON.stringify({ error: msg, fallback: false }), {
       status: 500,
