@@ -21,28 +21,46 @@ const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
 const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "tn", "fr"]);
 
-// Languages with native Azure voices. Others fall back to the English voice
-// for narration but display the translated text on screen.
+// =========================================================================
+// VOICE ROUTING
+// Single source of truth: per-language { default, literature? } voices.
+// Literature voice is used for novel / drama / poetry subjects.
+// If a literature voice fails or doesn't exist, we fall back to the same
+// language's default voice. If THAT fails, we surface an error rather than
+// silently switching to English (per spec).
+//
+// Note: Azure currently only ships native neural voices for en, af, zu, fr.
+// xh / nso / tn / ve do not have neural voices in Azure as of 2025-Q1, so
+// their "default" / "literature" entries point to expressive English voices
+// (en-GB-Libby/Ryan). Text remains translated; only the narration voice
+// falls back. This is an intentional, documented limitation.
+// =========================================================================
+type VoiceConfig = { default: string; literature?: string };
+const VOICE_CONFIG: Record<string, VoiceConfig> = {
+  en:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+  af:  { default: "af-ZA-AdriNeural",  literature: "af-ZA-WillemNeural" },
+  zu:  { default: "zu-ZA-ThandoNeural", literature: "zu-ZA-ThembaNeural" },
+  fr:  { default: "fr-FR-DeniseNeural", literature: "fr-FR-HenriNeural" },
+  // Languages without native Azure voices — fall back to expressive English
+  // voices (text is still translated and shown on screen).
+  xh:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+  nso: { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+  tn:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+  ve:  { default: "en-GB-LibbyNeural", literature: "en-GB-RyanNeural" },
+};
+
+// Languages that have a true native Azure voice (so it's safe to send the
+// translated text to TTS in that locale). All others narrate in English.
 const NATIVE_VOICE_LANGS = new Set(["zu", "af", "en", "fr"]);
-const AZURE_VOICES: Record<string, string> = {
-  zu: "zu-ZA-ThandoNeural",
-  af: "af-ZA-AdriNeural",
-  xh: "en-GB-LibbyNeural",
-  nso: "en-GB-LibbyNeural",
-  tn: "en-GB-LibbyNeural",
-  ve: "en-GB-LibbyNeural",
-  en: "en-GB-LibbyNeural",
-  fr: "fr-FR-DeniseNeural",
-};
-// For "story" mode (novels/plays) use a more theatrical narrator where supported.
-// Other languages keep their default voice (no expressive variant available).
-const AZURE_STORY_VOICES: Record<string, string> = {
-  en: "en-GB-RyanNeural",
-  xh: "en-GB-RyanNeural",
-  nso: "en-GB-RyanNeural",
-  tn: "en-GB-RyanNeural",
-  ve: "en-GB-RyanNeural",
-};
+
+const LITERATURE_SUBJECTS = new Set(["novel", "drama", "poetry"]);
+
+function isLiteratureContent(subjectType: string | null | undefined, subject?: string | null): boolean {
+  if (subjectType && LITERATURE_SUBJECTS.has(subjectType.toLowerCase())) return true;
+  if (subject && /english|literature|novel|drama|poetry/i.test(subject)) return true;
+  return false;
+}
+
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
   af: "af-ZA",
