@@ -14,11 +14,12 @@ const corsHeaders = {
 
 const CHUNK_SIZE = 1800;
 // All languages route to Azure. Languages without a native voice fall back to English voice.
-const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "nso", "tn", "ve"]);
+// NOTE: ve (Tshivenda) is NOT supported by Azure Translator (returns 400036), so it's excluded.
+const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "nso", "tn"]);
 
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
-const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "tn", "ve", "fr"]);
+const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "tn", "fr"]);
 
 // Languages with native Azure voices. Others fall back to the English voice
 // for narration but display the translated text on screen.
