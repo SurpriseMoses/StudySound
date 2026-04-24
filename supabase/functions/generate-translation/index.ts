@@ -145,42 +145,29 @@ function shouldRefreshCachedTranslation(sourceText: string, translatedText: stri
   ].some((pattern) => pattern.test(translatedText)) || hasSuspiciousSetswanaEnglish(sourceText, translatedText);
 }
 
-async function translateWithLovableAI(text: string, sourceLang: string, targetLang: string): Promise<string> {
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
-  if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
+async function translateLineByLineWithAzure(text: string, sourceLang: string, targetLang: string): Promise<string> {
+  const segments = text.split(/(\r?\n+)/);
+  const translatedSegments: string[] = [];
 
-  const targetLanguageName = LANG_NAMES[targetLang] ?? targetLang;
-  const sourceLanguageName = LANG_NAMES[sourceLang] ?? sourceLang;
+  for (const segment of segments) {
+    if (!segment || /\r?\n+/.test(segment)) {
+      translatedSegments.push(segment);
+      continue;
+    }
 
-  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      messages: [
-        {
-          role: "system",
-          content: `You are an expert literary translator. Translate the passage from ${sourceLanguageName} into ${targetLanguageName}. Translate headings and words that appear in ALL CAPS naturally instead of preserving them in English. Keep names of people and places recognizable. Preserve paragraph breaks. Return only the translated text.`,
-        },
-        {
-          role: "user",
-          content: text,
-        },
-      ],
-    }),
-  });
+    const trimmed = segment.trim();
+    if (!trimmed) {
+      translatedSegments.push(segment);
+      continue;
+    }
 
-  if (!resp.ok) {
-    throw new Error(`AI gateway error ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+    const translated = await translateWithAzure(trimmed, sourceLang, targetLang);
+    const leading = segment.match(/^\s*/)?.[0] ?? "";
+    const trailing = segment.match(/\s*$/)?.[0] ?? "";
+    translatedSegments.push(`${leading}${translated}${trailing}`);
   }
 
-  const data = await resp.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content.trim()) {
-    throw new Error("Empty AI translation response");
-  }
-
-  return content.trim();
+  return translatedSegments.join("");
 }
 // Region of the Azure resource. South Africa North resources usually require the
 // region header, while global resources reject it. Try both paths safely.
@@ -265,20 +252,19 @@ async function translateWithAzure(text: string, sourceLang: string, targetLang: 
   throw new Error(lastError);
 }
 
-// Azure-only translation. No AI gateway fallback — surface real errors to the client.
 async function translateWithAI(text: string, sourceLang: string, targetLang: string): Promise<string> {
   const normalized = normalizeAllCapsForTranslation(text);
   const azureOutput = await translateWithAzure(normalized, sourceLang, targetLang);
 
   if (targetLang === "tn" && hasSuspiciousSetswanaEnglish(normalized, azureOutput)) {
-    console.warn(`[translate] azure tn output looked partially untranslated; retrying with Lovable AI (${text.length} chars)`);
-    try {
-      const aiOutput = await translateWithLovableAI(normalized, sourceLang, targetLang);
-      console.log(`[translate] ai fallback ok ${sourceLang}->${targetLang} (${text.length} chars)`);
-      return aiOutput;
-    } catch (fallbackError) {
-      console.error("[translate] tn ai fallback failed:", fallbackError);
+    console.warn(`[translate] azure tn output looked partially untranslated; retrying line-by-line (${text.length} chars)`);
+    const lineByLineOutput = await translateLineByLineWithAzure(normalized, sourceLang, targetLang);
+    if (!hasSuspiciousSetswanaEnglish(normalized, lineByLineOutput)) {
+      console.log(`[translate] azure line-by-line ok ${sourceLang}->${targetLang} (${text.length} chars)`);
+      return lineByLineOutput;
     }
+
+    console.warn(`[translate] azure line-by-line still suspicious for tn; returning best available output`);
   }
 
   console.log(`[translate] azure ok ${sourceLang}->${targetLang} (${text.length} chars)`);
