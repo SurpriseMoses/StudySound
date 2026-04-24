@@ -720,8 +720,10 @@ Deno.serve(async (req) => {
       storagePath = cached.storage_path;
       reused = true;
     } else {
-      // Use translated text for TTS only when we have a native voice for that lang;
-      // otherwise narrate the source text with the fallback voice.
+      // SINGLE SOURCE OF TRUTH: TTS always uses translated text when we have
+      // a native Azure voice for the target language. Otherwise we narrate the
+      // source text using the language's English fallback voice (text on
+      // screen still shows the translation).
       const ttsText =
         lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)
           ? finalText
@@ -730,10 +732,15 @@ Deno.serve(async (req) => {
       if (!apiKey) throw new Error(`${provider} API key not configured`);
       let audio: ArrayBuffer;
       try {
-        audio =
-          provider === "azure"
-            ? await ttsAzure(ttsText, lang, apiKey, mode)
-            : await ttsElevenLabs(ttsText, apiKey);
+        if (provider === "azure") {
+          const result = await ttsAzureWithFallback(ttsText, lang, voiceName, apiKey, mode);
+          audio = result.audio;
+          if (result.voiceUsed !== voiceName) {
+            console.warn(`[audio] voice fallback ${voiceName} -> ${result.voiceUsed} for lang=${lang}`);
+          }
+        } else {
+          audio = await ttsElevenLabs(ttsText, apiKey);
+        }
       } catch (error) {
         const details = error instanceof Error ? error.message : "Audio generation failed";
         if (isUnsupportedTranslationError(details)) {
