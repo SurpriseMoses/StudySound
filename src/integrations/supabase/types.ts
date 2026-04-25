@@ -196,10 +196,12 @@ export type Database = {
           seed_audio_error: string | null
           seed_audio_progress: number
           seed_audio_status: string
+          seed_translation: boolean
           source_url: string | null
           subject_type: Database["public"]["Enums"]["subject_type"]
           tags: Json
           title: string
+          translation_status: string
           updated_at: string
         }
         Insert: {
@@ -220,10 +222,12 @@ export type Database = {
           seed_audio_error?: string | null
           seed_audio_progress?: number
           seed_audio_status?: string
+          seed_translation?: boolean
           source_url?: string | null
           subject_type?: Database["public"]["Enums"]["subject_type"]
           tags?: Json
           title: string
+          translation_status?: string
           updated_at?: string
         }
         Update: {
@@ -244,10 +248,12 @@ export type Database = {
           seed_audio_error?: string | null
           seed_audio_progress?: number
           seed_audio_status?: string
+          seed_translation?: boolean
           source_url?: string | null
           subject_type?: Database["public"]["Enums"]["subject_type"]
           tags?: Json
           title?: string
+          translation_status?: string
           updated_at?: string
         }
         Relationships: []
@@ -800,6 +806,87 @@ export type Database = {
         }
         Relationships: []
       }
+      translation_seed_logs: {
+        Row: {
+          chunk_index: number
+          created_at: string
+          document_id: string
+          error_message: string | null
+          id: number
+          retry_count: number
+          status: string
+          target_language: string
+        }
+        Insert: {
+          chunk_index: number
+          created_at?: string
+          document_id: string
+          error_message?: string | null
+          id?: never
+          retry_count?: number
+          status: string
+          target_language: string
+        }
+        Update: {
+          chunk_index?: number
+          created_at?: string
+          document_id?: string
+          error_message?: string | null
+          id?: never
+          retry_count?: number
+          status?: string
+          target_language?: string
+        }
+        Relationships: []
+      }
+      translation_seed_queue: {
+        Row: {
+          attempts: number
+          chunk_index: number
+          completed_at: string | null
+          created_at: string
+          delayed_until: string | null
+          document_id: string
+          id: string
+          last_error: string | null
+          priority: number
+          started_at: string | null
+          status: string
+          target_language: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          chunk_index: number
+          completed_at?: string | null
+          created_at?: string
+          delayed_until?: string | null
+          document_id: string
+          id?: string
+          last_error?: string | null
+          priority?: number
+          started_at?: string | null
+          status?: string
+          target_language: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          chunk_index?: number
+          completed_at?: string | null
+          created_at?: string
+          delayed_until?: string | null
+          document_id?: string
+          id?: string
+          last_error?: string | null
+          priority?: number
+          started_at?: string | null
+          status?: string
+          target_language?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       translation_watermarks: {
         Row: {
           chunk_index: number
@@ -827,6 +914,42 @@ export type Database = {
           target_language?: string
           user_id?: string
           watermark_hash?: string
+        }
+        Relationships: []
+      }
+      translation_worker_state: {
+        Row: {
+          current_document_id: string | null
+          current_language: string | null
+          current_queue_id: string | null
+          id: number
+          is_running: boolean
+          last_error: string | null
+          last_heartbeat: string | null
+          total_processed: number
+          updated_at: string
+        }
+        Insert: {
+          current_document_id?: string | null
+          current_language?: string | null
+          current_queue_id?: string | null
+          id?: number
+          is_running?: boolean
+          last_error?: string | null
+          last_heartbeat?: string | null
+          total_processed?: number
+          updated_at?: string
+        }
+        Update: {
+          current_document_id?: string | null
+          current_language?: string | null
+          current_queue_id?: string | null
+          id?: number
+          is_running?: boolean
+          last_error?: string | null
+          last_heartbeat?: string | null
+          total_processed?: number
+          updated_at?: string
         }
         Relationships: []
       }
