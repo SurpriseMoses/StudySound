@@ -320,8 +320,8 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const ANON_KEY = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
     const AZURE_KEY = Deno.env.get("Azure_Secret_Key_Translator");
+    if (!AZURE_KEY) throw new Error("Azure Translator key not configured");
     if (!AZURE_KEY) throw new Error("Azure Translator key not configured");
 
     // Auth: allow either an admin user JWT OR a cron/internal call (any valid JWT
