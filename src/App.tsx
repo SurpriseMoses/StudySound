@@ -29,6 +29,7 @@ import AdminEconomy from "./pages/admin/AdminEconomy";
 import AdminAbuse from "./pages/admin/AdminAbuse";
 import AdminTopDocuments from "./pages/admin/AdminTopDocuments";
 import AdminSeedAudio from "./pages/admin/AdminSeedAudio";
+import AdminSeedTranslations from "./pages/admin/AdminSeedTranslations";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -70,6 +71,7 @@ const App = () => (
               <Route path="documents" element={<AdminDocuments />} />
               <Route path="top-documents" element={<AdminTopDocuments />} />
               <Route path="seed-audio" element={<AdminSeedAudio />} />
+              <Route path="seed-translations" element={<AdminSeedTranslations />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="economy" element={<AdminEconomy />} />
               <Route path="abuse" element={<AdminAbuse />} />
