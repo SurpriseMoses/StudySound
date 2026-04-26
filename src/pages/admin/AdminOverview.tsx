@@ -9,8 +9,9 @@ import {
   DollarSign, Percent, BookOpen, Clock, Activity, Target,
 } from "lucide-react";
 import {
-  CREDIT_PRICE_ZAR, REAL_COST_PER_1000_CHARS_ZAR, RAW_COST_PER_1000_CHARS_ZAR,
-  REAL_COST_PER_CREDIT_ZAR, RAW_COST_PER_CREDIT_ZAR, CHARS_PER_CREDIT,
+  CREDIT_PRICE_ZAR, COST_PER_CREDIT,
+  REAL_COST_PER_1000_CHARS_ZAR, RAW_COST_PER_1000_CHARS_ZAR,
+  REAL_COST_PER_CREDIT_ZAR, CHARS_PER_CREDIT,
   costForCharsZar, formatZar, formatPct,
 } from "@/lib/admin-pricing";
 
