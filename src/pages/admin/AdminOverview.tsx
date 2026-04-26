@@ -9,8 +9,9 @@ import {
   DollarSign, Percent, BookOpen, Clock, Activity, Target,
 } from "lucide-react";
 import {
-  CREDIT_PRICE_ZAR, REAL_COST_PER_1000_CHARS_ZAR, RAW_COST_PER_1000_CHARS_ZAR,
-  REAL_COST_PER_CREDIT_ZAR, RAW_COST_PER_CREDIT_ZAR, CHARS_PER_CREDIT,
+  CREDIT_PRICE_ZAR, COST_PER_CREDIT,
+  REAL_COST_PER_1000_CHARS_ZAR, RAW_COST_PER_1000_CHARS_ZAR,
+  REAL_COST_PER_CREDIT_ZAR, CHARS_PER_CREDIT,
   costForCharsZar, formatZar, formatPct,
 } from "@/lib/admin-pricing";
 
@@ -53,7 +54,7 @@ export default function AdminOverview() {
   // projection inputs
   const [projUsers, setProjUsers] = useState(1000);
   const [projCredits, setProjCredits] = useState(40);
-  const [projCostPerCredit, setProjCostPerCredit] = useState(REAL_COST_PER_CREDIT_ZAR);
+  const [projCostPerCredit, setProjCostPerCredit] = useState(COST_PER_CREDIT);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,51 +76,55 @@ export default function AdminOverview() {
     const totalCredits = m.audio_credits + m.translation_credits + m.visual_credits;
     const revenue = totalCredits * CREDIT_PRICE_ZAR;
 
-    // Real (true) cost from characters processed
-    const audioRealCost = costForCharsZar(data.chars.user_audio_estimated);
-    const transRealCost = costForCharsZar(data.chars.user_translation_estimated);
-    // visuals cost — keep simple per-scene est (R0.93 ≈ $0.05*17 + overhead)
-    const visualsRealCost = m.visual_generated * 0.93;
+    // ─── UNIFIED COST MODEL — single source: COST_PER_CREDIT ───────────
+    // User-driven COGS = credits consumed by users × cost/credit
+    const audioCOGS = m.audio_credits * COST_PER_CREDIT;
+    const transCOGS = m.translation_credits * COST_PER_CREDIT;
+    const visualsCOGS = m.visual_credits * COST_PER_CREDIT;
+    const userCOGS = audioCOGS + transCOGS + visualsCOGS;
 
-    const userCost = audioRealCost + transRealCost + visualsRealCost;
-    const systemCost =
-      costForCharsZar(data.chars.system_audio_estimated) +
-      costForCharsZar(data.chars.system_translation_estimated);
-    const totalCost = userCost + systemCost;
+    // System (platform investment) costs — seeded content, not user-driven.
+    // Estimate equivalent credits from system chars, then apply same R/credit.
+    const systemChars =
+      data.chars.system_audio_estimated + data.chars.system_translation_estimated;
+    const systemCreditsEquiv = systemChars / CHARS_PER_CREDIT;
+    const systemCost = systemCreditsEquiv * COST_PER_CREDIT;
 
-    const grossProfit = revenue - userCost;        // user-driven only
-    const netProfit   = revenue - totalCost;
+    // Profitability — clearly separated
+    const grossProfit = revenue - userCOGS;            // unit-level (per usage)
+    const netProfit   = revenue - userCOGS - systemCost; // platform-level
     const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+    const netMargin   = revenue > 0 ? (netProfit / revenue) * 100 : 0;
 
+    // Unit economics — per active user (excludes system investment)
     const arpu = data.growth.active_30d > 0 ? revenue / data.growth.active_30d : 0;
-    const costPerUser = data.growth.active_30d > 0 ? userCost / data.growth.active_30d : 0;
+    const costPerUser = data.growth.active_30d > 0 ? userCOGS / data.growth.active_30d : 0;
     const profitPerUser = arpu - costPerUser;
 
-    const revPerCredit = totalCredits > 0 ? revenue / totalCredits : 0;
-    const costPerCredit = totalCredits > 0 ? userCost / totalCredits : 0;
+    // Break-even: how many users at current ARPU/profit cover system costs?
+    const breakEvenUsers =
+      profitPerUser > 0 ? Math.ceil(systemCost / profitPerUser) : Infinity;
 
-    // efficiency
-    const totalUserChars = data.chars.user_audio_estimated + data.chars.user_translation_estimated;
+    // Cache hit rate
     const cachePct = (unlocks: number, gen: number) =>
       unlocks > 0 ? Math.max(0, (unlocks - gen) / unlocks) * 100 : 0;
     const audioHit = cachePct(m.audio_unlocks, m.audio_generated);
     const transHit = cachePct(m.translation_unlocks, m.translation_generated);
 
-    // raw vs real
+    // Raw vs true (informational)
     const totalGenChars = data.chars.audio_generated + data.chars.translation_generated;
     const rawCost  = costForCharsZar(totalGenChars, true);
     const realCost = costForCharsZar(totalGenChars, false);
 
-    // conversion proxy: paying / total
     const conversion = m.total_users > 0 ? (m.paying_users / m.total_users) * 100 : 0;
 
     return {
-      totalCredits, revenue, userCost, systemCost, totalCost,
-      audioRealCost, transRealCost, visualsRealCost,
-      grossProfit, netProfit, grossMargin,
-      arpu, costPerUser, profitPerUser,
-      revPerCredit, costPerCredit,
-      audioHit, transHit, totalUserChars,
+      totalCredits, revenue,
+      userCOGS, systemCost, totalCost: userCOGS + systemCost,
+      audioCOGS, transCOGS, visualsCOGS,
+      grossProfit, netProfit, grossMargin, netMargin,
+      arpu, costPerUser, profitPerUser, breakEvenUsers,
+      audioHit, transHit,
       rawCost, realCost, conversion,
     };
   }, [data]);
@@ -128,11 +133,14 @@ export default function AdminOverview() {
     const revenue = projUsers * projCredits * CREDIT_PRICE_ZAR;
     const cost    = projUsers * projCredits * projCostPerCredit;
     const profit  = revenue - cost;
-    const breakEvenUsers = projCostPerCredit < CREDIT_PRICE_ZAR
-      ? 0   // already profitable per user
-      : Infinity;
-    return { revenue, cost, profit, breakEvenUsers };
-  }, [projUsers, projCredits, projCostPerCredit]);
+    const profitPerUserProj = projCredits * (CREDIT_PRICE_ZAR - projCostPerCredit);
+    const systemCostRef = derived?.systemCost ?? 0;
+    const breakEvenUsers =
+      profitPerUserProj > 0 && systemCostRef > 0
+        ? Math.ceil(systemCostRef / profitPerUserProj)
+        : profitPerUserProj > 0 ? 0 : Infinity;
+    return { revenue, cost, profit, profitPerUserProj, breakEvenUsers };
+  }, [projUsers, projCredits, projCostPerCredit, derived?.systemCost]);
 
   if (loading) return <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading investor dashboard…</div>;
   if (err) return <p className="text-destructive text-sm">{err}</p>;
@@ -163,19 +171,36 @@ export default function AdminOverview() {
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <Kpi label="MRR" value={formatZar(data.mrr_zar)} icon={DollarSign} accent="positive" tip="Sum of all paid plan subscriptions × monthly price" />
           <Kpi label={`Revenue (${days}d)`} value={formatZar(derived.revenue)} icon={TrendingUp} accent="positive" tip="Credits consumed × R1" />
-          <Kpi label="COGS (true)" value={formatZar(derived.userCost)} icon={TrendingDown} accent="negative" tip="True operating cost for user-driven generations" />
-          <Kpi label="Gross profit" value={formatZar(derived.grossProfit)} icon={derived.grossProfit >= 0 ? TrendingUp : TrendingDown} accent={derived.grossProfit >= 0 ? "positive" : "negative"} />
-          <Kpi label="Gross margin" value={formatPct(derived.grossMargin)} icon={Percent} accent={derived.grossMargin >= 50 ? "positive" : derived.grossMargin >= 0 ? "neutral" : "negative"} />
+          <Kpi label="COGS (Cost of Goods Sold)" value={formatZar(derived.userCOGS)} icon={TrendingDown} accent="negative" tip={`User-driven generations × R${COST_PER_CREDIT.toFixed(2)}/credit`} />
+          <Kpi label="Gross Profit" value={formatZar(derived.grossProfit)} icon={derived.grossProfit >= 0 ? TrendingUp : TrendingDown} accent={derived.grossProfit >= 0 ? "positive" : "negative"} tip="Revenue − COGS (excludes system costs)" />
+          <Kpi label="Gross Margin" value={formatPct(derived.grossMargin)} icon={Percent} accent={derived.grossMargin >= 50 ? "positive" : derived.grossMargin >= 0 ? "neutral" : "negative"} />
         </div>
       </Section>
 
-      {/* 2 ─ UNIT ECONOMICS */}
-      <Section title="Unit economics (per active user, 30d)">
+      {/* 2A ─ UNIT ECONOMICS */}
+      <Section title="A. Unit economics (per active user, 30d)">
+        <p className="text-xs text-muted-foreground mb-3 -mt-2">
+          Per-user profitability — excludes platform investment costs.
+        </p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Kpi label="Active users (30d)" value={data.growth.active_30d.toLocaleString()} icon={Users} />
           <Kpi label="ARPU" value={formatZar(derived.arpu)} icon={DollarSign} accent="positive" tip="Revenue ÷ active users" />
-          <Kpi label="Cost / user" value={formatZar(derived.costPerUser)} icon={TrendingDown} accent="negative" />
-          <Kpi label="Profit / user" value={formatZar(derived.profitPerUser)} icon={derived.profitPerUser >= 0 ? TrendingUp : TrendingDown} accent={derived.profitPerUser >= 0 ? "positive" : "negative"} />
+          <Kpi label="Cost per user" value={formatZar(derived.costPerUser)} icon={TrendingDown} accent="negative" tip={`COGS ÷ active users (R${COST_PER_CREDIT.toFixed(2)}/credit)`} />
+          <Kpi label="Profit per user" value={formatZar(derived.profitPerUser)} icon={derived.profitPerUser >= 0 ? TrendingUp : TrendingDown} accent={derived.profitPerUser >= 0 ? "positive" : "negative"} />
+        </div>
+      </Section>
+
+      {/* 2B ─ PLATFORM PROFITABILITY */}
+      <Section title="B. Platform profitability (real business view)">
+        <p className="text-xs text-muted-foreground mb-3 -mt-2">
+          Includes all operational and content investment costs.
+        </p>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <Kpi label={`Total Revenue (${days}d)`} value={formatZar(derived.revenue)} icon={TrendingUp} accent="positive" />
+          <Kpi label="Total COGS (user)" value={formatZar(derived.userCOGS)} icon={TrendingDown} accent="negative" />
+          <Kpi label="System Costs" value={formatZar(derived.systemCost)} icon={Database} accent="negative" tip="Seeding & background jobs — not user-driven" />
+          <Kpi label="Net Profit (after system costs)" value={formatZar(derived.netProfit)} icon={derived.netProfit >= 0 ? TrendingUp : TrendingDown} accent={derived.netProfit >= 0 ? "positive" : "negative"} />
+          <Kpi label="Net Margin" value={formatPct(derived.netMargin)} icon={Percent} accent={derived.netMargin >= 0 ? "positive" : "negative"} />
         </div>
       </Section>
 
@@ -183,14 +208,14 @@ export default function AdminOverview() {
       <Section title="Credit economics">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Kpi label="Credits used" value={derived.totalCredits.toLocaleString()} icon={CreditCard} />
-          <Kpi label="Revenue / credit" value={formatZar(derived.revPerCredit)} icon={TrendingUp} accent="positive" />
-          <Kpi label="Cost / credit (real)" value={formatZar(derived.costPerCredit || REAL_COST_PER_CREDIT_ZAR)} icon={TrendingDown} accent="negative" tip={`Baseline: R${REAL_COST_PER_CREDIT_ZAR.toFixed(2)}/credit at ${CHARS_PER_CREDIT} chars`} />
-          <Kpi label="Profit / credit" value={formatZar((derived.revPerCredit - derived.costPerCredit) || (CREDIT_PRICE_ZAR - REAL_COST_PER_CREDIT_ZAR))} icon={TrendingUp} accent="positive" />
+          <Kpi label="Revenue per credit" value={formatZar(CREDIT_PRICE_ZAR)} icon={TrendingUp} accent="positive" />
+          <Kpi label="True Cost per Credit" value={formatZar(COST_PER_CREDIT)} icon={TrendingDown} accent="negative" tip={`Single source of truth: R${COST_PER_CREDIT.toFixed(2)}/credit at ${CHARS_PER_CREDIT} chars`} />
+          <Kpi label="Profit per credit" value={formatZar(CREDIT_PRICE_ZAR - COST_PER_CREDIT)} icon={TrendingUp} accent="positive" />
         </div>
       </Section>
 
-      {/* 4 ─ USAGE BREAKDOWN */}
-      <Section title="Usage vs cost (user-driven)">
+      {/* 4 ─ USER COSTS (COGS) BREAKDOWN */}
+      <Section title="User costs (COGS) — user-triggered generations">
         <Card>
           <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
@@ -199,25 +224,26 @@ export default function AdminOverview() {
                   <th className="px-4 py-2">Feature</th>
                   <th className="px-4 py-2 text-right">Credits</th>
                   <th className="px-4 py-2 text-right">Revenue</th>
-                  <th className="px-4 py-2 text-right">Cost (true)</th>
+                  <th className="px-4 py-2 text-right">COGS</th>
                   <th className="px-4 py-2 text-right">Profit</th>
                   <th className="px-4 py-2 text-right">Margin</th>
                 </tr>
               </thead>
               <tbody>
-                <UsageRow icon={Headphones} name="Audio" credits={m.audio_credits} cost={derived.audioRealCost} />
-                <UsageRow icon={Languages} name="Translation" credits={m.translation_credits} cost={derived.transRealCost} />
-                <UsageRow icon={ImageIcon} name="Visuals" credits={m.visual_credits} cost={derived.visualsRealCost} />
+                <UsageRow icon={Headphones} name="Audio (user-triggered)" credits={m.audio_credits} cost={derived.audioCOGS} />
+                <UsageRow icon={Languages} name="Translation (user-triggered)" credits={m.translation_credits} cost={derived.transCOGS} />
+                <UsageRow icon={ImageIcon} name="Visuals (user-triggered)" credits={m.visual_credits} cost={derived.visualsCOGS} />
               </tbody>
             </table>
           </CardContent>
         </Card>
       </Section>
 
-      <Section title="System costs (non-revenue)">
+      {/* 4B ─ SYSTEM COSTS (non-revenue) */}
+      <Section title="System costs (platform investment — non-revenue)">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Kpi label="Seeded audio cost" value={formatZar(costForCharsZar(data.chars.system_audio_estimated))} icon={Database} accent="negative" tip={`${data.chars.system_audio_estimated.toLocaleString()} chars`} />
-          <Kpi label="Seeded translation cost" value={formatZar(costForCharsZar(data.chars.system_translation_estimated))} icon={Database} accent="negative" tip={`${data.chars.system_translation_estimated.toLocaleString()} chars`} />
+          <Kpi label="Seeded audio" value={formatZar((data.chars.system_audio_estimated / CHARS_PER_CREDIT) * COST_PER_CREDIT)} icon={Database} accent="negative" tip={`${data.chars.system_audio_estimated.toLocaleString()} chars`} />
+          <Kpi label="Seeded translations" value={formatZar((data.chars.system_translation_estimated / CHARS_PER_CREDIT) * COST_PER_CREDIT)} icon={Database} accent="negative" tip={`${data.chars.system_translation_estimated.toLocaleString()} chars`} />
           <Kpi label="Total system cost" value={formatZar(derived.systemCost)} icon={TrendingDown} accent="negative" tip="Background processing — not user-driven" />
         </div>
       </Section>
@@ -302,11 +328,28 @@ export default function AdminOverview() {
               <ProjRow label="Projected revenue" value={formatZar(projection.revenue)} positive />
               <ProjRow label="Projected cost" value={formatZar(projection.cost)} negative />
               <ProjRow label="Projected profit" value={formatZar(projection.profit)} positive={projection.profit >= 0} negative={projection.profit < 0} />
-              <div className="pt-3 border-t text-sm text-muted-foreground">
-                {projection.breakEvenUsers === 0 ? (
-                  <>✅ Profitable from user #1 at this cost/credit (R{projCostPerCredit.toFixed(2)} &lt; R{CREDIT_PRICE_ZAR.toFixed(2)} price).</>
+              <ProjRow
+                label="Break-even users"
+                value={projection.breakEvenUsers === Infinity ? "—" : projection.breakEvenUsers.toLocaleString()}
+                positive={projection.breakEvenUsers !== Infinity && projection.breakEvenUsers <= projUsers}
+                negative={projection.breakEvenUsers === Infinity || projection.breakEvenUsers > projUsers}
+              />
+              <div className="pt-3 border-t text-xs text-muted-foreground space-y-1">
+                {projection.profitPerUserProj > 0 ? (
+                  <>
+                    <p>✅ <strong>Unit profitable from first user</strong>; scaling improves total profitability.</p>
+                    <p>
+                      Break-even point:{" "}
+                      <strong className="text-foreground">
+                        {projection.breakEvenUsers === Infinity || projection.breakEvenUsers === 0
+                          ? "covered"
+                          : `${projection.breakEvenUsers.toLocaleString()} users`}
+                      </strong>{" "}
+                      required to cover platform costs (R{(derived.systemCost).toFixed(2)} system cost ÷ R{projection.profitPerUserProj.toFixed(2)} profit/user).
+                    </p>
+                  </>
                 ) : (
-                  <>⚠️ Cost/credit ≥ price/credit — model is not profitable per credit.</>
+                  <p>⚠️ Cost/credit ≥ price/credit — model is not unit profitable. Reduce cost/credit to scale.</p>
                 )}
               </div>
             </div>
@@ -316,10 +359,13 @@ export default function AdminOverview() {
 
       <Card className="bg-muted/30 border-dashed">
         <CardContent className="p-4 text-xs text-muted-foreground">
-          Cost model: Azure TTS $16/1M chars × R{17}/USD = R{RAW_COST_PER_1000_CHARS_ZAR.toFixed(2)}/1k chars (raw),
-          adjusted to <strong>R{REAL_COST_PER_1000_CHARS_ZAR.toFixed(2)}/1k chars</strong> (true) for SSML & retries.
-          1 credit ≈ {CHARS_PER_CREDIT} chars → cost ≈ R{REAL_COST_PER_CREDIT_ZAR.toFixed(2)}/credit.
-          Edit in <code>src/lib/admin-pricing.ts</code>.
+          <strong className="text-foreground">Single source of truth:</strong>{" "}
+          <code>COST_PER_CREDIT = R{COST_PER_CREDIT.toFixed(2)}</code> ·
+          1 credit = R{CREDIT_PRICE_ZAR.toFixed(2)} revenue · profit margin per credit ={" "}
+          {formatPct(((CREDIT_PRICE_ZAR - COST_PER_CREDIT) / CREDIT_PRICE_ZAR) * 100)}.
+          Reference (raw Azure): R{RAW_COST_PER_1000_CHARS_ZAR.toFixed(2)}/1k chars,
+          true blended R{REAL_COST_PER_1000_CHARS_ZAR.toFixed(2)}/1k chars. Edit in{" "}
+          <code>src/lib/admin-pricing.ts</code>.
         </CardContent>
       </Card>
     </div>
