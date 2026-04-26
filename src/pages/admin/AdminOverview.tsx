@@ -328,11 +328,28 @@ export default function AdminOverview() {
               <ProjRow label="Projected revenue" value={formatZar(projection.revenue)} positive />
               <ProjRow label="Projected cost" value={formatZar(projection.cost)} negative />
               <ProjRow label="Projected profit" value={formatZar(projection.profit)} positive={projection.profit >= 0} negative={projection.profit < 0} />
-              <div className="pt-3 border-t text-sm text-muted-foreground">
-                {projection.breakEvenUsers === 0 ? (
-                  <>✅ Profitable from user #1 at this cost/credit (R{projCostPerCredit.toFixed(2)} &lt; R{CREDIT_PRICE_ZAR.toFixed(2)} price).</>
+              <ProjRow
+                label="Break-even users"
+                value={projection.breakEvenUsers === Infinity ? "—" : projection.breakEvenUsers.toLocaleString()}
+                positive={projection.breakEvenUsers !== Infinity && projection.breakEvenUsers <= projUsers}
+                negative={projection.breakEvenUsers === Infinity || projection.breakEvenUsers > projUsers}
+              />
+              <div className="pt-3 border-t text-xs text-muted-foreground space-y-1">
+                {projection.profitPerUserProj > 0 ? (
+                  <>
+                    <p>✅ <strong>Unit profitable from first user</strong>; scaling improves total profitability.</p>
+                    <p>
+                      Break-even point:{" "}
+                      <strong className="text-foreground">
+                        {projection.breakEvenUsers === Infinity || projection.breakEvenUsers === 0
+                          ? "covered"
+                          : `${projection.breakEvenUsers.toLocaleString()} users`}
+                      </strong>{" "}
+                      required to cover platform costs (R{(derived.systemCost).toFixed(2)} system cost ÷ R{projection.profitPerUserProj.toFixed(2)} profit/user).
+                    </p>
+                  </>
                 ) : (
-                  <>⚠️ Cost/credit ≥ price/credit — model is not profitable per credit.</>
+                  <p>⚠️ Cost/credit ≥ price/credit — model is not unit profitable. Reduce cost/credit to scale.</p>
                 )}
               </div>
             </div>
@@ -342,10 +359,13 @@ export default function AdminOverview() {
 
       <Card className="bg-muted/30 border-dashed">
         <CardContent className="p-4 text-xs text-muted-foreground">
-          Cost model: Azure TTS $16/1M chars × R{17}/USD = R{RAW_COST_PER_1000_CHARS_ZAR.toFixed(2)}/1k chars (raw),
-          adjusted to <strong>R{REAL_COST_PER_1000_CHARS_ZAR.toFixed(2)}/1k chars</strong> (true) for SSML & retries.
-          1 credit ≈ {CHARS_PER_CREDIT} chars → cost ≈ R{REAL_COST_PER_CREDIT_ZAR.toFixed(2)}/credit.
-          Edit in <code>src/lib/admin-pricing.ts</code>.
+          <strong className="text-foreground">Single source of truth:</strong>{" "}
+          <code>COST_PER_CREDIT = R{COST_PER_CREDIT.toFixed(2)}</code> ·
+          1 credit = R{CREDIT_PRICE_ZAR.toFixed(2)} revenue · profit margin per credit ={" "}
+          {formatPct(((CREDIT_PRICE_ZAR - COST_PER_CREDIT) / CREDIT_PRICE_ZAR) * 100)}.
+          Reference (raw Azure): R{RAW_COST_PER_1000_CHARS_ZAR.toFixed(2)}/1k chars,
+          true blended R{REAL_COST_PER_1000_CHARS_ZAR.toFixed(2)}/1k chars. Edit in{" "}
+          <code>src/lib/admin-pricing.ts</code>.
         </CardContent>
       </Card>
     </div>
