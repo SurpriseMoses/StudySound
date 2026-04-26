@@ -7,23 +7,26 @@
 export const CREDIT_PRICE_ZAR = 1.0;          // R1 charged to user per credit
 export const CHARS_PER_CREDIT = 1800;         // 1 credit unlocks ~1,800 chars
 
+// ─── SINGLE SOURCE OF TRUTH ──────────────────────────────────────────────
+// True blended operating cost per credit (Azure TTS + SSML overhead +
+// retries + infra). Used everywhere: KPIs, projections, per-user cost.
+export const COST_PER_CREDIT = 0.58;          // R0.58 / credit
+// ─────────────────────────────────────────────────────────────────────────
+
 // FX
-export const USD_TO_ZAR = 17;                 // fixed for now
+export const USD_TO_ZAR = 17;
 
-// Azure TTS raw price
-export const AZURE_TTS_USD_PER_1M_CHARS = 16; // $16 / 1M chars
+// Azure TTS raw list price (informational only — for "raw vs true" comparison)
+export const AZURE_TTS_USD_PER_1M_CHARS = 16;
 export const RAW_COST_PER_1000_CHARS_ZAR =
-  (AZURE_TTS_USD_PER_1M_CHARS / 1000) * USD_TO_ZAR; // = R0.272
+  (AZURE_TTS_USD_PER_1M_CHARS / 1000) * USD_TO_ZAR; // ≈ R0.272
 
-// Adjusted (true) operating cost — accounts for SSML overhead, retries,
-// chunk inefficiency, infra. Default R0.32 /1000 chars.
-export const REAL_COST_PER_1000_CHARS_ZAR = 0.32;
-
-// Derived per-credit costs
+// Derived from COST_PER_CREDIT — keep aliases so legacy imports don't break
+export const REAL_COST_PER_CREDIT_ZAR = COST_PER_CREDIT;
+export const REAL_COST_PER_1000_CHARS_ZAR =
+  (COST_PER_CREDIT / CHARS_PER_CREDIT) * 1000;                  // ≈ R0.322
 export const RAW_COST_PER_CREDIT_ZAR =
-  (CHARS_PER_CREDIT / 1000) * RAW_COST_PER_1000_CHARS_ZAR;       // ≈ R0.49
-export const REAL_COST_PER_CREDIT_ZAR =
-  (CHARS_PER_CREDIT / 1000) * REAL_COST_PER_1000_CHARS_ZAR;      // ≈ R0.58
+  (CHARS_PER_CREDIT / 1000) * RAW_COST_PER_1000_CHARS_ZAR;      // ≈ R0.49
 
 // Translation & visuals (kept for legacy Economy page)
 export const COST_USD = {
