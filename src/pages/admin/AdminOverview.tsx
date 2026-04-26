@@ -171,19 +171,36 @@ export default function AdminOverview() {
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <Kpi label="MRR" value={formatZar(data.mrr_zar)} icon={DollarSign} accent="positive" tip="Sum of all paid plan subscriptions × monthly price" />
           <Kpi label={`Revenue (${days}d)`} value={formatZar(derived.revenue)} icon={TrendingUp} accent="positive" tip="Credits consumed × R1" />
-          <Kpi label="COGS (true)" value={formatZar(derived.userCost)} icon={TrendingDown} accent="negative" tip="True operating cost for user-driven generations" />
-          <Kpi label="Gross profit" value={formatZar(derived.grossProfit)} icon={derived.grossProfit >= 0 ? TrendingUp : TrendingDown} accent={derived.grossProfit >= 0 ? "positive" : "negative"} />
-          <Kpi label="Gross margin" value={formatPct(derived.grossMargin)} icon={Percent} accent={derived.grossMargin >= 50 ? "positive" : derived.grossMargin >= 0 ? "neutral" : "negative"} />
+          <Kpi label="COGS (Cost of Goods Sold)" value={formatZar(derived.userCOGS)} icon={TrendingDown} accent="negative" tip={`User-driven generations × R${COST_PER_CREDIT.toFixed(2)}/credit`} />
+          <Kpi label="Gross Profit" value={formatZar(derived.grossProfit)} icon={derived.grossProfit >= 0 ? TrendingUp : TrendingDown} accent={derived.grossProfit >= 0 ? "positive" : "negative"} tip="Revenue − COGS (excludes system costs)" />
+          <Kpi label="Gross Margin" value={formatPct(derived.grossMargin)} icon={Percent} accent={derived.grossMargin >= 50 ? "positive" : derived.grossMargin >= 0 ? "neutral" : "negative"} />
         </div>
       </Section>
 
-      {/* 2 ─ UNIT ECONOMICS */}
-      <Section title="Unit economics (per active user, 30d)">
+      {/* 2A ─ UNIT ECONOMICS */}
+      <Section title="A. Unit economics (per active user, 30d)">
+        <p className="text-xs text-muted-foreground mb-3 -mt-2">
+          Per-user profitability — excludes platform investment costs.
+        </p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Kpi label="Active users (30d)" value={data.growth.active_30d.toLocaleString()} icon={Users} />
           <Kpi label="ARPU" value={formatZar(derived.arpu)} icon={DollarSign} accent="positive" tip="Revenue ÷ active users" />
-          <Kpi label="Cost / user" value={formatZar(derived.costPerUser)} icon={TrendingDown} accent="negative" />
-          <Kpi label="Profit / user" value={formatZar(derived.profitPerUser)} icon={derived.profitPerUser >= 0 ? TrendingUp : TrendingDown} accent={derived.profitPerUser >= 0 ? "positive" : "negative"} />
+          <Kpi label="Cost per user" value={formatZar(derived.costPerUser)} icon={TrendingDown} accent="negative" tip={`COGS ÷ active users (R${COST_PER_CREDIT.toFixed(2)}/credit)`} />
+          <Kpi label="Profit per user" value={formatZar(derived.profitPerUser)} icon={derived.profitPerUser >= 0 ? TrendingUp : TrendingDown} accent={derived.profitPerUser >= 0 ? "positive" : "negative"} />
+        </div>
+      </Section>
+
+      {/* 2B ─ PLATFORM PROFITABILITY */}
+      <Section title="B. Platform profitability (real business view)">
+        <p className="text-xs text-muted-foreground mb-3 -mt-2">
+          Includes all operational and content investment costs.
+        </p>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <Kpi label={`Total Revenue (${days}d)`} value={formatZar(derived.revenue)} icon={TrendingUp} accent="positive" />
+          <Kpi label="Total COGS (user)" value={formatZar(derived.userCOGS)} icon={TrendingDown} accent="negative" />
+          <Kpi label="System Costs" value={formatZar(derived.systemCost)} icon={Database} accent="negative" tip="Seeding & background jobs — not user-driven" />
+          <Kpi label="Net Profit (after system costs)" value={formatZar(derived.netProfit)} icon={derived.netProfit >= 0 ? TrendingUp : TrendingDown} accent={derived.netProfit >= 0 ? "positive" : "negative"} />
+          <Kpi label="Net Margin" value={formatPct(derived.netMargin)} icon={Percent} accent={derived.netMargin >= 0 ? "positive" : "negative"} />
         </div>
       </Section>
 
@@ -191,14 +208,14 @@ export default function AdminOverview() {
       <Section title="Credit economics">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Kpi label="Credits used" value={derived.totalCredits.toLocaleString()} icon={CreditCard} />
-          <Kpi label="Revenue / credit" value={formatZar(derived.revPerCredit)} icon={TrendingUp} accent="positive" />
-          <Kpi label="Cost / credit (real)" value={formatZar(derived.costPerCredit || REAL_COST_PER_CREDIT_ZAR)} icon={TrendingDown} accent="negative" tip={`Baseline: R${REAL_COST_PER_CREDIT_ZAR.toFixed(2)}/credit at ${CHARS_PER_CREDIT} chars`} />
-          <Kpi label="Profit / credit" value={formatZar((derived.revPerCredit - derived.costPerCredit) || (CREDIT_PRICE_ZAR - REAL_COST_PER_CREDIT_ZAR))} icon={TrendingUp} accent="positive" />
+          <Kpi label="Revenue per credit" value={formatZar(CREDIT_PRICE_ZAR)} icon={TrendingUp} accent="positive" />
+          <Kpi label="True Cost per Credit" value={formatZar(COST_PER_CREDIT)} icon={TrendingDown} accent="negative" tip={`Single source of truth: R${COST_PER_CREDIT.toFixed(2)}/credit at ${CHARS_PER_CREDIT} chars`} />
+          <Kpi label="Profit per credit" value={formatZar(CREDIT_PRICE_ZAR - COST_PER_CREDIT)} icon={TrendingUp} accent="positive" />
         </div>
       </Section>
 
-      {/* 4 ─ USAGE BREAKDOWN */}
-      <Section title="Usage vs cost (user-driven)">
+      {/* 4 ─ USER COSTS (COGS) BREAKDOWN */}
+      <Section title="User costs (COGS) — user-triggered generations">
         <Card>
           <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
@@ -207,25 +224,26 @@ export default function AdminOverview() {
                   <th className="px-4 py-2">Feature</th>
                   <th className="px-4 py-2 text-right">Credits</th>
                   <th className="px-4 py-2 text-right">Revenue</th>
-                  <th className="px-4 py-2 text-right">Cost (true)</th>
+                  <th className="px-4 py-2 text-right">COGS</th>
                   <th className="px-4 py-2 text-right">Profit</th>
                   <th className="px-4 py-2 text-right">Margin</th>
                 </tr>
               </thead>
               <tbody>
-                <UsageRow icon={Headphones} name="Audio" credits={m.audio_credits} cost={derived.audioRealCost} />
-                <UsageRow icon={Languages} name="Translation" credits={m.translation_credits} cost={derived.transRealCost} />
-                <UsageRow icon={ImageIcon} name="Visuals" credits={m.visual_credits} cost={derived.visualsRealCost} />
+                <UsageRow icon={Headphones} name="Audio (user-triggered)" credits={m.audio_credits} cost={derived.audioCOGS} />
+                <UsageRow icon={Languages} name="Translation (user-triggered)" credits={m.translation_credits} cost={derived.transCOGS} />
+                <UsageRow icon={ImageIcon} name="Visuals (user-triggered)" credits={m.visual_credits} cost={derived.visualsCOGS} />
               </tbody>
             </table>
           </CardContent>
         </Card>
       </Section>
 
-      <Section title="System costs (non-revenue)">
+      {/* 4B ─ SYSTEM COSTS (non-revenue) */}
+      <Section title="System costs (platform investment — non-revenue)">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Kpi label="Seeded audio cost" value={formatZar(costForCharsZar(data.chars.system_audio_estimated))} icon={Database} accent="negative" tip={`${data.chars.system_audio_estimated.toLocaleString()} chars`} />
-          <Kpi label="Seeded translation cost" value={formatZar(costForCharsZar(data.chars.system_translation_estimated))} icon={Database} accent="negative" tip={`${data.chars.system_translation_estimated.toLocaleString()} chars`} />
+          <Kpi label="Seeded audio" value={formatZar((data.chars.system_audio_estimated / CHARS_PER_CREDIT) * COST_PER_CREDIT)} icon={Database} accent="negative" tip={`${data.chars.system_audio_estimated.toLocaleString()} chars`} />
+          <Kpi label="Seeded translations" value={formatZar((data.chars.system_translation_estimated / CHARS_PER_CREDIT) * COST_PER_CREDIT)} icon={Database} accent="negative" tip={`${data.chars.system_translation_estimated.toLocaleString()} chars`} />
           <Kpi label="Total system cost" value={formatZar(derived.systemCost)} icon={TrendingDown} accent="negative" tip="Background processing — not user-driven" />
         </div>
       </Section>
