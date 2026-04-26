@@ -54,7 +54,7 @@ export default function AdminOverview() {
   // projection inputs
   const [projUsers, setProjUsers] = useState(1000);
   const [projCredits, setProjCredits] = useState(40);
-  const [projCostPerCredit, setProjCostPerCredit] = useState(REAL_COST_PER_CREDIT_ZAR);
+  const [projCostPerCredit, setProjCostPerCredit] = useState(COST_PER_CREDIT);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,51 +76,55 @@ export default function AdminOverview() {
     const totalCredits = m.audio_credits + m.translation_credits + m.visual_credits;
     const revenue = totalCredits * CREDIT_PRICE_ZAR;
 
-    // Real (true) cost from characters processed
-    const audioRealCost = costForCharsZar(data.chars.user_audio_estimated);
-    const transRealCost = costForCharsZar(data.chars.user_translation_estimated);
-    // visuals cost — keep simple per-scene est (R0.93 ≈ $0.05*17 + overhead)
-    const visualsRealCost = m.visual_generated * 0.93;
+    // ─── UNIFIED COST MODEL — single source: COST_PER_CREDIT ───────────
+    // User-driven COGS = credits consumed by users × cost/credit
+    const audioCOGS = m.audio_credits * COST_PER_CREDIT;
+    const transCOGS = m.translation_credits * COST_PER_CREDIT;
+    const visualsCOGS = m.visual_credits * COST_PER_CREDIT;
+    const userCOGS = audioCOGS + transCOGS + visualsCOGS;
 
-    const userCost = audioRealCost + transRealCost + visualsRealCost;
-    const systemCost =
-      costForCharsZar(data.chars.system_audio_estimated) +
-      costForCharsZar(data.chars.system_translation_estimated);
-    const totalCost = userCost + systemCost;
+    // System (platform investment) costs — seeded content, not user-driven.
+    // Estimate equivalent credits from system chars, then apply same R/credit.
+    const systemChars =
+      data.chars.system_audio_estimated + data.chars.system_translation_estimated;
+    const systemCreditsEquiv = systemChars / CHARS_PER_CREDIT;
+    const systemCost = systemCreditsEquiv * COST_PER_CREDIT;
 
-    const grossProfit = revenue - userCost;        // user-driven only
-    const netProfit   = revenue - totalCost;
+    // Profitability — clearly separated
+    const grossProfit = revenue - userCOGS;            // unit-level (per usage)
+    const netProfit   = revenue - userCOGS - systemCost; // platform-level
     const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+    const netMargin   = revenue > 0 ? (netProfit / revenue) * 100 : 0;
 
+    // Unit economics — per active user (excludes system investment)
     const arpu = data.growth.active_30d > 0 ? revenue / data.growth.active_30d : 0;
-    const costPerUser = data.growth.active_30d > 0 ? userCost / data.growth.active_30d : 0;
+    const costPerUser = data.growth.active_30d > 0 ? userCOGS / data.growth.active_30d : 0;
     const profitPerUser = arpu - costPerUser;
 
-    const revPerCredit = totalCredits > 0 ? revenue / totalCredits : 0;
-    const costPerCredit = totalCredits > 0 ? userCost / totalCredits : 0;
+    // Break-even: how many users at current ARPU/profit cover system costs?
+    const breakEvenUsers =
+      profitPerUser > 0 ? Math.ceil(systemCost / profitPerUser) : Infinity;
 
-    // efficiency
-    const totalUserChars = data.chars.user_audio_estimated + data.chars.user_translation_estimated;
+    // Cache hit rate
     const cachePct = (unlocks: number, gen: number) =>
       unlocks > 0 ? Math.max(0, (unlocks - gen) / unlocks) * 100 : 0;
     const audioHit = cachePct(m.audio_unlocks, m.audio_generated);
     const transHit = cachePct(m.translation_unlocks, m.translation_generated);
 
-    // raw vs real
+    // Raw vs true (informational)
     const totalGenChars = data.chars.audio_generated + data.chars.translation_generated;
     const rawCost  = costForCharsZar(totalGenChars, true);
     const realCost = costForCharsZar(totalGenChars, false);
 
-    // conversion proxy: paying / total
     const conversion = m.total_users > 0 ? (m.paying_users / m.total_users) * 100 : 0;
 
     return {
-      totalCredits, revenue, userCost, systemCost, totalCost,
-      audioRealCost, transRealCost, visualsRealCost,
-      grossProfit, netProfit, grossMargin,
-      arpu, costPerUser, profitPerUser,
-      revPerCredit, costPerCredit,
-      audioHit, transHit, totalUserChars,
+      totalCredits, revenue,
+      userCOGS, systemCost, totalCost: userCOGS + systemCost,
+      audioCOGS, transCOGS, visualsCOGS,
+      grossProfit, netProfit, grossMargin, netMargin,
+      arpu, costPerUser, profitPerUser, breakEvenUsers,
+      audioHit, transHit,
       rawCost, realCost, conversion,
     };
   }, [data]);
@@ -129,11 +133,14 @@ export default function AdminOverview() {
     const revenue = projUsers * projCredits * CREDIT_PRICE_ZAR;
     const cost    = projUsers * projCredits * projCostPerCredit;
     const profit  = revenue - cost;
-    const breakEvenUsers = projCostPerCredit < CREDIT_PRICE_ZAR
-      ? 0   // already profitable per user
-      : Infinity;
-    return { revenue, cost, profit, breakEvenUsers };
-  }, [projUsers, projCredits, projCostPerCredit]);
+    const profitPerUserProj = projCredits * (CREDIT_PRICE_ZAR - projCostPerCredit);
+    const systemCostRef = derived?.systemCost ?? 0;
+    const breakEvenUsers =
+      profitPerUserProj > 0 && systemCostRef > 0
+        ? Math.ceil(systemCostRef / profitPerUserProj)
+        : profitPerUserProj > 0 ? 0 : Infinity;
+    return { revenue, cost, profit, profitPerUserProj, breakEvenUsers };
+  }, [projUsers, projCredits, projCostPerCredit, derived?.systemCost]);
 
   if (loading) return <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading investor dashboard…</div>;
   if (err) return <p className="text-destructive text-sm">{err}</p>;
