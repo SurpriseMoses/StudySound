@@ -439,7 +439,7 @@ Deno.serve(async (req) => {
 
     const { data: doc } = await admin
       .from("documents")
-      .select("id, clean_text, language, subject_type")
+      .select("id, clean_text, language, subject_type, cleaning_version")
       .eq("id", docId)
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
