@@ -190,7 +190,7 @@ Deno.serve(async (req) => {
         const storagePath = `visuals/${doc.id}/scene-${plan.scene_index}.png`;
 
         // Upload as Blob (more reliable in Deno than raw Uint8Array)
-        const blob = new Blob([bytes], { type: "image/png" });
+        const blob = new Blob([bytes as BlobPart], { type: "image/png" });
         const { error: upErr } = await admin.storage
           .from("assets")
           .upload(storagePath, blob, { contentType: "image/png", upsert: true });
