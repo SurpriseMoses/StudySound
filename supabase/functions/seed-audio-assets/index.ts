@@ -18,7 +18,7 @@
 //   }
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
-import { cleanRawText, type DocKind } from "../_shared/clean-text.ts";
+import { cleanRawText, isInvalidChunk, type DocKind } from "../_shared/clean-text.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
