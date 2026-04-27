@@ -79,6 +79,23 @@ export default function AdminDocuments() {
     load();
   };
 
+  const reclean = async (document_id: string, title: string) => {
+    if (!confirm(`Re-clean "${title}"?\n\nThis re-runs the latest text cleaner against raw_text and overwrites clean_text. Existing audio is kept but will be invalidated chunk-by-chunk on next play (hash mismatch). No user is re-charged.`)) return;
+    setBusy(document_id);
+    const { data, error } = await supabase.functions.invoke("admin-api", {
+      body: { action: "reclean_document", document_id },
+    });
+    setBusy(null);
+    if (error || !data?.success) {
+      toast({ title: "Re-clean failed", description: error?.message ?? data?.error, variant: "destructive" });
+      return;
+    }
+    toast({
+      title: "Re-cleaned",
+      description: `${data.chunks} chunks · ${data.invalid_chunks?.length ?? 0} skipped as invalid · ${data.char_count.toLocaleString()} chars (${data.kind}).`,
+    });
+    load();
+  };
   const filtered = docs.filter((d) => d.title.toLowerCase().includes(search.toLowerCase()));
 
   return (
