@@ -51,7 +51,8 @@ async function extractPdf(bytes: Uint8Array): Promise<{ text: string; pageCount:
 
 async function extractDocx(bytes: Uint8Array): Promise<{ text: string; pageCount: number }> {
   // mammoth expects a Buffer-like object; arrayBuffer works in Deno via the npm shim.
-  const result = await mammoth.extractRawText({ arrayBuffer: bytes.buffer });
+  const ab = bytes.buffer instanceof ArrayBuffer ? bytes.buffer : bytes.buffer.slice(0);
+  const result = await mammoth.extractRawText({ arrayBuffer: ab as ArrayBuffer });
   return { text: result.value ?? "", pageCount: 0 };
 }
 

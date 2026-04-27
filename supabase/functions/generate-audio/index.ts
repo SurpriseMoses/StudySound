@@ -603,14 +603,14 @@ Deno.serve(async (req) => {
     // Resolve display text for this chunk: translate when lang differs from source.
     // Used by both check_only response and final response so the UI can show translated text.
     async function resolveDisplayText(): Promise<string> {
-      const sourceLang = (doc.language ?? "en").toLowerCase();
+      const sourceLang = (doc!.language ?? "en").toLowerCase();
       if (lang === sourceLang) return chunks[chunk_index];
       if (!TRANSLATABLE_LANGS.has(lang)) return chunks[chunk_index];
       // Try cached translation first.
       const { data: tr } = await admin
         .from("translation_assets")
         .select("translated_text")
-        .eq("document_id", doc.id)
+        .eq("document_id", doc!.id)
         .eq("chunk_index", chunk_index)
         .eq("target_language", lang)
         .maybeSingle();
