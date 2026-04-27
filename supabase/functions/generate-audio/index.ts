@@ -213,6 +213,13 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
+// SHA-256 hex of a string. Used to detect when the text behind a cached audio
+// chunk has changed (e.g. clean_text was re-cleaned). Cheap, deterministic.
+async function sha256Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function pickVoice(lang: string, isLiterature: boolean): string {
   const cfg = VOICE_CONFIG[lang];
   if (!cfg) throw new Error(`Voice not available for selected language: ${lang}`);
