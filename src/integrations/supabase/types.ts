@@ -18,6 +18,8 @@ export type Database = {
         Row: {
           char_count: number
           chunk_index: number
+          clean_text_hash: string
+          cleaning_version: number
           created_at: string
           document_id: string
           duration_seconds: number | null
@@ -31,6 +33,8 @@ export type Database = {
         Insert: {
           char_count?: number
           chunk_index: number
+          clean_text_hash?: string
+          cleaning_version?: number
           created_at?: string
           document_id: string
           duration_seconds?: number | null
@@ -44,6 +48,8 @@ export type Database = {
         Update: {
           char_count?: number
           chunk_index?: number
+          clean_text_hash?: string
+          cleaning_version?: number
           created_at?: string
           document_id?: string
           duration_seconds?: number | null
@@ -181,6 +187,7 @@ export type Database = {
         Row: {
           char_count: number
           clean_text: string | null
+          cleaning_version: number
           content_hash: string
           created_at: string
           current_chunk_index: number | null
@@ -207,6 +214,7 @@ export type Database = {
         Insert: {
           char_count?: number
           clean_text?: string | null
+          cleaning_version?: number
           content_hash: string
           created_at?: string
           current_chunk_index?: number | null
@@ -233,6 +241,7 @@ export type Database = {
         Update: {
           char_count?: number
           clean_text?: string | null
+          cleaning_version?: number
           content_hash?: string
           created_at?: string
           current_chunk_index?: number | null

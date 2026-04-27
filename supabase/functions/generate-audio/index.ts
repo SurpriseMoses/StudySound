@@ -213,6 +213,13 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
+// SHA-256 hex of a string. Used to detect when the text behind a cached audio
+// chunk has changed (e.g. clean_text was re-cleaned). Cheap, deterministic.
+async function sha256Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function pickVoice(lang: string, isLiterature: boolean): string {
   const cfg = VOICE_CONFIG[lang];
   if (!cfg) throw new Error(`Voice not available for selected language: ${lang}`);
@@ -432,7 +439,7 @@ Deno.serve(async (req) => {
 
     const { data: doc } = await admin
       .from("documents")
-      .select("id, clean_text, language, subject_type")
+      .select("id, clean_text, language, subject_type, cleaning_version")
       .eq("id", docId)
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
@@ -464,9 +471,11 @@ Deno.serve(async (req) => {
       }
       let pStoragePath: string | null = null;
       let pSource: "cached" | "generated" = "cached";
+      const previewText = chunks[chunk_index];
+      const previewHash = await sha256Hex(previewText);
       const { data: cachedRow } = await admin
         .from("audio_assets")
-        .select("storage_path")
+        .select("id, storage_path, clean_text_hash")
         .eq("document_id", doc.id)
         .eq("chunk_index", chunk_index)
         .eq("language", lang)
@@ -475,12 +484,22 @@ Deno.serve(async (req) => {
         .eq("speaking_style", speakingStyle)
         .maybeSingle();
 
-      if (cachedRow) {
+      // Dirty-detection: if the cached audio was generated from a different
+      // version of the cleaned text (hash mismatch), drop it and regenerate.
+      const previewCacheUsable =
+        cachedRow && cachedRow.clean_text_hash && cachedRow.clean_text_hash === previewHash;
+
+      if (cachedRow && !previewCacheUsable) {
+        console.log("Preview audio: stale cache, deleting", { id: cachedRow.id, doc: doc.id, chunk: chunk_index, lang });
+        await admin.from("audio_assets").delete().eq("id", cachedRow.id);
+      }
+
+      if (previewCacheUsable) {
         console.log("Preview audio: cache hit", { doc: doc.id, chunk: chunk_index, lang });
-        pStoragePath = cachedRow.storage_path;
+        pStoragePath = cachedRow!.storage_path;
       } else {
         console.log("Preview audio: generating via Azure", { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
-        const text = chunks[chunk_index];
+        const text = previewText;
         const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
         if (!apiKey) {
           return new Response(
@@ -508,6 +527,8 @@ Deno.serve(async (req) => {
           speaking_style: speakingStyle,
           storage_path: path,
           char_count: text.length,
+          clean_text_hash: previewHash,
+          cleaning_version: (doc as any).cleaning_version ?? 1,
         });
         console.log("Preview audio: saved to cache", { path });
         pStoragePath = path;
@@ -675,7 +696,7 @@ Deno.serve(async (req) => {
 
     const { data: cached } = await admin
       .from("audio_assets")
-      .select("storage_path")
+      .select("id, storage_path, clean_text_hash")
       .eq("document_id", doc.id)
       .eq("chunk_index", chunk_index)
       .eq("language", lang)
@@ -766,18 +787,41 @@ Deno.serve(async (req) => {
     const sourceLang = (doc.language ?? "en").toLowerCase();
     const finalText =
       lang !== sourceLang ? await resolveDisplayText() : chunks[chunk_index];
+    // SINGLE SOURCE OF TRUTH: TTS always uses translated text when we have
+    // a native Azure voice for the target language. Otherwise we narrate the
+    // source text using the language's English fallback voice (text on
+    // screen still shows the translation).
+    const ttsText =
+      lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)
+        ? finalText
+        : chunks[chunk_index];
+    const expectedHash = await sha256Hex(ttsText);
+
+    // Dirty-detection: cached audio is only reusable when the hash of the
+    // text we *would* speak today matches the hash recorded when the audio
+    // was generated. Mismatched rows are deleted so the next request (or the
+    // seed worker) regenerates from the current cleaned text.
+    let cacheUsable = false;
     if (cached) {
-      storagePath = cached.storage_path;
+      if (cached.clean_text_hash && cached.clean_text_hash === expectedHash) {
+        cacheUsable = true;
+      } else {
+        console.log("[audio] stale cache, deleting", {
+          id: cached.id,
+          doc: doc.id,
+          chunk: chunk_index,
+          lang,
+          oldHash: cached.clean_text_hash,
+          newHash: expectedHash,
+        });
+        await admin.from("audio_assets").delete().eq("id", cached.id);
+      }
+    }
+
+    if (cacheUsable) {
+      storagePath = cached!.storage_path;
       reused = true;
     } else {
-      // SINGLE SOURCE OF TRUTH: TTS always uses translated text when we have
-      // a native Azure voice for the target language. Otherwise we narrate the
-      // source text using the language's English fallback voice (text on
-      // screen still shows the translation).
-      const ttsText =
-        lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)
-          ? finalText
-          : chunks[chunk_index];
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
       if (!apiKey) throw new Error(`${provider} API key not configured`);
       let audio: ArrayBuffer;
@@ -850,6 +894,8 @@ Deno.serve(async (req) => {
         speaking_style: speakingStyle,
         storage_path: storagePath,
         char_count: ttsText.length,
+        clean_text_hash: expectedHash,
+        cleaning_version: (doc as any).cleaning_version ?? 1,
       });
     }
 
