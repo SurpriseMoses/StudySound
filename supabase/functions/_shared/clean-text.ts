@@ -132,11 +132,17 @@ function normaliseWhitespace(text: string): string {
 }
 
 // Strip non-speakable artifacts: page numbers, footnote markers, stray symbols,
-// and Gutenberg-style `_italics_` underscores.
+// Gutenberg-style `_italics_` underscores, illustration tags, and dot leaders.
 function stripArtifacts(text: string): string {
   return text
     // `_italic phrase_` → `italic phrase`
     .replace(/_([^_\n]{1,200})_/g, "$1")
+    // stray standalone underscores left mid-sentence ("the _ woman" → "the woman")
+    .replace(/\s_\s/g, " ")
+    // [Illustration: ...] / [Illustration] tags from Gutenberg scans
+    .replace(/\[\s*Illustration[^\]]*\]/gi, "")
+    // dot leaders (TOC artifacts: "Chapter I .........  3")
+    .replace(/\.{4,}/g, " ")
     // standalone footnote refs like [1], [12], [*]
     .replace(/\[\s*(?:\d{1,3}|\*|†|‡)\s*\]/g, "")
     // inline footnote symbols
