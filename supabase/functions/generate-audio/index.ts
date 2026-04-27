@@ -696,7 +696,7 @@ Deno.serve(async (req) => {
 
     const { data: cached } = await admin
       .from("audio_assets")
-      .select("storage_path")
+      .select("id, storage_path, clean_text_hash")
       .eq("document_id", doc.id)
       .eq("chunk_index", chunk_index)
       .eq("language", lang)
