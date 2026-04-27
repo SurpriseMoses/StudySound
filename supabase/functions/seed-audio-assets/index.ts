@@ -18,7 +18,7 @@
 //   }
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
-import { cleanRawText, type DocKind } from "../_shared/clean-text.ts";
+import { cleanRawText, isInvalidChunk, type DocKind } from "../_shared/clean-text.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -266,9 +266,18 @@ Deno.serve(async (req) => {
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Validate chunks — fragments <200 chars or with no sentence punctuation
+    // are TOC remnants / page-number stragglers and must NEVER be sent to TTS.
+    const invalidIndices: number[] = [];
+    for (let i = 0; i < totalChunks; i++) {
+      if (isInvalidChunk(chunks[i])) invalidIndices.push(i);
+    }
+    const invalidSet = new Set(invalidIndices);
+
     // Mark processing
     await admin.from("documents").update({
       seed_audio_status: "processing", seed_audio_error: null,
+      invalid_chunks: invalidIndices,
     }).eq("id", doc.id);
 
     // ---------- Find which chunks already exist (global cache) ----------
@@ -293,6 +302,13 @@ Deno.serve(async (req) => {
 
     for (let i = startFrom; i < totalChunks; i++) {
       if (generated >= maxChunks) break;
+
+      if (invalidSet.has(i)) {
+        // Junk fragment — never spend TTS on it. Advance progress so we don't loop forever.
+        skipped++;
+        if (i > highestCompleted) highestCompleted = i;
+        continue;
+      }
 
       if (existingSet.has(i)) {
         skipped++;

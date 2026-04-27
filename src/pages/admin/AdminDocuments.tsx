@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, RefreshCw, Search } from "lucide-react";
+import { Loader2, RefreshCw, Search, Sparkles } from "lucide-react";
 
 type Doc = {
   id: string;
@@ -18,6 +18,7 @@ type Doc = {
   translation_unlocks: number;
   visual_unlocks: number;
   credits_generated: number;
+  invalid_chunks: number[];
 };
 
 export default function AdminDocuments() {
@@ -30,7 +31,7 @@ export default function AdminDocuments() {
   const load = async () => {
     setLoading(true);
     const [{ data: documents }, { data: assets }, topRes] = await Promise.all([
-      supabase.from("documents").select("id, title, subject_type, language, is_seeded, char_count").order("created_at", { ascending: false }).limit(200),
+      supabase.from("documents").select("id, title, subject_type, language, is_seeded, char_count, invalid_chunks").order("created_at", { ascending: false }).limit(200),
       supabase.from("audio_assets").select("document_id"),
       supabase.functions.invoke("admin-api", { body: { action: "top_documents", limit: 200 } }),
     ]);
@@ -47,6 +48,7 @@ export default function AdminDocuments() {
     });
     setDocs((documents ?? []).map((d) => {
       const s = stats.get(d.id);
+      const inv = Array.isArray(d.invalid_chunks) ? (d.invalid_chunks as unknown as number[]) : [];
       return {
         ...d,
         cached_chunks: counts.get(d.id) ?? 0,
@@ -54,6 +56,7 @@ export default function AdminDocuments() {
         translation_unlocks: s?.trans ?? 0,
         visual_unlocks: s?.vis ?? 0,
         credits_generated: s?.credits ?? 0,
+        invalid_chunks: inv,
       };
     }));
     setLoading(false);
@@ -76,6 +79,23 @@ export default function AdminDocuments() {
     load();
   };
 
+  const reclean = async (document_id: string, title: string) => {
+    if (!confirm(`Re-clean "${title}"?\n\nThis re-runs the latest text cleaner against raw_text and overwrites clean_text. Existing audio is kept but will be invalidated chunk-by-chunk on next play (hash mismatch). No user is re-charged.`)) return;
+    setBusy(document_id);
+    const { data, error } = await supabase.functions.invoke("admin-api", {
+      body: { action: "reclean_document", document_id },
+    });
+    setBusy(null);
+    if (error || !data?.success) {
+      toast({ title: "Re-clean failed", description: error?.message ?? data?.error, variant: "destructive" });
+      return;
+    }
+    toast({
+      title: "Re-cleaned",
+      description: `${data.chunks} chunks · ${data.invalid_chunks?.length ?? 0} skipped as invalid · ${data.char_count.toLocaleString()} chars (${data.kind}).`,
+    });
+    load();
+  };
   const filtered = docs.filter((d) => d.title.toLowerCase().includes(search.toLowerCase()));
 
   return (
@@ -101,6 +121,7 @@ export default function AdminDocuments() {
                     <th className="text-left p-3">Type</th>
                     <th className="text-right p-3">Chars</th>
                     <th className="text-right p-3">Cached</th>
+                    <th className="text-right p-3" title="Chunks skipped because they were too short or had no sentence punctuation">Skipped</th>
                     <th className="text-right p-3">Audio unlocks</th>
                     <th className="text-right p-3">Trans unlocks</th>
                     <th className="text-right p-3">Visual unlocks</th>
@@ -118,25 +139,46 @@ export default function AdminDocuments() {
                       <td className="p-3 text-muted-foreground">{d.subject_type}</td>
                       <td className="p-3 text-right text-muted-foreground">{d.char_count.toLocaleString()}</td>
                       <td className="p-3 text-right">{d.cached_chunks}</td>
+                      <td className="p-3 text-right">
+                        {d.invalid_chunks.length > 0 ? (
+                          <span className="text-amber-600 font-medium" title={`Indices: ${d.invalid_chunks.join(", ")}`}>
+                            {d.invalid_chunks.length}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
+                      </td>
                       <td className="p-3 text-right">{d.audio_unlocks}</td>
                       <td className="p-3 text-right">{d.translation_unlocks}</td>
                       <td className="p-3 text-right">{d.visual_unlocks}</td>
                       <td className="p-3 text-right text-primary font-medium">{d.credits_generated}</td>
                       <td className="p-3 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy === d.id || d.cached_chunks === 0}
-                          onClick={() => regenerate(d.id, d.title)}
-                        >
-                          {busy === d.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                          Clear cache
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy === d.id}
+                            onClick={() => reclean(d.id, d.title)}
+                            title="Re-run the text cleaner against raw_text"
+                          >
+                            {busy === d.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
+                            Re-clean
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy === d.id || d.cached_chunks === 0}
+                            onClick={() => regenerate(d.id, d.title)}
+                          >
+                            {busy === d.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                            Clear cache
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={9} className="p-6 text-center text-muted-foreground">No documents found.</td></tr>
+                    <tr><td colSpan={10} className="p-6 text-center text-muted-foreground">No documents found.</td></tr>
                   )}
                 </tbody>
               </table>

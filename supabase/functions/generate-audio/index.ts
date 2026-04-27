@@ -5,6 +5,7 @@
 // and charge 1 credit ONCE per user per (document, chunk, language).
 // Narration tone is decided automatically by subject_type (novel → story, else → study).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { isInvalidChunk } from "../_shared/clean-text.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -460,6 +461,15 @@ Deno.serve(async (req) => {
 
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
+
+    // Reject narration requests for junk fragments (TOC remnants, page numbers).
+    // The seeders skip these too — fail loud here rather than silently waste TTS credits.
+    if (chunk_index >= 0 && chunk_index < totalChunks && isInvalidChunk(chunks[chunk_index])) {
+      return new Response(
+        JSON.stringify({ error: "Chunk too short or malformed; skipped.", code: "INVALID_CHUNK", chunk_index }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     // ---------- Preview mode: cache-first, generate-on-miss, NEVER charge ----------
     if (previewMode) {

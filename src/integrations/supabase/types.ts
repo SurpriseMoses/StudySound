@@ -194,6 +194,7 @@ export type Database = {
           doc_type: string | null
           grade_level: string | null
           id: string
+          invalid_chunks: Json
           is_seeded: boolean
           language: string
           last_error: string | null
@@ -221,6 +222,7 @@ export type Database = {
           doc_type?: string | null
           grade_level?: string | null
           id?: string
+          invalid_chunks?: Json
           is_seeded?: boolean
           language?: string
           last_error?: string | null
@@ -248,6 +250,7 @@ export type Database = {
           doc_type?: string | null
           grade_level?: string | null
           id?: string
+          invalid_chunks?: Json
           is_seeded?: boolean
           language?: string
           last_error?: string | null
