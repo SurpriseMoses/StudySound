@@ -303,6 +303,13 @@ Deno.serve(async (req) => {
     for (let i = startFrom; i < totalChunks; i++) {
       if (generated >= maxChunks) break;
 
+      if (invalidSet.has(i)) {
+        // Junk fragment — never spend TTS on it. Advance progress so we don't loop forever.
+        skipped++;
+        if (i > highestCompleted) highestCompleted = i;
+        continue;
+      }
+
       if (existingSet.has(i)) {
         skipped++;
         if (i > highestCompleted) highestCompleted = i;
