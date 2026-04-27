@@ -787,18 +787,41 @@ Deno.serve(async (req) => {
     const sourceLang = (doc.language ?? "en").toLowerCase();
     const finalText =
       lang !== sourceLang ? await resolveDisplayText() : chunks[chunk_index];
+    // SINGLE SOURCE OF TRUTH: TTS always uses translated text when we have
+    // a native Azure voice for the target language. Otherwise we narrate the
+    // source text using the language's English fallback voice (text on
+    // screen still shows the translation).
+    const ttsText =
+      lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)
+        ? finalText
+        : chunks[chunk_index];
+    const expectedHash = await sha256Hex(ttsText);
+
+    // Dirty-detection: cached audio is only reusable when the hash of the
+    // text we *would* speak today matches the hash recorded when the audio
+    // was generated. Mismatched rows are deleted so the next request (or the
+    // seed worker) regenerates from the current cleaned text.
+    let cacheUsable = false;
     if (cached) {
-      storagePath = cached.storage_path;
+      if (cached.clean_text_hash && cached.clean_text_hash === expectedHash) {
+        cacheUsable = true;
+      } else {
+        console.log("[audio] stale cache, deleting", {
+          id: cached.id,
+          doc: doc.id,
+          chunk: chunk_index,
+          lang,
+          oldHash: cached.clean_text_hash,
+          newHash: expectedHash,
+        });
+        await admin.from("audio_assets").delete().eq("id", cached.id);
+      }
+    }
+
+    if (cacheUsable) {
+      storagePath = cached!.storage_path;
       reused = true;
     } else {
-      // SINGLE SOURCE OF TRUTH: TTS always uses translated text when we have
-      // a native Azure voice for the target language. Otherwise we narrate the
-      // source text using the language's English fallback voice (text on
-      // screen still shows the translation).
-      const ttsText =
-        lang !== sourceLang && NATIVE_VOICE_LANGS.has(lang)
-          ? finalText
-          : chunks[chunk_index];
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
       if (!apiKey) throw new Error(`${provider} API key not configured`);
       let audio: ArrayBuffer;
@@ -871,6 +894,8 @@ Deno.serve(async (req) => {
         speaking_style: speakingStyle,
         storage_path: storagePath,
         char_count: ttsText.length,
+        clean_text_hash: expectedHash,
+        cleaning_version: (doc as any).cleaning_version ?? 1,
       });
     }
 
