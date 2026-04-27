@@ -18,6 +18,7 @@ type Doc = {
   translation_unlocks: number;
   visual_unlocks: number;
   credits_generated: number;
+  invalid_chunks: number[];
 };
 
 export default function AdminDocuments() {
