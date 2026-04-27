@@ -471,9 +471,11 @@ Deno.serve(async (req) => {
       }
       let pStoragePath: string | null = null;
       let pSource: "cached" | "generated" = "cached";
+      const previewText = chunks[chunk_index];
+      const previewHash = await sha256Hex(previewText);
       const { data: cachedRow } = await admin
         .from("audio_assets")
-        .select("storage_path")
+        .select("id, storage_path, clean_text_hash")
         .eq("document_id", doc.id)
         .eq("chunk_index", chunk_index)
         .eq("language", lang)
@@ -482,12 +484,22 @@ Deno.serve(async (req) => {
         .eq("speaking_style", speakingStyle)
         .maybeSingle();
 
-      if (cachedRow) {
+      // Dirty-detection: if the cached audio was generated from a different
+      // version of the cleaned text (hash mismatch), drop it and regenerate.
+      const previewCacheUsable =
+        cachedRow && cachedRow.clean_text_hash && cachedRow.clean_text_hash === previewHash;
+
+      if (cachedRow && !previewCacheUsable) {
+        console.log("Preview audio: stale cache, deleting", { id: cachedRow.id, doc: doc.id, chunk: chunk_index, lang });
+        await admin.from("audio_assets").delete().eq("id", cachedRow.id);
+      }
+
+      if (previewCacheUsable) {
         console.log("Preview audio: cache hit", { doc: doc.id, chunk: chunk_index, lang });
-        pStoragePath = cachedRow.storage_path;
+        pStoragePath = cachedRow!.storage_path;
       } else {
         console.log("Preview audio: generating via Azure", { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
-        const text = chunks[chunk_index];
+        const text = previewText;
         const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
         if (!apiKey) {
           return new Response(
@@ -515,6 +527,8 @@ Deno.serve(async (req) => {
           speaking_style: speakingStyle,
           storage_path: path,
           char_count: text.length,
+          clean_text_hash: previewHash,
+          cleaning_version: (doc as any).cleaning_version ?? 1,
         });
         console.log("Preview audio: saved to cache", { path });
         pStoragePath = path;
