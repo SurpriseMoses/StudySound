@@ -121,6 +121,7 @@ export default function AdminDocuments() {
                     <th className="text-left p-3">Type</th>
                     <th className="text-right p-3">Chars</th>
                     <th className="text-right p-3">Cached</th>
+                    <th className="text-right p-3" title="Chunks skipped because they were too short or had no sentence punctuation">Skipped</th>
                     <th className="text-right p-3">Audio unlocks</th>
                     <th className="text-right p-3">Trans unlocks</th>
                     <th className="text-right p-3">Visual unlocks</th>
@@ -138,25 +139,46 @@ export default function AdminDocuments() {
                       <td className="p-3 text-muted-foreground">{d.subject_type}</td>
                       <td className="p-3 text-right text-muted-foreground">{d.char_count.toLocaleString()}</td>
                       <td className="p-3 text-right">{d.cached_chunks}</td>
+                      <td className="p-3 text-right">
+                        {d.invalid_chunks.length > 0 ? (
+                          <span className="text-amber-600 font-medium" title={`Indices: ${d.invalid_chunks.join(", ")}`}>
+                            {d.invalid_chunks.length}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
+                      </td>
                       <td className="p-3 text-right">{d.audio_unlocks}</td>
                       <td className="p-3 text-right">{d.translation_unlocks}</td>
                       <td className="p-3 text-right">{d.visual_unlocks}</td>
                       <td className="p-3 text-right text-primary font-medium">{d.credits_generated}</td>
                       <td className="p-3 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy === d.id || d.cached_chunks === 0}
-                          onClick={() => regenerate(d.id, d.title)}
-                        >
-                          {busy === d.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                          Clear cache
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy === d.id}
+                            onClick={() => reclean(d.id, d.title)}
+                            title="Re-run the text cleaner against raw_text"
+                          >
+                            {busy === d.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
+                            Re-clean
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy === d.id || d.cached_chunks === 0}
+                            onClick={() => regenerate(d.id, d.title)}
+                          >
+                            {busy === d.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                            Clear cache
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={9} className="p-6 text-center text-muted-foreground">No documents found.</td></tr>
+                    <tr><td colSpan={10} className="p-6 text-center text-muted-foreground">No documents found.</td></tr>
                   )}
                 </tbody>
               </table>
