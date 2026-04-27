@@ -259,6 +259,66 @@ Deno.serve(async (req) => {
 
     // -------------------- WRITE ACTIONS --------------------
 
+    if (action === "reclean_document") {
+      const document_id = body?.document_id as string;
+      if (!document_id) throw new Error("document_id required");
+      const { data: doc, error: docErr } = await admin
+        .from("documents")
+        .select("id, title, raw_text, tags, subject_type")
+        .eq("id", document_id)
+        .maybeSingle();
+      if (docErr) throw docErr;
+      if (!doc) throw new Error("Document not found");
+      if (!doc.raw_text) throw new Error("Document has no raw_text to re-clean");
+
+      // Infer kind (play vs novel) from tags / known titles, mirroring the seeder.
+      let kind: DocKind = "novel";
+      if (Array.isArray(doc.tags)) {
+        for (const t of doc.tags as Array<Record<string, unknown>>) {
+          if (t && (t.kind === "play" || t.kind === "novel")) kind = t.kind as DocKind;
+        }
+      }
+      const playTitles = ["macbeth","romeo and juliet","othello","hamlet","julius caesar","the merchant of venice"];
+      if (kind === "novel" && playTitles.includes(doc.title.toLowerCase())) kind = "play";
+
+      const cleaned = cleanRawText(doc.raw_text, kind);
+
+      // Recompute invalid chunks against the same chunker the seeder uses.
+      const TARGET = 700, MIN = 400;
+      const sentences = cleaned.text.replace(/\s+/g, " ").trim().match(/[^.!?]+[.!?]+|\S+$/g) ?? [];
+      const chunks: string[] = [];
+      let buf = "";
+      for (const s of sentences) {
+        const sent = s.trim();
+        if (!sent) continue;
+        if (!buf) { buf = sent; continue; }
+        const cand = `${buf} ${sent}`;
+        if (cand.length >= TARGET && buf.length >= MIN) { chunks.push(buf); buf = sent; }
+        else { buf = cand; }
+      }
+      if (buf) chunks.push(buf);
+      const invalid: number[] = [];
+      chunks.forEach((c, i) => { if (isInvalidChunk(c)) invalid.push(i); });
+
+      // Write — the bump_cleaning_version trigger will increment cleaning_version,
+      // which invalidates stale audio_assets via the clean_text_hash check at play time.
+      const { error: upErr } = await admin.from("documents").update({
+        clean_text: cleaned.text,
+        char_count: cleaned.charCount,
+        invalid_chunks: invalid,
+      }).eq("id", document_id);
+      if (upErr) throw upErr;
+
+      return json({
+        success: true,
+        document_id,
+        char_count: cleaned.charCount,
+        chunks: chunks.length,
+        invalid_chunks: invalid,
+        kind,
+      });
+    }
+
     if (action === "regenerate_document") {
       const document_id = body?.document_id as string;
       if (!document_id) throw new Error("document_id required");
