@@ -31,7 +31,7 @@ export default function AdminDocuments() {
   const load = async () => {
     setLoading(true);
     const [{ data: documents }, { data: assets }, topRes] = await Promise.all([
-      supabase.from("documents").select("id, title, subject_type, language, is_seeded, char_count").order("created_at", { ascending: false }).limit(200),
+      supabase.from("documents").select("id, title, subject_type, language, is_seeded, char_count, invalid_chunks").order("created_at", { ascending: false }).limit(200),
       supabase.from("audio_assets").select("document_id"),
       supabase.functions.invoke("admin-api", { body: { action: "top_documents", limit: 200 } }),
     ]);
@@ -48,6 +48,7 @@ export default function AdminDocuments() {
     });
     setDocs((documents ?? []).map((d) => {
       const s = stats.get(d.id);
+      const inv = Array.isArray(d.invalid_chunks) ? (d.invalid_chunks as unknown as number[]) : [];
       return {
         ...d,
         cached_chunks: counts.get(d.id) ?? 0,
@@ -55,6 +56,7 @@ export default function AdminDocuments() {
         translation_unlocks: s?.trans ?? 0,
         visual_unlocks: s?.vis ?? 0,
         credits_generated: s?.credits ?? 0,
+        invalid_chunks: inv,
       };
     }));
     setLoading(false);
