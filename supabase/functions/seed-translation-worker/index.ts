@@ -197,6 +197,23 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
 
   const sourceText = entry.chunks[row.chunk_index];
 
+  // Skip junk fragments (TOC remnants, page numbers) — never spend MT on them.
+  if (isInvalidChunk(sourceText)) {
+    await admin.from("translation_seed_queue").update({
+      status: "done", completed_at: new Date().toISOString(),
+      attempts: retryCount + 1, last_error: "skipped: invalid chunk",
+    }).eq("id", row.id);
+    await admin.from("translation_seed_logs").insert({
+      document_id: row.document_id,
+      chunk_index: row.chunk_index,
+      target_language: row.target_language,
+      status: "success",
+      error_message: "invalid_chunk_skipped",
+      retry_count: retryCount,
+    });
+    return { result: "done" as const, detail: "invalid chunk skipped" };
+  }
+
   // Idempotency check
   const { data: existing } = await admin
     .from("translation_assets")
