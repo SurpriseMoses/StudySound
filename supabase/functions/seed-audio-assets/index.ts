@@ -266,9 +266,18 @@ Deno.serve(async (req) => {
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Validate chunks — fragments <200 chars or with no sentence punctuation
+    // are TOC remnants / page-number stragglers and must NEVER be sent to TTS.
+    const invalidIndices: number[] = [];
+    for (let i = 0; i < totalChunks; i++) {
+      if (isInvalidChunk(chunks[i])) invalidIndices.push(i);
+    }
+    const invalidSet = new Set(invalidIndices);
+
     // Mark processing
     await admin.from("documents").update({
       seed_audio_status: "processing", seed_audio_error: null,
+      invalid_chunks: invalidIndices,
     }).eq("id", doc.id);
 
     // ---------- Find which chunks already exist (global cache) ----------
