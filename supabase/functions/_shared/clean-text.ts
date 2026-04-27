@@ -379,6 +379,54 @@ function extractPlayStructure(text: string): SceneRef[] {
   return structure;
 }
 
+// --- TOC / duplicate-structure removal -----------------------------------
+//
+// Detect a Table-of-Contents block: a window with many Chapter/Scene/Act
+// labels and few sentence terminators, located in the first ~15% of the doc.
+// We strip such a block by finding its first label and the last label in the
+// run, then deleting that whole span.
+function stripTableOfContents(text: string): string {
+  if (text.length < 1500) return text;
+  const head = text.slice(0, Math.floor(text.length * 0.15));
+  const labelRx = /\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b/g;
+  const matches = [...head.matchAll(labelRx)];
+  if (matches.length < 5) return text;
+
+  const first = matches[0].index ?? 0;
+  const last = (matches[matches.length - 1].index ?? 0) + matches[matches.length - 1][0].length;
+  const span = head.slice(first, last);
+
+  // Punctuation density — real prose has lots of periods/commas; TOCs do not.
+  const punct = (span.match(/[.,;:!?]/g) ?? []).length;
+  const wordCount = (span.match(/\S+/g) ?? []).length;
+  const punctRatio = wordCount > 0 ? punct / wordCount : 0;
+
+  if (punctRatio < 0.15) {
+    // Looks like a TOC — drop it.
+    return text.slice(0, first) + text.slice(last);
+  }
+  return text;
+}
+
+// --- Chunk validation ----------------------------------------------------
+//
+// A chunk is "invalid" if it's too short to narrate or has no sentence-like
+// punctuation. Used by audio + translation workers to skip junk fragments
+// (TOC remnants, page-number stragglers, etc.).
+const MIN_VALID_CHUNK_CHARS = 200;
+export function isInvalidChunk(text: string): boolean {
+  const trimmed = (text ?? "").trim();
+  if (trimmed.length < MIN_VALID_CHUNK_CHARS) return true;
+  if (!/[.!?]/.test(trimmed)) return true;
+  // Mostly-uppercase fragments (orphaned headings/lists) aren't narrative.
+  const letters = trimmed.replace(/[^A-Za-z]/g, "");
+  if (letters.length > 0) {
+    const upper = (trimmed.match(/[A-Z]/g) ?? []).length;
+    if (upper / letters.length > 0.6) return true;
+  }
+  return false;
+}
+
 /**
  * Clean raw public-domain text into narration-ready content.
  *
@@ -392,7 +440,7 @@ function extractPlayStructure(text: string): SceneRef[] {
  *   - Pad ACT/SCENE headings for clear audio breaks
  *
  * Novels get a lighter pass (boilerplate strip, start at CHAPTER 1, artifact
- * removal, whitespace normalisation).
+ * removal, whitespace normalisation) plus TOC removal.
  */
 export function cleanRawText(raw: string, kind: DocKind): CleanResult {
   let text = raw ?? "";
@@ -401,9 +449,18 @@ export function cleanRawText(raw: string, kind: DocKind): CleanResult {
 
   if (kind === "play") text = stripPlayFrontMatter(text);
 
+  // Drop TOCs *before* hunting for the start marker — Gutenberg often has both
+  // a TOC and a Chapter 1 heading; the TOC's "CHAPTER I" line would otherwise
+  // become our content start and pull all the list noise into chunk 0.
+  text = stripTableOfContents(text);
+
   const beforeStart = text.length;
   text = startAtRealContent(text, kind);
   const startedAt: CleanResult["startedAt"] = text.length === beforeStart ? "none" : kind;
+
+  // Run TOC strip again on the trimmed body in case the doc has a secondary
+  // chapter list right after the start marker (common in older editions).
+  text = stripTableOfContents(text);
 
   text = trimAtEnd(text);
   text = stripArtifacts(text);
@@ -424,3 +481,4 @@ export function cleanRawText(raw: string, kind: DocKind): CleanResult {
   }
   return result;
 }
+
