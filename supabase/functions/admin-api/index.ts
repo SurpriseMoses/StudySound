@@ -13,6 +13,7 @@
 //   apply_cooldown       – set cooldown_until = now() + N minutes
 //   reset_user_counters  – delete today's translation_rate_log rows for a user
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { cleanRawText, isInvalidChunk, type DocKind } from "../_shared/clean-text.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
