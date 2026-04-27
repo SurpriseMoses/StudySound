@@ -9,6 +9,7 @@
 // Optional cron: ping POST every ~30s while is_running = true.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { isInvalidChunk } from "../_shared/clean-text.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
