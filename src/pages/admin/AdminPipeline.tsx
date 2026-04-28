@@ -7,8 +7,11 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Loader2, RefreshCw, Search, Sparkles, Mic2, Languages,
-  Play, Pause, AlertCircle, CheckCircle2, Clock,
+  Play, Pause, AlertCircle, CheckCircle2, Clock, Filter,
 } from "lucide-react";
 
 type Lang = "zu" | "xh" | "af" | "st" | "tn";
@@ -59,6 +62,9 @@ export default function AdminPipeline() {
   const [docs, setDocs] = useState<PipelineDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [seededFilter, setSeededFilter] = useState<"all" | "seeded" | "unseeded">("all");
+  const [versionFilter, setVersionFilter] = useState<"all" | "v1" | "gt1">("all");
+  const [errorFilter, setErrorFilter] = useState<"all" | "errors" | "invalid" | "failed_queue" | "incomplete_audio" | "clean">("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [worker, setWorker] = useState<WorkerState>({ audio: null, trans: null });
   const tickRef = useRef<number | null>(null);
@@ -177,7 +183,32 @@ export default function AdminPipeline() {
     await loadWorkerState();
   }
 
-  const filtered = docs.filter((d) => d.title.toLowerCase().includes(search.toLowerCase()));
+  const filtered = docs.filter((d) => {
+    if (!d.title.toLowerCase().includes(search.toLowerCase())) return false;
+    if (seededFilter === "seeded" && !d.is_seeded) return false;
+    if (seededFilter === "unseeded" && d.is_seeded) return false;
+    if (versionFilter === "v1" && d.cleaning_version !== 1) return false;
+    if (versionFilter === "gt1" && d.cleaning_version <= 1) return false;
+    const hasError = !!d.stages.audio.error;
+    const hasFailedQueue = (d.stages.audio.queue.failed ?? 0) > 0;
+    const hasInvalid = (d.stages.cleaning.invalid ?? 0) > 0;
+    const audioIncomplete = d.stages.audio.pct < 100;
+    if (errorFilter === "errors" && !hasError) return false;
+    if (errorFilter === "failed_queue" && !hasFailedQueue) return false;
+    if (errorFilter === "invalid" && !hasInvalid) return false;
+    if (errorFilter === "incomplete_audio" && !audioIncomplete) return false;
+    if (errorFilter === "clean" && (hasError || hasFailedQueue || hasInvalid)) return false;
+    return true;
+  });
+
+  const activeFilterCount =
+    (seededFilter !== "all" ? 1 : 0) +
+    (versionFilter !== "all" ? 1 : 0) +
+    (errorFilter !== "all" ? 1 : 0);
+
+  const resetFilters = () => {
+    setSeededFilter("all"); setVersionFilter("all"); setErrorFilter("all");
+  };
 
   const StageIcon = ({ pct }: { pct: number }) =>
     pct >= 100 ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> :
@@ -201,6 +232,50 @@ export default function AdminPipeline() {
           </Button>
         </div>
       </div>
+
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-3 flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mr-1">
+            <Filter className="w-3.5 h-3.5" /> Filters
+          </div>
+          <Select value={seededFilter} onValueChange={(v) => setSeededFilter(v as typeof seededFilter)}>
+            <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue placeholder="Seeded" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All seeded states</SelectItem>
+              <SelectItem value="seeded">Seeded only</SelectItem>
+              <SelectItem value="unseeded">Unseeded only</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={versionFilter} onValueChange={(v) => setVersionFilter(v as typeof versionFilter)}>
+            <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue placeholder="Cleaning version" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All versions</SelectItem>
+              <SelectItem value="v1">v1 (original)</SelectItem>
+              <SelectItem value="gt1">v2+ (re-cleaned)</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={errorFilter} onValueChange={(v) => setErrorFilter(v as typeof errorFilter)}>
+            <SelectTrigger className="h-8 w-[180px] text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any status</SelectItem>
+              <SelectItem value="errors">Has audio error</SelectItem>
+              <SelectItem value="failed_queue">Has failed queue items</SelectItem>
+              <SelectItem value="invalid">Has invalid chunks</SelectItem>
+              <SelectItem value="incomplete_audio">Audio incomplete</SelectItem>
+              <SelectItem value="clean">No issues</SelectItem>
+            </SelectContent>
+          </Select>
+          {activeFilterCount > 0 && (
+            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={resetFilters}>
+              Clear ({activeFilterCount})
+            </Button>
+          )}
+          <div className="ml-auto text-xs text-muted-foreground">
+            {filtered.length} / {docs.length} documents
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Worker controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
