@@ -259,6 +259,124 @@ Deno.serve(async (req) => {
 
     // -------------------- WRITE ACTIONS --------------------
 
+    // -------- PIPELINE MANAGER: per-document multi-stage status --------
+    if (action === "pipeline_status") {
+      const document_id = body?.document_id as string | undefined;
+      const limit = Math.max(1, Math.min(200, Number(body?.limit ?? 100)));
+      const langs = (body?.languages as string[] | undefined) ?? ["zu", "xh", "af", "st", "tn"];
+
+      let docsQ = admin
+        .from("documents")
+        .select("id, title, subject_type, language, is_seeded, char_count, cleaning_version, invalid_chunks, seed_audio_status, seed_audio_progress, translation_status, last_error, seed_audio_error, updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(limit);
+      if (document_id) docsQ = docsQ.eq("id", document_id);
+      const { data: docs, error: docsErr } = await docsQ;
+      if (docsErr) throw docsErr;
+      const docList = docs ?? [];
+      if (docList.length === 0) return json({ success: true, documents: [] });
+
+      const ids = docList.map((d) => d.id);
+
+      // Audio counts (cached chunks per doc)
+      const { data: audioRows } = await admin
+        .from("audio_assets").select("document_id").in("document_id", ids);
+      const audioCount = new Map<string, number>();
+      (audioRows ?? []).forEach((r: any) =>
+        audioCount.set(r.document_id, (audioCount.get(r.document_id) ?? 0) + 1));
+
+      // Translation counts per (doc, language)
+      const { data: transRows } = await admin
+        .from("translation_assets").select("document_id, target_language").in("document_id", ids);
+      const transByDoc = new Map<string, Record<string, number>>();
+      (transRows ?? []).forEach((r: any) => {
+        const m = transByDoc.get(r.document_id) ?? {};
+        m[r.target_language] = (m[r.target_language] ?? 0) + 1;
+        transByDoc.set(r.document_id, m);
+      });
+
+      // Audio queue counts per doc
+      const { data: audioQueue } = await admin
+        .from("seed_queue").select("document_id, status").in("document_id", ids);
+      const audioQueueByDoc = new Map<string, { pending: number; in_progress: number; failed: number; done: number }>();
+      (audioQueue ?? []).forEach((r: any) => {
+        const m = audioQueueByDoc.get(r.document_id) ?? { pending: 0, in_progress: 0, failed: 0, done: 0 };
+        if (r.status === "pending") m.pending++;
+        else if (r.status === "in_progress") m.in_progress++;
+        else if (r.status === "failed") m.failed++;
+        else if (r.status === "completed" || r.status === "done") m.done++;
+        audioQueueByDoc.set(r.document_id, m);
+      });
+
+      // Translation queue counts per (doc, language)
+      const { data: transQueue } = await admin
+        .from("translation_seed_queue")
+        .select("document_id, target_language, status").in("document_id", ids);
+      const transQueueByDoc = new Map<string, Record<string, { pending: number; in_progress: number; failed: number }>>();
+      (transQueue ?? []).forEach((r: any) => {
+        const m = transQueueByDoc.get(r.document_id) ?? {};
+        const lm = m[r.target_language] ?? { pending: 0, in_progress: 0, failed: 0 };
+        if (r.status === "pending") lm.pending++;
+        else if (r.status === "in_progress") lm.in_progress++;
+        else if (r.status === "failed") lm.failed++;
+        m[r.target_language] = lm;
+        transQueueByDoc.set(r.document_id, m);
+      });
+
+      // Estimate total chunks from char_count (mirrors seeder TARGET=700)
+      const estimateChunks = (chars: number) => Math.max(1, Math.round(chars / 700));
+
+      const documents = docList.map((d) => {
+        const totalChunks = estimateChunks(d.char_count ?? 0);
+        const cached = audioCount.get(d.id) ?? 0;
+        const audioQ = audioQueueByDoc.get(d.id) ?? { pending: 0, in_progress: 0, failed: 0, done: 0 };
+        const tMap = transByDoc.get(d.id) ?? {};
+        const tqMap = transQueueByDoc.get(d.id) ?? {};
+        const translations = langs.map((lang) => {
+          const done = tMap[lang] ?? 0;
+          const q = tqMap[lang] ?? { pending: 0, in_progress: 0, failed: 0 };
+          return {
+            language: lang,
+            done,
+            total_estimate: totalChunks,
+            pct: totalChunks > 0 ? Math.min(100, Math.round((done / totalChunks) * 100)) : 0,
+            queue: q,
+          };
+        });
+        return {
+          id: d.id,
+          title: d.title,
+          subject_type: d.subject_type,
+          language: d.language,
+          is_seeded: d.is_seeded,
+          char_count: d.char_count,
+          cleaning_version: d.cleaning_version,
+          invalid_chunks: Array.isArray(d.invalid_chunks) ? d.invalid_chunks : [],
+          updated_at: d.updated_at,
+          stages: {
+            cleaning: {
+              version: d.cleaning_version ?? 1,
+              invalid: Array.isArray(d.invalid_chunks) ? (d.invalid_chunks as unknown[]).length : 0,
+            },
+            audio: {
+              status: d.seed_audio_status ?? "pending",
+              cached,
+              total_estimate: totalChunks,
+              pct: totalChunks > 0 ? Math.min(100, Math.round((cached / totalChunks) * 100)) : 0,
+              queue: audioQ,
+              error: d.seed_audio_error ?? d.last_error ?? null,
+            },
+            translation: {
+              status: d.translation_status ?? "pending",
+              languages: translations,
+            },
+          },
+        };
+      });
+
+      return json({ success: true, documents, languages: langs });
+    }
+
     if (action === "reclean_document") {
       const document_id = body?.document_id as string;
       if (!document_id) throw new Error("document_id required");
