@@ -14,10 +14,10 @@ import {
   Play, Pause, AlertCircle, CheckCircle2, Clock, Filter,
 } from "lucide-react";
 
-type Lang = "zu" | "xh" | "af" | "st" | "tn";
-const ALL_LANGS: Lang[] = ["zu", "xh", "af", "st", "tn"];
+type Lang = "zu" | "xh" | "tn" | "nso";
+const ALL_LANGS: Lang[] = ["zu", "xh", "tn", "nso"];
 const LANG_LABEL: Record<string, string> = {
-  zu: "isiZulu", xh: "isiXhosa", af: "Afrikaans", st: "Sesotho", tn: "Setswana",
+  zu: "isiZulu", xh: "isiXhosa", tn: "Setswana", nso: "Sepedi (Northern Sotho)", st: "Sesotho", af: "Afrikaans",
 };
 
 type LangProgress = {
