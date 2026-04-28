@@ -233,6 +233,50 @@ export default function AdminPipeline() {
         </div>
       </div>
 
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-3 flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mr-1">
+            <Filter className="w-3.5 h-3.5" /> Filters
+          </div>
+          <Select value={seededFilter} onValueChange={(v) => setSeededFilter(v as typeof seededFilter)}>
+            <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue placeholder="Seeded" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All seeded states</SelectItem>
+              <SelectItem value="seeded">Seeded only</SelectItem>
+              <SelectItem value="unseeded">Unseeded only</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={versionFilter} onValueChange={(v) => setVersionFilter(v as typeof versionFilter)}>
+            <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue placeholder="Cleaning version" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All versions</SelectItem>
+              <SelectItem value="v1">v1 (original)</SelectItem>
+              <SelectItem value="gt1">v2+ (re-cleaned)</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={errorFilter} onValueChange={(v) => setErrorFilter(v as typeof errorFilter)}>
+            <SelectTrigger className="h-8 w-[180px] text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any status</SelectItem>
+              <SelectItem value="errors">Has audio error</SelectItem>
+              <SelectItem value="failed_queue">Has failed queue items</SelectItem>
+              <SelectItem value="invalid">Has invalid chunks</SelectItem>
+              <SelectItem value="incomplete_audio">Audio incomplete</SelectItem>
+              <SelectItem value="clean">No issues</SelectItem>
+            </SelectContent>
+          </Select>
+          {activeFilterCount > 0 && (
+            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={resetFilters}>
+              Clear ({activeFilterCount})
+            </Button>
+          )}
+          <div className="ml-auto text-xs text-muted-foreground">
+            {filtered.length} / {docs.length} documents
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Worker controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Card>
