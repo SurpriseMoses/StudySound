@@ -263,7 +263,7 @@ Deno.serve(async (req) => {
     if (action === "pipeline_status") {
       const document_id = body?.document_id as string | undefined;
       const limit = Math.max(1, Math.min(200, Number(body?.limit ?? 100)));
-      const langs = (body?.languages as string[] | undefined) ?? ["zu", "xh", "af", "st", "tn"];
+      const langs = (body?.languages as string[] | undefined) ?? ["zu", "xh", "tn", "nso"];
 
       let docsQ = admin
         .from("documents")
