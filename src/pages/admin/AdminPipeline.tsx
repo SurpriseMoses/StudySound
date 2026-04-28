@@ -7,8 +7,11 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Loader2, RefreshCw, Search, Sparkles, Mic2, Languages,
-  Play, Pause, AlertCircle, CheckCircle2, Clock,
+  Play, Pause, AlertCircle, CheckCircle2, Clock, Filter,
 } from "lucide-react";
 
 type Lang = "zu" | "xh" | "af" | "st" | "tn";
