@@ -183,7 +183,32 @@ export default function AdminPipeline() {
     await loadWorkerState();
   }
 
-  const filtered = docs.filter((d) => d.title.toLowerCase().includes(search.toLowerCase()));
+  const filtered = docs.filter((d) => {
+    if (!d.title.toLowerCase().includes(search.toLowerCase())) return false;
+    if (seededFilter === "seeded" && !d.is_seeded) return false;
+    if (seededFilter === "unseeded" && d.is_seeded) return false;
+    if (versionFilter === "v1" && d.cleaning_version !== 1) return false;
+    if (versionFilter === "gt1" && d.cleaning_version <= 1) return false;
+    const hasError = !!d.stages.audio.error;
+    const hasFailedQueue = (d.stages.audio.queue.failed ?? 0) > 0;
+    const hasInvalid = (d.stages.cleaning.invalid ?? 0) > 0;
+    const audioIncomplete = d.stages.audio.pct < 100;
+    if (errorFilter === "errors" && !hasError) return false;
+    if (errorFilter === "failed_queue" && !hasFailedQueue) return false;
+    if (errorFilter === "invalid" && !hasInvalid) return false;
+    if (errorFilter === "incomplete_audio" && !audioIncomplete) return false;
+    if (errorFilter === "clean" && (hasError || hasFailedQueue || hasInvalid)) return false;
+    return true;
+  });
+
+  const activeFilterCount =
+    (seededFilter !== "all" ? 1 : 0) +
+    (versionFilter !== "all" ? 1 : 0) +
+    (errorFilter !== "all" ? 1 : 0);
+
+  const resetFilters = () => {
+    setSeededFilter("all"); setVersionFilter("all"); setErrorFilter("all");
+  };
 
   const StageIcon = ({ pct }: { pct: number }) =>
     pct >= 100 ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> :
