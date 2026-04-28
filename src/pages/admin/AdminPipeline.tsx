@@ -62,6 +62,9 @@ export default function AdminPipeline() {
   const [docs, setDocs] = useState<PipelineDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [seededFilter, setSeededFilter] = useState<"all" | "seeded" | "unseeded">("all");
+  const [versionFilter, setVersionFilter] = useState<"all" | "v1" | "gt1">("all");
+  const [errorFilter, setErrorFilter] = useState<"all" | "errors" | "invalid" | "failed_queue" | "incomplete_audio" | "clean">("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [worker, setWorker] = useState<WorkerState>({ audio: null, trans: null });
   const tickRef = useRef<number | null>(null);
