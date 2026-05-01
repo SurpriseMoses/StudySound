@@ -120,17 +120,29 @@ function findFirstIndex(text: string, patterns: RegExp[]): number {
 // We scan all ACT I matches and pick the first one whose ~2KB window after it
 // contains both SCENE I and an ALL-CAPS speaker label followed by ":".
 function findPlayBodyStart(text: string): number {
-  const speakerNearby = /\b[A-Z][A-Z' \-]{1,30}:\s*[\n A-Z"'(]/;
-  const sceneOne = /\bSCENE\s+(?:I|1)\b/;
+  const speakerRx = /\b[A-Z][A-Z' \-]{1,30}:\s*[\n A-Z"'(]/;
+  const sceneOneRx = /\bSCENE\s+(?:I|1)\b/;
+  // Lines that prove we're in a TOC (multiple ACTs listed back-to-back).
+  const laterActRx = /\bACT\s+(?:II|III|IV|V|2|3|4|5)\b/;
   for (const rx of PLAY_START_PATTERNS) {
     rx.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = rx.exec(text)) !== null) {
       const start = m.index;
-      const window = text.slice(start, start + 2500);
-      if (sceneOne.test(window) && speakerNearby.test(window)) {
-        return start;
-      }
+      // Look only a short distance ahead for SCENE I — in real play body it's
+      // adjacent. In a TOC, SCENE I sits next to other ACT headings.
+      const near = text.slice(start, start + 600);
+      const sceneMatch = near.match(sceneOneRx);
+      if (!sceneMatch) continue;
+      // If a later ACT (II/III/IV/V) appears between this ACT I and SCENE I,
+      // we're inside a scene-list TOC — skip to the next ACT I match.
+      const between = near.slice(0, sceneMatch.index);
+      if (laterActRx.test(between)) continue;
+      // Speaker label must appear within ~1500 chars after the ACT I match —
+      // proves real dialogue follows, not a personae list.
+      const window = text.slice(start, start + 1500);
+      if (!speakerRx.test(window)) continue;
+      return start;
     }
   }
   return -1;
