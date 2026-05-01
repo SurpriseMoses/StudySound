@@ -597,6 +597,10 @@ export function isInvalidChunk(text: string): boolean {
   if (!/[.!?]/.test(trimmed)) return true;
   // Mostly-uppercase fragments (orphaned headings/lists) aren't narrative.
   const letters = trimmed.replace(/[^A-Za-z]/g, "");
+  const lower = (trimmed.match(/[a-z]/g) ?? []).length;
+  // If we have plenty of lowercase prose, this is real narration even if
+  // it opens with an ALL-CAPS heading (e.g. "I. A SCANDAL IN BOHEMIA").
+  if (lower >= 200) return false;
   if (letters.length > 0) {
     const upper = (trimmed.match(/[A-Z]/g) ?? []).length;
     if (upper / letters.length > 0.6) return true;
