@@ -166,6 +166,19 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action ?? "status");
 
+    if (action === "set_seed") {
+      const docId = String(body?.document_id ?? "");
+      const value = Boolean(body?.value);
+      if (!docId) throw new Error("document_id required");
+      const { error: updErr } = await admin.from("documents")
+        .update({ seed_translation: value })
+        .eq("id", docId);
+      if (updErr) throw updErr;
+      return new Response(JSON.stringify({ ok: true, seed_translation: value }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "enqueue") {
       const docId = String(body?.document_id ?? "");
       if (!docId) throw new Error("document_id required");
