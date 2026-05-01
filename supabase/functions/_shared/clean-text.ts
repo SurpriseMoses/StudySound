@@ -554,7 +554,12 @@ function skipNovelHeading(text: string): string {
   const lines = text.split("\n");
   let i = 0;
   while (i < lines.length && lines[i].trim() === "") i++;
-  if (i < lines.length && /^\s*_?(?:CHAPTER|Chapter|LETTER|Letter|BOOK|PART)\s+(?:[IVXLC]+|\d+|ONE|FIRST)\b/i.test(lines[i])) {
+  // Drop the leading heading: CHAPTER N / LETTER N / BOOK / PART, OR a
+  // roman/arabic-numeral story title like "I. A SCANDAL IN BOHEMIA".
+  if (i < lines.length && (
+    /^\s*_?(?:CHAPTER|Chapter|LETTER|Letter|BOOK|PART)\s+(?:[IVXLC]+|\d+|ONE|FIRST)\b/i.test(lines[i])
+    || /^\s*(?:[IVXLC]{1,5}|\d{1,3})\.\s+[A-Z][A-Za-z][^\n]{2,80}$/.test(lines[i])
+  )) {
     i++;
   }
   let safety = 6;
