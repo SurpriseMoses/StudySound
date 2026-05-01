@@ -47,12 +47,15 @@ const PLAY_START_PATTERNS: RegExp[] = [
   /\bACT\s+THE\s+FIRST\b/gi,
   /\bPROLOGUE\b/g,
 ];
+// All case-insensitive — Gutenberg editions vary ("CHAPTER I", "Chapter 1",
+// "Letter 1"). Without the `i` flag, "Letter 1" in Frankenstein never matches
+// and we leave the CONTENTS block at the top of the file.
 const NOVEL_START_PATTERNS: RegExp[] = [
-  /^\s*CHAPTER\s+(?:I|1)\b(?!\w)/m,
-  /^\s*Chapter\s+(?:I|1)\b(?!\w)/m,
+  /^\s*CHAPTER\s+(?:I|1)\b(?!\w)/im,
+  /^\s*Chapter\s+(?:I|1)\b(?!\w)/im,
   /^\s*BOOK\s+(?:THE\s+)?FIRST\b/im,
   /^\s*PART\s+(?:I|1|ONE)\b/im,
-  /^\s*LETTER\s+(?:I|1)\b/m, // Frankenstein opens with letters
+  /^\s*LETTER\s+(?:I|1)\b/im, // Frankenstein opens with letters
 ];
 
 // Markers that signal the end of the book proper.
@@ -151,21 +154,56 @@ function findPlayBodyStart(text: string): number {
   return -1;
 }
 
+// Novels: like plays, the first "CHAPTER 1" / "LETTER 1" match is often
+// inside a CONTENTS block ("Letter 1\nLetter 2\n...Chapter 24\n\nLetter 1\n…").
+// The real body has prose (sentences with punctuation) shortly after it; the
+// TOC entry is followed only by more short label lines. Pick the first match
+// whose ~1500-char window ahead contains real prose AND not a stack of more
+// chapter/letter labels.
+function findNovelBodyStart(text: string): number {
+  const labelStackRx = /(?:^|\n)\s*(?:CHAPTER|Chapter|LETTER|Letter)\s+(?:[IVXLC]+|\d+)\b[^\n]{0,40}\n\s*(?:CHAPTER|Chapter|LETTER|Letter)\s+(?:[IVXLC]+|\d+)\b/;
+  const proseRx = /[a-z][a-z,\s'"–—-]{60,}[.!?]/;
+  // Collect all valid candidates from every pattern, then pick the EARLIEST.
+  // Otherwise CHAPTER 1 (later in the file) would win over LETTER 1 just
+  // because the CHAPTER pattern is checked first in the array.
+  let best = -1;
+  for (const rx of NOVEL_START_PATTERNS) {
+    const flags = rx.flags.includes("g") ? rx.flags : rx.flags + "g";
+    const gx = new RegExp(rx.source, flags);
+    let m: RegExpExecArray | null;
+    while ((m = gx.exec(text)) !== null) {
+      const start = m.index;
+      const window = text.slice(start, start + 1500);
+      if (labelStackRx.test(text.slice(start, start + 400))) continue;
+      if (!proseRx.test(window)) continue;
+      if (best < 0 || start < best) best = start;
+      break; // earliest match for this pattern; move to next pattern
+    }
+  }
+  return best;
+}
+
 function startAtRealContent(text: string, kind: "play" | "novel"): string {
   if (kind === "play") {
     const playIdx = findPlayBodyStart(text);
     if (playIdx > 0) return text.slice(playIdx);
-    // Fallback: novel-style chapter marker (rare for plays, but safe).
-    const novelIdx = findFirstIndex(text, NOVEL_START_PATTERNS);
+    const novelIdx = findNovelBodyStart(text);
     if (novelIdx > 0) return text.slice(novelIdx);
-    // Last resort: first ACT I match even if it's a TOC entry.
     const anyAct = findFirstIndex(text, PLAY_START_PATTERNS);
     if (anyAct > 0) return text.slice(anyAct);
     return text;
   }
-  let idx = findFirstIndex(text, NOVEL_START_PATTERNS);
-  if (idx < 0) idx = findFirstIndex(text, PLAY_START_PATTERNS);
-  if (idx > 0) text = text.slice(idx);
+  const idx = findNovelBodyStart(text);
+  if (idx > 0) return text.slice(idx);
+  // findNovelBodyStart returns -1 either because (a) no marker found, or
+  // (b) prose already exists above the first marker — in case (b) we leave
+  // the text as-is. Only fall back to a naive search when there is no prose
+  // at all in the head (i.e. the doc really is all front-matter at the top).
+  const proseRx = /[a-z][a-z, ]{40,}[.!?]/;
+  if (proseRx.test(text.slice(0, 4000))) return text;
+  let fallback = findFirstIndex(text, NOVEL_START_PATTERNS);
+  if (fallback < 0) fallback = findFirstIndex(text, PLAY_START_PATTERNS);
+  if (fallback > 0) text = text.slice(fallback);
   return text;
 }
 
@@ -446,25 +484,85 @@ function extractPlayStructure(text: string): SceneRef[] {
 // run, then deleting that whole span.
 function stripTableOfContents(text: string): string {
   if (text.length < 1500) return text;
-  const head = text.slice(0, Math.floor(text.length * 0.15));
-  const labelRx = /\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b/g;
+  const head = text.slice(0, Math.floor(text.length * 0.20));
+  // Include LETTER (Frankenstein opens with letters) and case variants.
+  const labelRx = /\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act|LETTER|Letter|BOOK|Book|PART|Part)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b/g;
   const matches = [...head.matchAll(labelRx)];
   if (matches.length < 5) return text;
 
-  const first = matches[0].index ?? 0;
-  const last = (matches[matches.length - 1].index ?? 0) + matches[matches.length - 1][0].length;
-  const span = head.slice(first, last);
+  // Find the longest *contiguous run* of labels — i.e. consecutive matches
+  // whose gaps contain only short whitespace/punctuation. A real TOC has
+  // labels stacked tightly; a real heading inside prose has hundreds of chars
+  // of prose between it and the next label. Without this, we'd cut from the
+  // first TOC entry all the way to the real Chapter 1 heading and delete it.
+  let bestStart = -1, bestEnd = -1, bestCount = 0;
+  let runStart = matches[0].index ?? 0;
+  let runEnd = runStart + matches[0][0].length;
+  let runCount = 1;
+  for (let i = 1; i < matches.length; i++) {
+    const m = matches[i];
+    const idx = m.index ?? 0;
+    const gap = head.slice(runEnd, idx);
+    // Gap must be short (≤80 chars), contain no sentence terminator, AND not
+    // contain a section break (2+ consecutive newlines = blank line).
+    // The blank-line rule prevents merging the TOC with a real "Letter 1"
+    // heading that appears further down after a section break.
+    const isTocGap = gap.length <= 80
+      && !/[.!?]\s/.test(gap)
+      && !/\n[ \t\r]*\n[ \t\r]*\n/.test(gap);
+    if (isTocGap) {
+      runEnd = idx + m[0].length;
+      runCount++;
+    } else {
+      if (runCount > bestCount) { bestStart = runStart; bestEnd = runEnd; bestCount = runCount; }
+      runStart = idx;
+      runEnd = idx + m[0].length;
+      runCount = 1;
+    }
+  }
+  if (runCount > bestCount) { bestStart = runStart; bestEnd = runEnd; bestCount = runCount; }
+  if (bestCount < 5) return text;
 
-  // Punctuation density — real prose has lots of periods/commas; TOCs do not.
+  const span = head.slice(bestStart, bestEnd);
   const punct = (span.match(/[.,;:!?]/g) ?? []).length;
   const wordCount = (span.match(/\S+/g) ?? []).length;
   const punctRatio = wordCount > 0 ? punct / wordCount : 0;
 
   if (punctRatio < 0.15) {
-    // Looks like a TOC — drop it.
-    return text.slice(0, first) + text.slice(last);
+    return text.slice(0, bestStart) + text.slice(bestEnd);
   }
   return text;
+}
+
+// Skip the heading + short metadata lines (addressee, dateline) at the very
+// start of a novel so narration begins at the first real prose paragraph.
+//   "Letter 1\n_To Mrs. Saville, England._\nSt. Petersburg, Dec. 11th, 17—.\nYou will rejoice…"
+//        → "You will rejoice…"
+// Strategy: drop a leading heading line (CHAPTER N / LETTER N), then drop only
+// lines that *positively* look like an addressee, dateline, italic stage label
+// or place line. Any other non-blank line is treated as the start of prose.
+function skipNovelHeading(text: string): string {
+  const lines = text.split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  if (i < lines.length && /^\s*_?(?:CHAPTER|Chapter|LETTER|Letter|BOOK|PART)\s+(?:[IVXLC]+|\d+|ONE|FIRST)\b/i.test(lines[i])) {
+    i++;
+  }
+  let safety = 6;
+  while (i < lines.length && safety-- > 0) {
+    const raw = lines[i];
+    const t = raw.trim().replace(/^_+|_+$/g, "");
+    if (t === "") { i++; continue; }
+    const isAddressee = /^to\s+(mr|mrs|miss|sir|madam|lord|lady|the|[A-Z])/i.test(t);
+    const isDate = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}/i.test(t)
+      || /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(t)
+      || /\b1[7-9][\d—\-–]{1,3}\b/.test(t);
+    // Italic-only label still wrapped in underscores (e.g. _Scene: Verona._)
+    const isItalicLabel = /^_[^_]{1,80}_$/.test(raw.trim());
+    if (isAddressee || isDate || isItalicLabel) { i++; continue; }
+    break;
+  }
+  return lines.slice(i).join("\n");
 }
 
 // --- Chunk validation ----------------------------------------------------
@@ -520,6 +618,14 @@ export function cleanRawText(raw: string, kind: DocKind): CleanResult {
   // Run TOC strip again on the trimmed body in case the doc has a secondary
   // chapter list right after the start marker (common in older editions).
   text = stripTableOfContents(text);
+
+  // For novels, skip the heading + addressee/date metadata so narration starts
+  // at real prose ("You will rejoice…"), not "Letter 1 To Mrs. Saville…".
+  // Run for any novel (even when startedAt === "none", e.g. when the TOC strip
+  // already exposed the metadata at the top).
+  if (kind === "novel") {
+    text = skipNovelHeading(text);
+  }
 
   text = trimAtEnd(text);
   text = stripArtifacts(text);
