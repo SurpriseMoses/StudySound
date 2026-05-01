@@ -462,14 +462,25 @@ Deno.serve(async (req) => {
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
 
-    // Reject narration requests for junk fragments (TOC remnants, page numbers).
-    // The seeders skip these too — fail loud here rather than silently waste TTS credits.
+    // If the requested chunk is too short/malformed (e.g. an opening heading
+    // fragment), merge it forward with following chunks until we have valid
+    // narratable text. Only fail if no valid text exists at all.
     if (chunk_index >= 0 && chunk_index < totalChunks && isInvalidChunk(chunks[chunk_index])) {
-      return new Response(
-        JSON.stringify({ error: "Chunk too short or malformed; skipped.", code: "INVALID_CHUNK", chunk_index }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      let merged = chunks[chunk_index];
+      let j = chunk_index + 1;
+      while (j < totalChunks && isInvalidChunk(merged)) {
+        merged = `${merged} ${chunks[j]}`.trim();
+        j++;
+      }
+      if (isInvalidChunk(merged)) {
+        return new Response(
+          JSON.stringify({ error: "Chunk too short or malformed; skipped.", code: "INVALID_CHUNK", chunk_index }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      chunks[chunk_index] = merged;
     }
+
 
     // ---------- Preview mode: cache-first, generate-on-miss, NEVER charge ----------
     if (previewMode) {
