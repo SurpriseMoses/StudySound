@@ -135,14 +135,22 @@ export default function AdminSeedTranslations() {
 
   async function toggleSeed(doc: SeedDoc, value: boolean) {
     setTogglingDoc(doc.id);
-    const { error } = await supabase
-      .from("documents")
-      .update({ seed_translation: value })
-      .eq("id", doc.id);
-    setTogglingDoc(null);
-    if (error) { toast.error(error.message); return; }
-    toast.success(value ? "Marked for translation seeding" : "Translation seeding disabled");
-    await loadDocs();
+    // Optimistic update so the switch flips immediately.
+    setDocs((prev) => prev.map((x) => x.id === doc.id ? { ...x, seed_translation: value } : x));
+    try {
+      const { error } = await supabase.functions.invoke("seed-translation-manager", {
+        body: { action: "set_seed", document_id: doc.id, value },
+      });
+      if (error) throw error;
+      toast.success(value ? "Marked for translation seeding" : "Translation seeding disabled");
+      await loadDocs();
+    } catch (e) {
+      // Revert on failure
+      setDocs((prev) => prev.map((x) => x.id === doc.id ? { ...x, seed_translation: !value } : x));
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTogglingDoc(null);
+    }
   }
 
   async function enqueueDoc(docId: string) {
@@ -293,6 +301,14 @@ export default function AdminSeedTranslations() {
                 const totalCells = d.total_chunks_est * TARGET_LANGS.length;
                 const totalCached = TARGET_LANGS.reduce((s, l) => s + (d.cached_per_lang[l] ?? 0), 0);
                 const pct = Math.min(100, Math.round((totalCached / totalCells) * 100));
+                // Derive a display status from actual cache + current worker activity,
+                // not the stale global `translation_status` field on the document row.
+                const displayStatus: SeedDoc["translation_status"] =
+                  isCurrent ? "processing"
+                  : totalCached >= totalCells && totalCells > 0 ? "done"
+                  : totalCached > 0 ? "processing"
+                  : !d.seed_translation ? "pending"
+                  : "pending";
                 return (
                   <div key={d.id} className={`border rounded-lg p-4 space-y-2 ${isCurrent ? "border-primary/50 bg-primary/5" : ""}`}>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -314,8 +330,8 @@ export default function AdminSeedTranslations() {
                             onCheckedChange={(v) => toggleSeed(d, v)}
                           />
                         </div>
-                        <Badge className={statusColors[d.translation_status]} variant="secondary">
-                          {d.translation_status}
+                        <Badge className={statusColors[displayStatus]} variant="secondary">
+                          {displayStatus}
                         </Badge>
                         <Button
                           size="sm"
