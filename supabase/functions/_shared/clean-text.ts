@@ -47,12 +47,15 @@ const PLAY_START_PATTERNS: RegExp[] = [
   /\bACT\s+THE\s+FIRST\b/gi,
   /\bPROLOGUE\b/g,
 ];
+// All case-insensitive — Gutenberg editions vary ("CHAPTER I", "Chapter 1",
+// "Letter 1"). Without the `i` flag, "Letter 1" in Frankenstein never matches
+// and we leave the CONTENTS block at the top of the file.
 const NOVEL_START_PATTERNS: RegExp[] = [
-  /^\s*CHAPTER\s+(?:I|1)\b(?!\w)/m,
-  /^\s*Chapter\s+(?:I|1)\b(?!\w)/m,
+  /^\s*CHAPTER\s+(?:I|1)\b(?!\w)/im,
+  /^\s*Chapter\s+(?:I|1)\b(?!\w)/im,
   /^\s*BOOK\s+(?:THE\s+)?FIRST\b/im,
   /^\s*PART\s+(?:I|1|ONE)\b/im,
-  /^\s*LETTER\s+(?:I|1)\b/m, // Frankenstein opens with letters
+  /^\s*LETTER\s+(?:I|1)\b/im, // Frankenstein opens with letters
 ];
 
 // Markers that signal the end of the book proper.
