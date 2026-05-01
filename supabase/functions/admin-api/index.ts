@@ -308,17 +308,18 @@ Deno.serve(async (req) => {
         audioQueueByDoc.set(r.document_id, m);
       });
 
-      // Translation queue counts per (doc, language)
+      // Translation queue counts per (doc, language) — also derive "seeded done" count
       const { data: transQueue } = await admin
         .from("translation_seed_queue")
         .select("document_id, target_language, status").in("document_id", ids);
-      const transQueueByDoc = new Map<string, Record<string, { pending: number; in_progress: number; failed: number }>>();
+      const transQueueByDoc = new Map<string, Record<string, { pending: number; in_progress: number; failed: number; seeded: number }>>();
       (transQueue ?? []).forEach((r: any) => {
         const m = transQueueByDoc.get(r.document_id) ?? {};
-        const lm = m[r.target_language] ?? { pending: 0, in_progress: 0, failed: 0 };
+        const lm = m[r.target_language] ?? { pending: 0, in_progress: 0, failed: 0, seeded: 0 };
         if (r.status === "pending") lm.pending++;
-        else if (r.status === "in_progress") lm.in_progress++;
+        else if (r.status === "in_progress" || r.status === "processing") lm.in_progress++;
         else if (r.status === "failed") lm.failed++;
+        else if (r.status === "done" || r.status === "completed") lm.seeded++;
         m[r.target_language] = lm;
         transQueueByDoc.set(r.document_id, m);
       });
