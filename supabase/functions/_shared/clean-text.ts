@@ -36,11 +36,16 @@ const DROP_LINE_PATTERNS: RegExp[] = [
 ];
 
 // Markers we use to find where the *actual* book begins, in priority order.
+// NOTE: For plays we don't use these as the *only* signal — Gutenberg editions
+// often list "ACT I SCENE I. An open Place." inside a scene-list TOC at the top
+// of the file. The first ACT I match would land us inside that TOC. Instead we
+// run findPlayBodyStart() which requires ACT I + SCENE I + a speaker label
+// nearby to confirm we're in the actual play.
 const PLAY_START_PATTERNS: RegExp[] = [
-  /^\s*ACT\s+I\b(?!\w)/m,
-  /^\s*ACT\s+1\b(?!\w)/m,
-  /^\s*ACT\s+THE\s+FIRST\b/im,
-  /^\s*PROLOGUE\b/m,
+  /\bACT\s+I\b(?!\w)/g,
+  /\bACT\s+1\b(?!\w)/g,
+  /\bACT\s+THE\s+FIRST\b/gi,
+  /\bPROLOGUE\b/g,
 ];
 const NOVEL_START_PATTERNS: RegExp[] = [
   /^\s*CHAPTER\s+(?:I|1)\b(?!\w)/m,
@@ -97,17 +102,66 @@ function dropNoiseLines(text: string): string {
 
 function findFirstIndex(text: string, patterns: RegExp[]): number {
   for (const rx of patterns) {
+    // Reset stateful (g-flag) regexes so repeated calls are safe.
+    if ("lastIndex" in rx) rx.lastIndex = 0;
     const m = text.match(rx);
     if (m && m.index !== undefined) return m.index;
   }
   return -1;
 }
 
+// For plays: the first occurrence of "ACT I" is almost always inside the
+// scene-list TOC at the top of Gutenberg editions (e.g. Macbeth lists every
+// scene as "ACT I Scene I. An open Place. Scene II. ..."). The *real* play
+// body always has, soon after ACT I:
+//   - a SCENE I marker (could be "SCENE I." or "SCENE I:"),
+//   - immediately followed by stage business + a speaker label like
+//     "FIRST WITCH:" / "DUNCAN:" / "MACBETH:".
+// We scan all ACT I matches and pick the first one whose ~2KB window after it
+// contains both SCENE I and an ALL-CAPS speaker label followed by ":".
+function findPlayBodyStart(text: string): number {
+  const speakerRx = /\b[A-Z][A-Z' \-]{1,30}:\s*[\n A-Z"'(]/;
+  const sceneOneRx = /\bSCENE\s+(?:I|1)\b/;
+  // Lines that prove we're in a TOC (multiple ACTs listed back-to-back).
+  const laterActRx = /\bACT\s+(?:II|III|IV|V|2|3|4|5)\b/;
+  for (const rx of PLAY_START_PATTERNS) {
+    rx.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = rx.exec(text)) !== null) {
+      const start = m.index;
+      // Look only a short distance ahead for SCENE I — in real play body it's
+      // adjacent. In a TOC, SCENE I sits next to other ACT headings.
+      const near = text.slice(start, start + 600);
+      const sceneMatch = near.match(sceneOneRx);
+      if (!sceneMatch) continue;
+      // If a later ACT (II/III/IV/V) appears between this ACT I and SCENE I,
+      // we're inside a scene-list TOC — skip to the next ACT I match.
+      const between = near.slice(0, sceneMatch.index);
+      if (laterActRx.test(between)) continue;
+      // Speaker label must appear within ~1500 chars after the ACT I match —
+      // proves real dialogue follows, not a personae list.
+      const window = text.slice(start, start + 1500);
+      if (!speakerRx.test(window)) continue;
+      return start;
+    }
+  }
+  return -1;
+}
+
 function startAtRealContent(text: string, kind: "play" | "novel"): string {
-  const primary = kind === "play" ? PLAY_START_PATTERNS : NOVEL_START_PATTERNS;
-  const fallback = kind === "play" ? NOVEL_START_PATTERNS : PLAY_START_PATTERNS;
-  let idx = findFirstIndex(text, primary);
-  if (idx < 0) idx = findFirstIndex(text, fallback);
+  if (kind === "play") {
+    const playIdx = findPlayBodyStart(text);
+    if (playIdx > 0) return text.slice(playIdx);
+    // Fallback: novel-style chapter marker (rare for plays, but safe).
+    const novelIdx = findFirstIndex(text, NOVEL_START_PATTERNS);
+    if (novelIdx > 0) return text.slice(novelIdx);
+    // Last resort: first ACT I match even if it's a TOC entry.
+    const anyAct = findFirstIndex(text, PLAY_START_PATTERNS);
+    if (anyAct > 0) return text.slice(anyAct);
+    return text;
+  }
+  let idx = findFirstIndex(text, NOVEL_START_PATTERNS);
+  if (idx < 0) idx = findFirstIndex(text, PLAY_START_PATTERNS);
   if (idx > 0) text = text.slice(idx);
   return text;
 }
@@ -135,10 +189,11 @@ function normaliseWhitespace(text: string): string {
 // Gutenberg-style `_italics_` underscores, illustration tags, and dot leaders.
 function stripArtifacts(text: string): string {
   return text
-    // `_italic phrase_` → `italic phrase`
+    // `_italic phrase_` → `italic phrase` (multi-pass to handle nested/adjacent)
     .replace(/_([^_\n]{1,200})_/g, "$1")
-    // stray standalone underscores left mid-sentence ("the _ woman" → "the woman")
-    .replace(/\s_\s/g, " ")
+    .replace(/_([^_\n]{1,200})_/g, "$1")
+    // any remaining stray underscores anywhere
+    .replace(/_+/g, " ")
     // [Illustration: ...] / [Illustration] tags from Gutenberg scans
     .replace(/\[\s*Illustration[^\]]*\]/gi, "")
     // dot leaders (TOC artifacts: "Chapter I .........  3")
@@ -151,6 +206,13 @@ function stripArtifacts(text: string): string {
     .replace(/^\s*\*\s*$/gm, "")
     // bare page numbers on their own line
     .replace(/^\s*\d{1,4}\s*$/gm, "")
+    // lines that are just dashes / hyphens / em-dashes (separators)
+    .replace(/^\s*[-–—_*]{2,}\s*$/gm, "")
+    // stray leading/trailing hyphens on otherwise-text lines
+    .replace(/^\s*[-–—]\s+/gm, "")
+    .replace(/\s+[-–—]\s*$/gm, "")
+    // "word- word" hyphen-space artifacts from OCR'd line breaks
+    .replace(/(\w)-\s+(\w)/g, "$1$2")
     // collapse double-spaces left behind
     .replace(/[ \t]{2,}/g, " ");
 }
@@ -233,35 +295,29 @@ function collapseUppercaseBlocks(text: string): string {
 }
 
 // --- Stage direction normalisation ----------------------------------------
-// Convert bracketed/parenthesised stage directions to spoken-friendly form.
-// We standardise to a sentence terminated by a period, on its own line.
-function normaliseStageDirection(inner: string): string {
-  let t = inner.trim().replace(/\s+/g, " ").replace(/[.\s]+$/, "");
-  if (!t) return "";
+// Stage directions are NOT narrated — they break immersion and are not part of
+// the spoken text. We drop bracketed/parenthesised cues entirely, plus their
+// bare-line equivalents ("Exit.", "Exeunt.", "Enter Iago.", "Re-enter Cassio.",
+// "Aside.", "Within.", "Flourish.", "Alarum within.", "Thunder.", etc.).
+const STAGE_CUE_LEAD = /^(?:exit|exeunt|exuent|enter|re-?enter|aside|within|flourish|alarum|thunder|lightning|trumpets?|sennet|drum|fanfare|hautboys|cornets|march|sound|noise|knocking|knock|music|song|dance|dies|falls|stabs|kisses|exit\.|exeunt\.)\b/i;
 
-  // Common shorthand → narration
-  // "Exeunt" / "Exuent" (typo) → "They exit"
-  if (/^exeunt\b/i.test(t) || /^exuent\b/i.test(t)) {
-    const rest = t.replace(/^exe?unt\b/i, "").trim();
-    return rest ? `They exit ${rest}.` : "They exit.";
-  }
-  // "Exit" alone or "Exit Iago"
-  if (/^exit\b/i.test(t)) {
-    return `${t.charAt(0).toUpperCase() + t.slice(1)}.`;
-  }
-  // "Enter Iago" / "Enter Iago and Roderigo"
-  if (/^enter\b/i.test(t)) {
-    return `${t.charAt(0).toUpperCase() + t.slice(1)}.`;
-  }
-  // "Re-enter…", "Aside", "Within", "Flourish", etc. — keep as terse cue.
-  return `${t.charAt(0).toUpperCase() + t.slice(1)}.`;
+function isStageCueLine(s: string): boolean {
+  const t = s.trim().replace(/\.$/, "");
+  if (!t) return false;
+  if (t.length > 120) return false; // long sentences are dialogue, not cues
+  return STAGE_CUE_LEAD.test(t);
 }
 
 function normaliseStageDirections(text: string): string {
-  // [stage direction]  or  (stage direction)  → its own line, narration form.
-  // Length-bounded to avoid swallowing long parenthetical asides in prose.
-  const rx = /[\[\(]\s*([^\[\]\(\)\n]{2,200})\s*[\]\)]/g;
-  return text.replace(rx, (_m, inner) => `\n${normaliseStageDirection(inner)}\n`);
+  // 1. Drop bracketed / parenthesised cues entirely:
+  //    [Exit.]  (Enter Iago)  [Aside]  → ""
+  // Length-bounded so we don't eat long parenthetical asides in prose.
+  text = text.replace(/[\[\(]\s*[^\[\]\(\)\n]{2,200}\s*[\]\)]/g, "");
+
+  // 2. Drop bare stage-cue lines that survived without brackets.
+  text = text.split("\n").filter((line) => !isStageCueLine(line)).join("\n");
+
+  return text;
 }
 
 // --- Speaker labels & line merging ----------------------------------------
