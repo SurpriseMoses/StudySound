@@ -189,18 +189,23 @@ function startAtRealContent(text: string, kind: "play" | "novel"): string {
   if (kind === "play") {
     const playIdx = findPlayBodyStart(text);
     if (playIdx > 0) return text.slice(playIdx);
-    // Fallback: novel-style chapter marker (rare for plays, but safe).
     const novelIdx = findNovelBodyStart(text);
     if (novelIdx > 0) return text.slice(novelIdx);
-    // Last resort: first ACT I match even if it's a TOC entry.
     const anyAct = findFirstIndex(text, PLAY_START_PATTERNS);
     if (anyAct > 0) return text.slice(anyAct);
     return text;
   }
-  let idx = findNovelBodyStart(text);
-  if (idx < 0) idx = findFirstIndex(text, NOVEL_START_PATTERNS);
-  if (idx < 0) idx = findFirstIndex(text, PLAY_START_PATTERNS);
-  if (idx > 0) text = text.slice(idx);
+  const idx = findNovelBodyStart(text);
+  if (idx > 0) return text.slice(idx);
+  // findNovelBodyStart returns -1 either because (a) no marker found, or
+  // (b) prose already exists above the first marker — in case (b) we leave
+  // the text as-is. Only fall back to a naive search when there is no prose
+  // at all in the head (i.e. the doc really is all front-matter at the top).
+  const proseRx = /[a-z][a-z, ]{40,}[.!?]/;
+  if (proseRx.test(text.slice(0, 4000))) return text;
+  let fallback = findFirstIndex(text, NOVEL_START_PATTERNS);
+  if (fallback < 0) fallback = findFirstIndex(text, PLAY_START_PATTERNS);
+  if (fallback > 0) text = text.slice(fallback);
   return text;
 }
 
