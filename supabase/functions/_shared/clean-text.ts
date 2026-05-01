@@ -36,11 +36,16 @@ const DROP_LINE_PATTERNS: RegExp[] = [
 ];
 
 // Markers we use to find where the *actual* book begins, in priority order.
+// NOTE: For plays we don't use these as the *only* signal — Gutenberg editions
+// often list "ACT I SCENE I. An open Place." inside a scene-list TOC at the top
+// of the file. The first ACT I match would land us inside that TOC. Instead we
+// run findPlayBodyStart() which requires ACT I + SCENE I + a speaker label
+// nearby to confirm we're in the actual play.
 const PLAY_START_PATTERNS: RegExp[] = [
-  /^\s*ACT\s+I\b(?!\w)/m,
-  /^\s*ACT\s+1\b(?!\w)/m,
-  /^\s*ACT\s+THE\s+FIRST\b/im,
-  /^\s*PROLOGUE\b/m,
+  /\bACT\s+I\b(?!\w)/g,
+  /\bACT\s+1\b(?!\w)/g,
+  /\bACT\s+THE\s+FIRST\b/gi,
+  /\bPROLOGUE\b/g,
 ];
 const NOVEL_START_PATTERNS: RegExp[] = [
   /^\s*CHAPTER\s+(?:I|1)\b(?!\w)/m,
