@@ -475,23 +475,48 @@ function extractPlayStructure(text: string): SceneRef[] {
 // run, then deleting that whole span.
 function stripTableOfContents(text: string): string {
   if (text.length < 1500) return text;
-  const head = text.slice(0, Math.floor(text.length * 0.15));
-  const labelRx = /\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b/g;
+  const head = text.slice(0, Math.floor(text.length * 0.20));
+  // Include LETTER (Frankenstein opens with letters) and case variants.
+  const labelRx = /\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act|LETTER|Letter|BOOK|Book|PART|Part)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b/g;
   const matches = [...head.matchAll(labelRx)];
   if (matches.length < 5) return text;
 
-  const first = matches[0].index ?? 0;
-  const last = (matches[matches.length - 1].index ?? 0) + matches[matches.length - 1][0].length;
-  const span = head.slice(first, last);
+  // Find the longest *contiguous run* of labels — i.e. consecutive matches
+  // whose gaps contain only short whitespace/punctuation. A real TOC has
+  // labels stacked tightly; a real heading inside prose has hundreds of chars
+  // of prose between it and the next label. Without this, we'd cut from the
+  // first TOC entry all the way to the real Chapter 1 heading and delete it.
+  let bestStart = -1, bestEnd = -1, bestCount = 0;
+  let runStart = matches[0].index ?? 0;
+  let runEnd = runStart + matches[0][0].length;
+  let runCount = 1;
+  for (let i = 1; i < matches.length; i++) {
+    const m = matches[i];
+    const idx = m.index ?? 0;
+    const gap = head.slice(runEnd, idx);
+    // Gap must be short (≤80 chars) AND not contain a sentence terminator —
+    // otherwise it's prose between real headings, not a TOC.
+    const isTocGap = gap.length <= 80 && !/[.!?]\s/.test(gap);
+    if (isTocGap) {
+      runEnd = idx + m[0].length;
+      runCount++;
+    } else {
+      if (runCount > bestCount) { bestStart = runStart; bestEnd = runEnd; bestCount = runCount; }
+      runStart = idx;
+      runEnd = idx + m[0].length;
+      runCount = 1;
+    }
+  }
+  if (runCount > bestCount) { bestStart = runStart; bestEnd = runEnd; bestCount = runCount; }
+  if (bestCount < 5) return text;
 
-  // Punctuation density — real prose has lots of periods/commas; TOCs do not.
+  const span = head.slice(bestStart, bestEnd);
   const punct = (span.match(/[.,;:!?]/g) ?? []).length;
   const wordCount = (span.match(/\S+/g) ?? []).length;
   const punctRatio = wordCount > 0 ? punct / wordCount : 0;
 
   if (punctRatio < 0.15) {
-    // Looks like a TOC — drop it.
-    return text.slice(0, first) + text.slice(last);
+    return text.slice(0, bestStart) + text.slice(bestEnd);
   }
   return text;
 }
