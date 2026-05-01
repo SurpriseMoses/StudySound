@@ -102,17 +102,54 @@ function dropNoiseLines(text: string): string {
 
 function findFirstIndex(text: string, patterns: RegExp[]): number {
   for (const rx of patterns) {
+    // Reset stateful (g-flag) regexes so repeated calls are safe.
+    if ("lastIndex" in rx) rx.lastIndex = 0;
     const m = text.match(rx);
     if (m && m.index !== undefined) return m.index;
   }
   return -1;
 }
 
+// For plays: the first occurrence of "ACT I" is almost always inside the
+// scene-list TOC at the top of Gutenberg editions (e.g. Macbeth lists every
+// scene as "ACT I Scene I. An open Place. Scene II. ..."). The *real* play
+// body always has, soon after ACT I:
+//   - a SCENE I marker (could be "SCENE I." or "SCENE I:"),
+//   - immediately followed by stage business + a speaker label like
+//     "FIRST WITCH:" / "DUNCAN:" / "MACBETH:".
+// We scan all ACT I matches and pick the first one whose ~2KB window after it
+// contains both SCENE I and an ALL-CAPS speaker label followed by ":".
+function findPlayBodyStart(text: string): number {
+  const speakerNearby = /\b[A-Z][A-Z' \-]{1,30}:\s*[\n A-Z"'(]/;
+  const sceneOne = /\bSCENE\s+(?:I|1)\b/;
+  for (const rx of PLAY_START_PATTERNS) {
+    rx.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = rx.exec(text)) !== null) {
+      const start = m.index;
+      const window = text.slice(start, start + 2500);
+      if (sceneOne.test(window) && speakerNearby.test(window)) {
+        return start;
+      }
+    }
+  }
+  return -1;
+}
+
 function startAtRealContent(text: string, kind: "play" | "novel"): string {
-  const primary = kind === "play" ? PLAY_START_PATTERNS : NOVEL_START_PATTERNS;
-  const fallback = kind === "play" ? NOVEL_START_PATTERNS : PLAY_START_PATTERNS;
-  let idx = findFirstIndex(text, primary);
-  if (idx < 0) idx = findFirstIndex(text, fallback);
+  if (kind === "play") {
+    const playIdx = findPlayBodyStart(text);
+    if (playIdx > 0) return text.slice(playIdx);
+    // Fallback: novel-style chapter marker (rare for plays, but safe).
+    const novelIdx = findFirstIndex(text, NOVEL_START_PATTERNS);
+    if (novelIdx > 0) return text.slice(novelIdx);
+    // Last resort: first ACT I match even if it's a TOC entry.
+    const anyAct = findFirstIndex(text, PLAY_START_PATTERNS);
+    if (anyAct > 0) return text.slice(anyAct);
+    return text;
+  }
+  let idx = findFirstIndex(text, NOVEL_START_PATTERNS);
+  if (idx < 0) idx = findFirstIndex(text, PLAY_START_PATTERNS);
   if (idx > 0) text = text.slice(idx);
   return text;
 }
