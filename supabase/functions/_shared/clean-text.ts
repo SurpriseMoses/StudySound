@@ -496,6 +496,42 @@ function stripTableOfContents(text: string): string {
   return text;
 }
 
+// Skip the heading + short metadata lines (addressee, dateline) at the very
+// start of a novel so narration begins at the first real prose paragraph.
+//   "Letter 1\n_To Mrs. Saville, England._\nSt. Petersburg, Dec. 11th, 17—.\nYou will rejoice…"
+//        → "You will rejoice…"
+// Strategy: drop the first heading line (CHAPTER N / LETTER N / ROMAN num),
+// then drop any subsequent short lines (<80 chars) that don't end with sentence
+// punctuation OR look like an addressee/date stamp, until we hit a long line
+// that ends with `.`/`!`/`?` — that's prose.
+function skipNovelHeading(text: string): string {
+  const lines = text.split("\n");
+  let i = 0;
+  // Skip leading blanks
+  while (i < lines.length && lines[i].trim() === "") i++;
+  // Skip the heading itself if present
+  if (i < lines.length && /^\s*(?:CHAPTER|Chapter|LETTER|Letter|BOOK|PART)\s+(?:[IVXLC]+|\d+|ONE|FIRST)\b/i.test(lines[i])) {
+    i++;
+  }
+  // Skip blanks + short metadata lines
+  let safety = 8;
+  while (i < lines.length && safety-- > 0) {
+    const t = lines[i].trim();
+    if (t === "") { i++; continue; }
+    const isAddressee = /^_?(to\s+(mr|mrs|miss|sir|madam|lord|lady|the)\b|to\s+[A-Z])/i.test(t);
+    const isDate = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}/i.test(t)
+      || /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(t)
+      || /\b17[—\-–]{1,2}\b|\b18[—\-–]{1,2}\b|\b19[—\-–]{1,2}\b/.test(t); // partial year "17—"
+    const isShortNoSentence = t.length < 80 && !/[.!?][\"'\)\]]?\s*$/.test(t);
+    if (isAddressee || isDate || isShortNoSentence) {
+      i++;
+      continue;
+    }
+    break;
+  }
+  return lines.slice(i).join("\n");
+}
+
 // --- Chunk validation ----------------------------------------------------
 //
 // A chunk is "invalid" if it's too short to narrate or has no sentence-like
