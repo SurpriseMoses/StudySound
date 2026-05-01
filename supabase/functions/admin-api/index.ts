@@ -387,6 +387,13 @@ Deno.serve(async (req) => {
     if (action === "reclean_document") {
       const document_id = body?.document_id as string;
       if (!document_id) throw new Error("document_id required");
+      // scope: "all" (default) | "chunks" — when "chunks", only audio for the
+      // listed chunk_indices is deleted. clean_text is always re-derived from raw_text;
+      // chunks whose text didn't change keep their cached audio (hash-matched at play time).
+      const scope = (body?.scope as string) ?? "all";
+      const chunkIndices: number[] = Array.isArray(body?.chunk_indices)
+        ? (body.chunk_indices as unknown[]).map((n) => Number(n)).filter((n) => Number.isInteger(n) && n >= 0)
+        : [];
       const { data: doc, error: docErr } = await admin
         .from("documents")
         .select("id, title, raw_text, tags, subject_type")
