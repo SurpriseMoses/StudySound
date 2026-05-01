@@ -573,7 +573,10 @@ function skipNovelHeading(text: string): string {
       || /\b1[7-9][\d—\-–]{1,3}\b/.test(t);
     // Italic-only label still wrapped in underscores (e.g. _Scene: Verona._)
     const isItalicLabel = /^_[^_]{1,80}_$/.test(raw.trim());
-    if (isAddressee || isDate || isItalicLabel) { i++; continue; }
+    // Bare numeral marker on its own (e.g. "I.", "1.", "II.") — sub-section
+    // numbering used by some Sherlock-style stories right under the title.
+    const isBareNumeral = /^(?:[IVXLC]{1,5}|\d{1,3})\.\s*$/.test(t);
+    if (isAddressee || isDate || isItalicLabel || isBareNumeral) { i++; continue; }
     break;
   }
   return lines.slice(i).join("\n");
