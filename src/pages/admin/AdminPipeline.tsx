@@ -23,9 +23,12 @@ const LANG_LABEL: Record<string, string> = {
 type LangProgress = {
   language: string;
   done: number;
+  seeded?: number;
+  user_cached?: number;
   total_estimate: number;
   pct: number;
-  queue: { pending: number; in_progress: number; failed: number };
+  seeded_pct?: number;
+  queue: { pending: number; in_progress: number; failed: number; seeded?: number };
 };
 
 type PipelineDoc = {
