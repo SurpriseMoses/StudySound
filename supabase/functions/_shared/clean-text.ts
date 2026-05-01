@@ -33,6 +33,8 @@ const DROP_LINE_PATTERNS: RegExp[] = [
   /\brelease date\b/i,
   /\btranscriber's note\b/i,
   /\bmost recently updated\b/i,
+  // Standalone "CONTENTS" / "Contents" / "Table of Contents" heading line
+  /^\s*(?:table\s+of\s+)?contents?\s*[:.]?\s*$/i,
 ];
 
 // Markers we use to find where the *actual* book begins, in priority order.
@@ -56,6 +58,8 @@ const NOVEL_START_PATTERNS: RegExp[] = [
   /^\s*BOOK\s+(?:THE\s+)?FIRST\b/im,
   /^\s*PART\s+(?:I|1|ONE)\b/im,
   /^\s*LETTER\s+(?:I|1)\b/im, // Frankenstein opens with letters
+  // Story-collection openers: "I. A SCANDAL IN BOHEMIA" / "I. A Scandal in Bohemia"
+  /^\s*I\.\s+[A-Z][A-Za-z][^\n]{2,80}$/m,
 ];
 
 // Markers that signal the end of the book proper.
@@ -485,8 +489,13 @@ function extractPlayStructure(text: string): SceneRef[] {
 function stripTableOfContents(text: string): string {
   if (text.length < 1500) return text;
   const head = text.slice(0, Math.floor(text.length * 0.20));
-  // Include LETTER (Frankenstein opens with letters) and case variants.
-  const labelRx = /\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act|LETTER|Letter|BOOK|Book|PART|Part)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b/g;
+  // Two label shapes:
+  //   1. Keyword + numeral: "Chapter 1", "LETTER I", "Scene II", "Book One"
+  //   2. Bare roman/arabic numeral + period at line start, followed by a
+  //      Title-Cased phrase: "I. A Scandal in Bohemia", "II. The Red-Headed
+  //      League" (Sherlock-style story collections). Anchored to start-of-line
+  //      to avoid matching mid-sentence "I." (the pronoun).
+  const labelRx = /(?:\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act|LETTER|Letter|BOOK|Book|PART|Part)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b)|(?:(?<=^|\n)[ \t]*(?:[IVXLC]{1,5}|\d{1,3})\.[ \t]+[A-Z][A-Za-z][^\n]{2,80})/g;
   const matches = [...head.matchAll(labelRx)];
   if (matches.length < 5) return text;
 
@@ -545,7 +554,12 @@ function skipNovelHeading(text: string): string {
   const lines = text.split("\n");
   let i = 0;
   while (i < lines.length && lines[i].trim() === "") i++;
-  if (i < lines.length && /^\s*_?(?:CHAPTER|Chapter|LETTER|Letter|BOOK|PART)\s+(?:[IVXLC]+|\d+|ONE|FIRST)\b/i.test(lines[i])) {
+  // Drop the leading heading: CHAPTER N / LETTER N / BOOK / PART, OR a
+  // roman/arabic-numeral story title like "I. A SCANDAL IN BOHEMIA".
+  if (i < lines.length && (
+    /^\s*_?(?:CHAPTER|Chapter|LETTER|Letter|BOOK|PART)\s+(?:[IVXLC]+|\d+|ONE|FIRST)\b/i.test(lines[i])
+    || /^\s*(?:[IVXLC]{1,5}|\d{1,3})\.\s+[A-Z][A-Za-z][^\n]{2,80}$/.test(lines[i])
+  )) {
     i++;
   }
   let safety = 6;
@@ -553,13 +567,19 @@ function skipNovelHeading(text: string): string {
     const raw = lines[i];
     const t = raw.trim().replace(/^_+|_+$/g, "");
     if (t === "") { i++; continue; }
-    const isAddressee = /^to\s+(mr|mrs|miss|sir|madam|lord|lady|the|[A-Z])/i.test(t);
+    // Addressee: epistolary salutation. Must include a known title
+    // (Mr/Mrs/Miss/Sir/Madam/Lord/Lady) so we don't eat lines like
+    // "To Sherlock Holmes she is always the woman." which is real prose.
+    const isAddressee = /^to\s+(mr|mrs|miss|sir|madam|lord|lady)\b/i.test(t);
     const isDate = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}/i.test(t)
       || /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(t)
       || /\b1[7-9][\d—\-–]{1,3}\b/.test(t);
     // Italic-only label still wrapped in underscores (e.g. _Scene: Verona._)
     const isItalicLabel = /^_[^_]{1,80}_$/.test(raw.trim());
-    if (isAddressee || isDate || isItalicLabel) { i++; continue; }
+    // Bare numeral marker on its own (e.g. "I.", "1.", "II.") — sub-section
+    // numbering used by some Sherlock-style stories right under the title.
+    const isBareNumeral = /^(?:[IVXLC]{1,5}|\d{1,3})\.\s*$/.test(t);
+    if (isAddressee || isDate || isItalicLabel || isBareNumeral) { i++; continue; }
     break;
   }
   return lines.slice(i).join("\n");
