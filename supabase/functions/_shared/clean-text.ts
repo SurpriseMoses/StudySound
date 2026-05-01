@@ -567,7 +567,10 @@ function skipNovelHeading(text: string): string {
     const raw = lines[i];
     const t = raw.trim().replace(/^_+|_+$/g, "");
     if (t === "") { i++; continue; }
-    const isAddressee = /^to\s+(mr|mrs|miss|sir|madam|lord|lady|the|[A-Z])/i.test(t);
+    // Addressee: epistolary salutation. Must include a known title
+    // (Mr/Mrs/Miss/Sir/Madam/Lord/Lady) so we don't eat lines like
+    // "To Sherlock Holmes she is always the woman." which is real prose.
+    const isAddressee = /^to\s+(mr|mrs|miss|sir|madam|lord|lady)\b/i.test(t);
     const isDate = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}/i.test(t)
       || /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(t)
       || /\b1[7-9][\d—\-–]{1,3}\b/.test(t);
