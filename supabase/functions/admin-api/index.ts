@@ -334,13 +334,19 @@ Deno.serve(async (req) => {
         const tMap = transByDoc.get(d.id) ?? {};
         const tqMap = transQueueByDoc.get(d.id) ?? {};
         const translations = langs.map((lang) => {
-          const done = tMap[lang] ?? 0;
-          const q = tqMap[lang] ?? { pending: 0, in_progress: 0, failed: 0 };
+          const cached = tMap[lang] ?? 0;
+          const q = tqMap[lang] ?? { pending: 0, in_progress: 0, failed: 0, seeded: 0 };
+          const seeded = q.seeded ?? 0;
+          // user-cached = translations that exist but didn't come from a seeded queue row
+          const userCached = Math.max(0, cached - seeded);
           return {
             language: lang,
-            done,
+            done: cached, // back-compat: total cached chunks
+            seeded,
+            user_cached: userCached,
             total_estimate: totalChunks,
-            pct: totalChunks > 0 ? Math.min(100, Math.round((done / totalChunks) * 100)) : 0,
+            pct: totalChunks > 0 ? Math.min(100, Math.round((cached / totalChunks) * 100)) : 0,
+            seeded_pct: totalChunks > 0 ? Math.min(100, Math.round((seeded / totalChunks) * 100)) : 0,
             queue: q,
           };
         });
