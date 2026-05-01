@@ -624,7 +624,9 @@ export function cleanRawText(raw: string, kind: DocKind): CleanResult {
 
   // For novels, skip the heading + addressee/date metadata so narration starts
   // at real prose ("You will rejoice…"), not "Letter 1 To Mrs. Saville…".
-  if (kind === "novel" && startedAt === "novel") {
+  // Run for any novel (even when startedAt === "none", e.g. when the TOC strip
+  // already exposed the metadata at the top).
+  if (kind === "novel") {
     text = skipNovelHeading(text);
   }
 
