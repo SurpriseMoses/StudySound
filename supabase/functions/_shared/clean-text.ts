@@ -493,7 +493,7 @@ function stripTableOfContents(text: string): string {
   //      Title-Cased phrase: "I. A Scandal in Bohemia", "II. The Red-Headed
   //      League" (Sherlock-style story collections). Anchored to start-of-line
   //      to avoid matching mid-sentence "I." (the pronoun).
-  const labelRx = /(?:\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act|LETTER|Letter|BOOK|Book|PART|Part)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b)|(?:(?:^|\n)[ \t]*(?:[IVXLC]{1,5}|\d{1,3})\.[ \t]+[A-Z][A-Za-z][^\n]{2,80})/g;
+  const labelRx = /(?:\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act|LETTER|Letter|BOOK|Book|PART|Part)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b)|(?:(?<=^|\n)[ \t]*(?:[IVXLC]{1,5}|\d{1,3})\.[ \t]+[A-Z][A-Za-z][^\n]{2,80})/g;
   const matches = [...head.matchAll(labelRx)];
   if (matches.length < 5) return text;
 
