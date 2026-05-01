@@ -487,8 +487,13 @@ function extractPlayStructure(text: string): SceneRef[] {
 function stripTableOfContents(text: string): string {
   if (text.length < 1500) return text;
   const head = text.slice(0, Math.floor(text.length * 0.20));
-  // Include LETTER (Frankenstein opens with letters) and case variants.
-  const labelRx = /\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act|LETTER|Letter|BOOK|Book|PART|Part)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b/g;
+  // Two label shapes:
+  //   1. Keyword + numeral: "Chapter 1", "LETTER I", "Scene II", "Book One"
+  //   2. Bare roman/arabic numeral + period at line start, followed by a
+  //      Title-Cased phrase: "I. A Scandal in Bohemia", "II. The Red-Headed
+  //      League" (Sherlock-style story collections). Anchored to start-of-line
+  //      to avoid matching mid-sentence "I." (the pronoun).
+  const labelRx = /(?:\b(?:CHAPTER|Chapter|SCENE|Scene|ACT|Act|LETTER|Letter|BOOK|Book|PART|Part)\s+(?:[IVXLC]+|\d+|[A-Z][a-z]+)\b)|(?:(?:^|\n)[ \t]*(?:[IVXLC]{1,5}|\d{1,3})\.[ \t]+[A-Z][A-Za-z][^\n]{2,80})/g;
   const matches = [...head.matchAll(labelRx)];
   if (matches.length < 5) return text;
 
