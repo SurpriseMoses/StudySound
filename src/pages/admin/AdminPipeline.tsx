@@ -381,13 +381,20 @@ export default function AdminPipeline() {
                         <h3 className="font-medium truncate max-w-md">{d.title}</h3>
                         {d.is_seeded && <Badge variant="secondary" className="text-[10px]">SEEDED</Badge>}
                         <Badge variant="outline" className="text-[10px]">{d.subject_type}</Badge>
-                        <Badge variant="outline" className="text-[10px]">v{d.cleaning_version}</Badge>
+                        {d.cleaning_version > 1 ? (
+                          <Badge className="text-[10px] bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/20">
+                            ✓ Re-cleaned v{d.cleaning_version}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px]">v1 (original)</Badge>
+                        )}
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
                         {(d.char_count ?? 0).toLocaleString()} chars
                         {d.invalid_chunks.length > 0 && (
                           <span className="ml-2 text-amber-600">· {d.invalid_chunks.length} invalid</span>
                         )}
+                        <span className="ml-2">· Last updated {timeAgo(d.updated_at)}</span>
                       </div>
                     </div>
                     <Button size="sm" variant="outline" disabled={recleanBusy} onClick={() => reclean(d)}>
