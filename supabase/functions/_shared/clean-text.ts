@@ -58,6 +58,8 @@ const NOVEL_START_PATTERNS: RegExp[] = [
   /^\s*BOOK\s+(?:THE\s+)?FIRST\b/im,
   /^\s*PART\s+(?:I|1|ONE)\b/im,
   /^\s*LETTER\s+(?:I|1)\b/im, // Frankenstein opens with letters
+  // Story-collection openers: "I. A SCANDAL IN BOHEMIA" / "I. A Scandal in Bohemia"
+  /^\s*I\.\s+[A-Z][A-Za-z][^\n]{2,80}$/m,
 ];
 
 // Markers that signal the end of the book proper.
