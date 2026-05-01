@@ -118,8 +118,8 @@ export default function AdminDocuments() {
       return;
     }
     toast({
-      title: "Re-cleaned",
-      description: `${label} · ${data.chunks} chunks total · ${data.invalid_chunks?.length ?? 0} skipped · ${data.deleted_audio_rows ?? 0} audio rows cleared (${data.kind}).`,
+      title: `Re-clean queued · ${data.queued_chunks ?? 0} chunks`,
+      description: `${label} · ${data.chunks} chunks total · ${data.queued_chunks ?? 0} queued for reprocessing · ${data.deleted_audio_rows ?? 0} audio rows cleared · ${data.invalid_chunks?.length ?? 0} skipped (${data.kind}). Watch Pipeline for progress.`,
     });
     load();
   };
