@@ -177,10 +177,11 @@ function normaliseWhitespace(text: string): string {
 // Gutenberg-style `_italics_` underscores, illustration tags, and dot leaders.
 function stripArtifacts(text: string): string {
   return text
-    // `_italic phrase_` → `italic phrase`
+    // `_italic phrase_` → `italic phrase` (multi-pass to handle nested/adjacent)
     .replace(/_([^_\n]{1,200})_/g, "$1")
-    // stray standalone underscores left mid-sentence ("the _ woman" → "the woman")
-    .replace(/\s_\s/g, " ")
+    .replace(/_([^_\n]{1,200})_/g, "$1")
+    // any remaining stray underscores anywhere
+    .replace(/_+/g, " ")
     // [Illustration: ...] / [Illustration] tags from Gutenberg scans
     .replace(/\[\s*Illustration[^\]]*\]/gi, "")
     // dot leaders (TOC artifacts: "Chapter I .........  3")
@@ -193,6 +194,13 @@ function stripArtifacts(text: string): string {
     .replace(/^\s*\*\s*$/gm, "")
     // bare page numbers on their own line
     .replace(/^\s*\d{1,4}\s*$/gm, "")
+    // lines that are just dashes / hyphens / em-dashes (separators)
+    .replace(/^\s*[-–—_*]{2,}\s*$/gm, "")
+    // stray leading/trailing hyphens on otherwise-text lines
+    .replace(/^\s*[-–—]\s+/gm, "")
+    .replace(/\s+[-–—]\s*$/gm, "")
+    // "word- word" hyphen-space artifacts from OCR'd line breaks
+    .replace(/(\w)-\s+(\w)/g, "$1$2")
     // collapse double-spaces left behind
     .replace(/[ \t]{2,}/g, " ");
 }
