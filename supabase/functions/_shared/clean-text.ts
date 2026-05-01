@@ -120,7 +120,10 @@ function findFirstIndex(text: string, patterns: RegExp[]): number {
 // We scan all ACT I matches and pick the first one whose ~2KB window after it
 // contains both SCENE I and an ALL-CAPS speaker label followed by ":".
 function findPlayBodyStart(text: string): number {
-  const speakerRx = /\b[A-Z][A-Z' \-]{1,30}:\s*[\n A-Z"'(]/;
+  // Speaker labels in plays end with `:` OR `.` (Gutenberg uses `.`), e.g.
+  // "MACBETH:" or "FIRST WITCH." Require a newline after to avoid matching
+  // sentence-ending words mid-paragraph.
+  const speakerRx = /\b[A-Z][A-Z' \-]{1,30}[:.]\s*\n/;
   const sceneOneRx = /\bSCENE\s+(?:I|1)\b/;
   // Lines that prove we're in a TOC (multiple ACTs listed back-to-back).
   const laterActRx = /\bACT\s+(?:II|III|IV|V|2|3|4|5)\b/;
