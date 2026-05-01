@@ -586,6 +586,12 @@ export function cleanRawText(raw: string, kind: DocKind): CleanResult {
   // chapter list right after the start marker (common in older editions).
   text = stripTableOfContents(text);
 
+  // For novels, skip the heading + addressee/date metadata so narration starts
+  // at real prose ("You will rejoice…"), not "Letter 1 To Mrs. Saville…".
+  if (kind === "novel" && startedAt === "novel") {
+    text = skipNovelHeading(text);
+  }
+
   text = trimAtEnd(text);
   text = stripArtifacts(text);
 
