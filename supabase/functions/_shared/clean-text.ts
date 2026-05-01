@@ -275,35 +275,29 @@ function collapseUppercaseBlocks(text: string): string {
 }
 
 // --- Stage direction normalisation ----------------------------------------
-// Convert bracketed/parenthesised stage directions to spoken-friendly form.
-// We standardise to a sentence terminated by a period, on its own line.
-function normaliseStageDirection(inner: string): string {
-  let t = inner.trim().replace(/\s+/g, " ").replace(/[.\s]+$/, "");
-  if (!t) return "";
+// Stage directions are NOT narrated — they break immersion and are not part of
+// the spoken text. We drop bracketed/parenthesised cues entirely, plus their
+// bare-line equivalents ("Exit.", "Exeunt.", "Enter Iago.", "Re-enter Cassio.",
+// "Aside.", "Within.", "Flourish.", "Alarum within.", "Thunder.", etc.).
+const STAGE_CUE_LEAD = /^(?:exit|exeunt|exuent|enter|re-?enter|aside|within|flourish|alarum|thunder|lightning|trumpets?|sennet|drum|fanfare|hautboys|cornets|march|sound|noise|knocking|knock|music|song|dance|dies|falls|stabs|kisses|exit\.|exeunt\.)\b/i;
 
-  // Common shorthand → narration
-  // "Exeunt" / "Exuent" (typo) → "They exit"
-  if (/^exeunt\b/i.test(t) || /^exuent\b/i.test(t)) {
-    const rest = t.replace(/^exe?unt\b/i, "").trim();
-    return rest ? `They exit ${rest}.` : "They exit.";
-  }
-  // "Exit" alone or "Exit Iago"
-  if (/^exit\b/i.test(t)) {
-    return `${t.charAt(0).toUpperCase() + t.slice(1)}.`;
-  }
-  // "Enter Iago" / "Enter Iago and Roderigo"
-  if (/^enter\b/i.test(t)) {
-    return `${t.charAt(0).toUpperCase() + t.slice(1)}.`;
-  }
-  // "Re-enter…", "Aside", "Within", "Flourish", etc. — keep as terse cue.
-  return `${t.charAt(0).toUpperCase() + t.slice(1)}.`;
+function isStageCueLine(s: string): boolean {
+  const t = s.trim().replace(/\.$/, "");
+  if (!t) return false;
+  if (t.length > 120) return false; // long sentences are dialogue, not cues
+  return STAGE_CUE_LEAD.test(t);
 }
 
 function normaliseStageDirections(text: string): string {
-  // [stage direction]  or  (stage direction)  → its own line, narration form.
-  // Length-bounded to avoid swallowing long parenthetical asides in prose.
-  const rx = /[\[\(]\s*([^\[\]\(\)\n]{2,200})\s*[\]\)]/g;
-  return text.replace(rx, (_m, inner) => `\n${normaliseStageDirection(inner)}\n`);
+  // 1. Drop bracketed / parenthesised cues entirely:
+  //    [Exit.]  (Enter Iago)  [Aside]  → ""
+  // Length-bounded so we don't eat long parenthetical asides in prose.
+  text = text.replace(/[\[\(]\s*[^\[\]\(\)\n]{2,200}\s*[\]\)]/g, "");
+
+  // 2. Drop bare stage-cue lines that survived without brackets.
+  text = text.split("\n").filter((line) => !isStageCueLine(line)).join("\n");
+
+  return text;
 }
 
 // --- Speaker labels & line merging ----------------------------------------
