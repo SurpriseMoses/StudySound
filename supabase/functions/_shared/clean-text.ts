@@ -162,9 +162,10 @@ function findPlayBodyStart(text: string): number {
 // chapter/letter labels.
 function findNovelBodyStart(text: string): number {
   const labelStackRx = /(?:^|\n)\s*(?:CHAPTER|Chapter|LETTER|Letter)\s+(?:[IVXLC]+|\d+)\b[^\n]{0,40}\n\s*(?:CHAPTER|Chapter|LETTER|Letter)\s+(?:[IVXLC]+|\d+)\b/;
-  // A real prose paragraph: a long-ish line of normal prose (mixed case + a
-  // sentence terminator). Used to confirm the marker is followed by real text.
-  const proseRx = /[a-z][a-z, ]{40,}[.!?]/;
+  // Real prose: a long-ish run of mixed-case words/punctuation/whitespace
+  // ending in a sentence terminator. Must allow newlines because Gutenberg
+  // wraps lines around column 70 — `[a-z, ]{40,}` would never match.
+  const proseRx = /[a-z][a-z,\s'"–—-]{60,}[.!?]/;
   for (const rx of NOVEL_START_PATTERNS) {
     const flags = rx.flags.includes("g") ? rx.flags : rx.flags + "g";
     const gx = new RegExp(rx.source, flags);
@@ -172,7 +173,6 @@ function findNovelBodyStart(text: string): number {
     while ((m = gx.exec(text)) !== null) {
       const start = m.index;
       const window = text.slice(start, start + 1500);
-      // TOC entry: stacked labels follow → skip and try the next match.
       if (labelStackRx.test(text.slice(start, start + 400))) continue;
       if (!proseRx.test(window)) continue;
       return start;
