@@ -33,6 +33,8 @@ const DROP_LINE_PATTERNS: RegExp[] = [
   /\brelease date\b/i,
   /\btranscriber's note\b/i,
   /\bmost recently updated\b/i,
+  // Standalone "CONTENTS" / "Contents" / "Table of Contents" heading line
+  /^\s*(?:table\s+of\s+)?contents?\s*[:.]?\s*$/i,
 ];
 
 // Markers we use to find where the *actual* book begins, in priority order.
