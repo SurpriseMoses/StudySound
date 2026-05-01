@@ -441,16 +441,35 @@ Deno.serve(async (req) => {
       }).eq("id", document_id);
       if (upErr) throw upErr;
 
-      // Optionally invalidate audio for a specific chunk range (so they regenerate
-      // on next play under the new SSML/cleaner). Other chunks' cached audio is
-      // preserved if their text hash still matches.
+      // Resolve the actual chunk indices we'll force-reprocess.
+      // - scope="all"     => every chunk in the freshly cleaned doc
+      // - scope="chunks"  => only the requested indices, filtered to ones that exist
+      let targetIndices: number[];
+      if (scope === "chunks") {
+        targetIndices = chunkIndices.filter((i) => i < chunks.length);
+      } else {
+        targetIndices = chunks.map((_, i) => i);
+      }
+
+      // Edge case: caller selected sections but none of those indices exist in this doc.
+      if (scope === "chunks" && targetIndices.length === 0) {
+        return json({
+          success: false,
+          error: "No chunks in selected section",
+          document_id,
+          chunks: chunks.length,
+          requested_chunk_indices: chunkIndices,
+        }, 400);
+      }
+
+      // 1. Force-clear cached audio for the selected chunks so the seeder must regenerate.
       let deleted_audio_rows = 0;
-      if (scope === "chunks" && chunkIndices.length > 0) {
+      if (targetIndices.length > 0) {
         const { data: rows } = await admin
           .from("audio_assets")
           .select("id, storage_path")
           .eq("document_id", document_id)
-          .in("chunk_index", chunkIndices);
+          .in("chunk_index", targetIndices);
         if (rows && rows.length > 0) {
           const paths = rows.map((r) => r.storage_path).filter(Boolean);
           if (paths.length > 0) {
@@ -461,6 +480,44 @@ Deno.serve(async (req) => {
         }
       }
 
+      // 2. Reset any existing seed_queue rows for these chunks (force re-process).
+      let deleted_queue_rows = 0;
+      if (targetIndices.length > 0) {
+        const { data: qRows } = await admin
+          .from("seed_queue")
+          .select("id")
+          .eq("document_id", document_id)
+          .in("chunk_index", targetIndices);
+        if (qRows && qRows.length > 0) {
+          await admin.from("seed_queue").delete().in("id", qRows.map((r) => r.id));
+          deleted_queue_rows = qRows.length;
+        }
+      }
+
+      // 3. Re-enqueue cleaning/audio jobs as pending — the seed worker will pick them up.
+      let queued_chunks = 0;
+      if (targetIndices.length > 0) {
+        const enqueueRows = targetIndices.map((i) => ({
+          document_id,
+          chunk_index: i,
+          status: "pending",
+          attempts: 0,
+          last_error: null,
+          priority: 10, // bump so re-cleans run ahead of fresh seeds
+        }));
+        const BATCH = 500;
+        for (let i = 0; i < enqueueRows.length; i += BATCH) {
+          const slice = enqueueRows.slice(i, i + BATCH);
+          const { error: insErr } = await admin.from("seed_queue").insert(slice);
+          if (insErr) throw insErr;
+          queued_chunks += slice.length;
+        }
+        // Make sure the doc is marked processing so the worker / UI surface it.
+        await admin.from("documents")
+          .update({ seed_audio_status: "processing", seed_audio_error: null, last_error: null })
+          .eq("id", document_id);
+      }
+
       return json({
         success: true,
         document_id,
@@ -469,8 +526,10 @@ Deno.serve(async (req) => {
         invalid_chunks: invalid,
         kind,
         scope,
-        chunk_indices: chunkIndices,
+        chunk_indices: targetIndices,
         deleted_audio_rows,
+        deleted_queue_rows,
+        queued_chunks,
       });
     }
 
