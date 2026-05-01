@@ -23,9 +23,12 @@ const LANG_LABEL: Record<string, string> = {
 type LangProgress = {
   language: string;
   done: number;
+  seeded?: number;
+  user_cached?: number;
   total_estimate: number;
   pct: number;
-  queue: { pending: number; in_progress: number; failed: number };
+  seeded_pct?: number;
+  queue: { pending: number; in_progress: number; failed: number; seeded?: number };
 };
 
 type PipelineDoc = {
@@ -423,11 +426,21 @@ export default function AdminPipeline() {
                       <div className="space-y-1">
                         {d.stages.translation.languages.map((l) => {
                           const lBusy = busy === `trans:${d.id}:${l.language}`;
+                          const seeded = l.seeded ?? 0;
+                          const userCached = l.user_cached ?? Math.max(0, l.done - seeded);
                           return (
                             <div key={l.language} className="flex items-center gap-2 text-xs">
                               <span className="w-16 text-muted-foreground">{LANG_LABEL[l.language] ?? l.language}</span>
-                              <Progress value={l.pct} className="h-1 flex-1" />
-                              <span className="w-14 text-right tabular-nums text-muted-foreground">{l.done}/{l.total_estimate}</span>
+                              <Progress value={l.seeded_pct ?? l.pct} className="h-1 flex-1" />
+                              <span
+                                className="w-24 text-right tabular-nums text-muted-foreground"
+                                title={`Seeded: ${seeded} • User-cached: ${userCached} • Total estimated chunks: ${l.total_estimate}`}
+                              >
+                                {seeded}/{l.total_estimate}
+                                {userCached > 0 && (
+                                  <span className="ml-1 text-[10px] text-amber-600">+{userCached}</span>
+                                )}
+                              </span>
                               <Button size="sm" variant="ghost" className="h-5 px-1.5 text-[10px]" disabled={lBusy} onClick={() => enqueueTranslation(d, l.language as Lang)}>
                                 {lBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : "+"}
                               </Button>
@@ -435,6 +448,9 @@ export default function AdminPipeline() {
                           );
                         })}
                       </div>
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        Numbers show <strong>seeded</strong> chunks. <span className="text-amber-600">+N</span> = chunks cached from on-demand user translations (not seeded).
+                      </p>
                     </div>
                   </div>
                 </CardContent>
