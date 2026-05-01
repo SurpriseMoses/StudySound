@@ -501,9 +501,13 @@ function stripTableOfContents(text: string): string {
     const m = matches[i];
     const idx = m.index ?? 0;
     const gap = head.slice(runEnd, idx);
-    // Gap must be short (≤80 chars) AND not contain a sentence terminator —
-    // otherwise it's prose between real headings, not a TOC.
-    const isTocGap = gap.length <= 80 && !/[.!?]\s/.test(gap);
+    // Gap must be short (≤80 chars), contain no sentence terminator, AND not
+    // contain a section break (2+ consecutive newlines = blank line).
+    // The blank-line rule prevents merging the TOC with a real "Letter 1"
+    // heading that appears further down after a section break.
+    const isTocGap = gap.length <= 80
+      && !/[.!?]\s/.test(gap)
+      && !/\n[ \t\r]*\n[ \t\r]*\n/.test(gap);
     if (isTocGap) {
       runEnd = idx + m[0].length;
       runCount++;
