@@ -162,10 +162,11 @@ function findPlayBodyStart(text: string): number {
 // chapter/letter labels.
 function findNovelBodyStart(text: string): number {
   const labelStackRx = /(?:^|\n)\s*(?:CHAPTER|Chapter|LETTER|Letter)\s+(?:[IVXLC]+|\d+)\b[^\n]{0,40}\n\s*(?:CHAPTER|Chapter|LETTER|Letter)\s+(?:[IVXLC]+|\d+)\b/;
-  // Real prose: a long-ish run of mixed-case words/punctuation/whitespace
-  // ending in a sentence terminator. Must allow newlines because Gutenberg
-  // wraps lines around column 70 — `[a-z, ]{40,}` would never match.
   const proseRx = /[a-z][a-z,\s'"–—-]{60,}[.!?]/;
+  // Collect all valid candidates from every pattern, then pick the EARLIEST.
+  // Otherwise CHAPTER 1 (later in the file) would win over LETTER 1 just
+  // because the CHAPTER pattern is checked first in the array.
+  let best = -1;
   for (const rx of NOVEL_START_PATTERNS) {
     const flags = rx.flags.includes("g") ? rx.flags : rx.flags + "g";
     const gx = new RegExp(rx.source, flags);
@@ -175,10 +176,11 @@ function findNovelBodyStart(text: string): number {
       const window = text.slice(start, start + 1500);
       if (labelStackRx.test(text.slice(start, start + 400))) continue;
       if (!proseRx.test(window)) continue;
-      return start;
+      if (best < 0 || start < best) best = start;
+      break; // earliest match for this pattern; move to next pattern
     }
   }
-  return -1;
+  return best;
 }
 
 function startAtRealContent(text: string, kind: "play" | "novel"): string {
