@@ -536,33 +536,28 @@ function stripTableOfContents(text: string): string {
 // start of a novel so narration begins at the first real prose paragraph.
 //   "Letter 1\n_To Mrs. Saville, England._\nSt. Petersburg, Dec. 11th, 17—.\nYou will rejoice…"
 //        → "You will rejoice…"
-// Strategy: drop the first heading line (CHAPTER N / LETTER N / ROMAN num),
-// then drop any subsequent short lines (<80 chars) that don't end with sentence
-// punctuation OR look like an addressee/date stamp, until we hit a long line
-// that ends with `.`/`!`/`?` — that's prose.
+// Strategy: drop a leading heading line (CHAPTER N / LETTER N), then drop only
+// lines that *positively* look like an addressee, dateline, italic stage label
+// or place line. Any other non-blank line is treated as the start of prose.
 function skipNovelHeading(text: string): string {
   const lines = text.split("\n");
   let i = 0;
-  // Skip leading blanks
   while (i < lines.length && lines[i].trim() === "") i++;
-  // Skip the heading itself if present
-  if (i < lines.length && /^\s*(?:CHAPTER|Chapter|LETTER|Letter|BOOK|PART)\s+(?:[IVXLC]+|\d+|ONE|FIRST)\b/i.test(lines[i])) {
+  if (i < lines.length && /^\s*_?(?:CHAPTER|Chapter|LETTER|Letter|BOOK|PART)\s+(?:[IVXLC]+|\d+|ONE|FIRST)\b/i.test(lines[i])) {
     i++;
   }
-  // Skip blanks + short metadata lines
-  let safety = 8;
+  let safety = 6;
   while (i < lines.length && safety-- > 0) {
-    const t = lines[i].trim();
+    const raw = lines[i];
+    const t = raw.trim().replace(/^_+|_+$/g, "");
     if (t === "") { i++; continue; }
-    const isAddressee = /^_?(to\s+(mr|mrs|miss|sir|madam|lord|lady|the)\b|to\s+[A-Z])/i.test(t);
+    const isAddressee = /^to\s+(mr|mrs|miss|sir|madam|lord|lady|the|[A-Z])/i.test(t);
     const isDate = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}/i.test(t)
       || /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(t)
-      || /\b17[—\-–]{1,2}\b|\b18[—\-–]{1,2}\b|\b19[—\-–]{1,2}\b/.test(t); // partial year "17—"
-    const isShortNoSentence = t.length < 80 && !/[.!?][\"'\)\]]?\s*$/.test(t);
-    if (isAddressee || isDate || isShortNoSentence) {
-      i++;
-      continue;
-    }
+      || /\b1[7-9][\d—\-–]{1,3}\b/.test(t);
+    // Italic-only label still wrapped in underscores (e.g. _Scene: Verona._)
+    const isItalicLabel = /^_[^_]{1,80}_$/.test(raw.trim());
+    if (isAddressee || isDate || isItalicLabel) { i++; continue; }
     break;
   }
   return lines.slice(i).join("\n");
