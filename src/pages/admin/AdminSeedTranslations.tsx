@@ -135,14 +135,22 @@ export default function AdminSeedTranslations() {
 
   async function toggleSeed(doc: SeedDoc, value: boolean) {
     setTogglingDoc(doc.id);
-    const { error } = await supabase
-      .from("documents")
-      .update({ seed_translation: value })
-      .eq("id", doc.id);
-    setTogglingDoc(null);
-    if (error) { toast.error(error.message); return; }
-    toast.success(value ? "Marked for translation seeding" : "Translation seeding disabled");
-    await loadDocs();
+    // Optimistic update so the switch flips immediately.
+    setDocs((prev) => prev.map((x) => x.id === doc.id ? { ...x, seed_translation: value } : x));
+    try {
+      const { error } = await supabase.functions.invoke("seed-translation-manager", {
+        body: { action: "set_seed", document_id: doc.id, value },
+      });
+      if (error) throw error;
+      toast.success(value ? "Marked for translation seeding" : "Translation seeding disabled");
+      await loadDocs();
+    } catch (e) {
+      // Revert on failure
+      setDocs((prev) => prev.map((x) => x.id === doc.id ? { ...x, seed_translation: !value } : x));
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTogglingDoc(null);
+    }
   }
 
   async function enqueueDoc(docId: string) {
