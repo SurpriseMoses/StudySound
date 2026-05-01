@@ -387,6 +387,13 @@ Deno.serve(async (req) => {
     if (action === "reclean_document") {
       const document_id = body?.document_id as string;
       if (!document_id) throw new Error("document_id required");
+      // scope: "all" (default) | "chunks" — when "chunks", only audio for the
+      // listed chunk_indices is deleted. clean_text is always re-derived from raw_text;
+      // chunks whose text didn't change keep their cached audio (hash-matched at play time).
+      const scope = (body?.scope as string) ?? "all";
+      const chunkIndices: number[] = Array.isArray(body?.chunk_indices)
+        ? (body.chunk_indices as unknown[]).map((n) => Number(n)).filter((n) => Number.isInteger(n) && n >= 0)
+        : [];
       const { data: doc, error: docErr } = await admin
         .from("documents")
         .select("id, title, raw_text, tags, subject_type")
@@ -434,6 +441,26 @@ Deno.serve(async (req) => {
       }).eq("id", document_id);
       if (upErr) throw upErr;
 
+      // Optionally invalidate audio for a specific chunk range (so they regenerate
+      // on next play under the new SSML/cleaner). Other chunks' cached audio is
+      // preserved if their text hash still matches.
+      let deleted_audio_rows = 0;
+      if (scope === "chunks" && chunkIndices.length > 0) {
+        const { data: rows } = await admin
+          .from("audio_assets")
+          .select("id, storage_path")
+          .eq("document_id", document_id)
+          .in("chunk_index", chunkIndices);
+        if (rows && rows.length > 0) {
+          const paths = rows.map((r) => r.storage_path).filter(Boolean);
+          if (paths.length > 0) {
+            await admin.storage.from("assets").remove(paths).catch(() => {});
+          }
+          await admin.from("audio_assets").delete().in("id", rows.map((r) => r.id));
+          deleted_audio_rows = rows.length;
+        }
+      }
+
       return json({
         success: true,
         document_id,
@@ -441,6 +468,9 @@ Deno.serve(async (req) => {
         chunks: chunks.length,
         invalid_chunks: invalid,
         kind,
+        scope,
+        chunk_indices: chunkIndices,
+        deleted_audio_rows,
       });
     }
 

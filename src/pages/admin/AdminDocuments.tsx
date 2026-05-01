@@ -80,11 +80,38 @@ export default function AdminDocuments() {
   };
 
   const reclean = async (document_id: string, title: string) => {
-    if (!confirm(`Re-clean "${title}"?\n\nThis re-runs the latest text cleaner against raw_text and overwrites clean_text. Existing audio is kept but will be invalidated chunk-by-chunk on next play (hash mismatch). No user is re-charged.`)) return;
+    const choice = window.prompt(
+      `Re-clean "${title}"?\n\nChoose scope:\n  1 = Section 1 only (chunk 0)\n  2 = Sections 1 & 2 (chunks 0,1)\n  a = All chunks (whole document)\n\nNote: clean_text is always re-derived from raw_text, but only the chosen chunks have their cached audio deleted (so they regenerate on next play with current SSML). Other chunks keep cached audio if their text didn't change. No user is re-charged.\n\nYou can also enter a comma-separated chunk list, e.g. "0,3,7".`,
+      "1",
+    );
+    if (choice == null) return;
+    const trimmed = choice.trim().toLowerCase();
+    let body: Record<string, unknown> = { action: "reclean_document", document_id };
+    let label = "";
+    if (trimmed === "a" || trimmed === "all") {
+      body = { ...body, scope: "all" };
+      label = "all chunks";
+    } else if (trimmed === "1") {
+      body = { ...body, scope: "chunks", chunk_indices: [0] };
+      label = "section 1 (chunk 0)";
+    } else if (trimmed === "2") {
+      body = { ...body, scope: "chunks", chunk_indices: [0, 1] };
+      label = "sections 1 & 2 (chunks 0,1)";
+    } else {
+      const parsed = trimmed
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isInteger(n) && n >= 0);
+      if (parsed.length === 0) {
+        toast({ title: "Cancelled", description: "Invalid scope choice." });
+        return;
+      }
+      body = { ...body, scope: "chunks", chunk_indices: parsed };
+      label = `chunks ${parsed.join(",")}`;
+    }
+
     setBusy(document_id);
-    const { data, error } = await supabase.functions.invoke("admin-api", {
-      body: { action: "reclean_document", document_id },
-    });
+    const { data, error } = await supabase.functions.invoke("admin-api", { body });
     setBusy(null);
     if (error || !data?.success) {
       toast({ title: "Re-clean failed", description: error?.message ?? data?.error, variant: "destructive" });
@@ -92,7 +119,7 @@ export default function AdminDocuments() {
     }
     toast({
       title: "Re-cleaned",
-      description: `${data.chunks} chunks · ${data.invalid_chunks?.length ?? 0} skipped as invalid · ${data.char_count.toLocaleString()} chars (${data.kind}).`,
+      description: `${label} · ${data.chunks} chunks total · ${data.invalid_chunks?.length ?? 0} skipped · ${data.deleted_audio_rows ?? 0} audio rows cleared (${data.kind}).`,
     });
     load();
   };
