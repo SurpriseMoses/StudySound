@@ -162,7 +162,10 @@ function findPlayBodyStart(text: string): number {
 // chapter/letter labels.
 function findNovelBodyStart(text: string): number {
   const labelStackRx = /(?:^|\n)\s*(?:CHAPTER|Chapter|LETTER|Letter)\s+(?:[IVXLC]+|\d+)\b[^\n]{0,40}\n\s*(?:CHAPTER|Chapter|LETTER|Letter)\s+(?:[IVXLC]+|\d+)\b/;
-  const proseRx = /[a-z][a-z, ]{40,}[.!?]/; // a real sentence
+  // A real prose paragraph: a long-ish line of normal prose (mixed case + a
+  // sentence terminator). Used both to confirm a marker is the real start AND
+  // to avoid skipping past prose that already starts above the first marker.
+  const proseRx = /[a-z][a-z, ]{40,}[.!?]/;
   for (const rx of NOVEL_START_PATTERNS) {
     const flags = rx.flags.includes("g") ? rx.flags : rx.flags + "g";
     const gx = new RegExp(rx.source, flags);
@@ -170,9 +173,12 @@ function findNovelBodyStart(text: string): number {
     while ((m = gx.exec(text)) !== null) {
       const start = m.index;
       const window = text.slice(start, start + 1500);
-      // If the next ~400 chars are another stack of labels, this is a TOC entry.
+      // TOC entry: stacked labels follow
       if (labelStackRx.test(text.slice(start, start + 400))) continue;
       if (!proseRx.test(window)) continue;
+      // If real prose already exists *before* this marker (e.g. Letter 1 prose
+      // above Chapter 1), the marker is not the start of the book — keep prose.
+      if (proseRx.test(text.slice(0, start))) return -1;
       return start;
     }
   }
