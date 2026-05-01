@@ -154,19 +154,45 @@ function findPlayBodyStart(text: string): number {
   return -1;
 }
 
+// Novels: like plays, the first "CHAPTER 1" / "LETTER 1" match is often
+// inside a CONTENTS block ("Letter 1\nLetter 2\n...Chapter 24\n\nLetter 1\n…").
+// The real body has prose (sentences with punctuation) shortly after it; the
+// TOC entry is followed only by more short label lines. Pick the first match
+// whose ~1500-char window ahead contains real prose AND not a stack of more
+// chapter/letter labels.
+function findNovelBodyStart(text: string): number {
+  const labelStackRx = /(?:^|\n)\s*(?:CHAPTER|Chapter|LETTER|Letter)\s+(?:[IVXLC]+|\d+)\b[^\n]{0,40}\n\s*(?:CHAPTER|Chapter|LETTER|Letter)\s+(?:[IVXLC]+|\d+)\b/;
+  const proseRx = /[a-z][a-z, ]{40,}[.!?]/; // a real sentence
+  for (const rx of NOVEL_START_PATTERNS) {
+    const flags = rx.flags.includes("g") ? rx.flags : rx.flags + "g";
+    const gx = new RegExp(rx.source, flags);
+    let m: RegExpExecArray | null;
+    while ((m = gx.exec(text)) !== null) {
+      const start = m.index;
+      const window = text.slice(start, start + 1500);
+      // If the next ~400 chars are another stack of labels, this is a TOC entry.
+      if (labelStackRx.test(text.slice(start, start + 400))) continue;
+      if (!proseRx.test(window)) continue;
+      return start;
+    }
+  }
+  return -1;
+}
+
 function startAtRealContent(text: string, kind: "play" | "novel"): string {
   if (kind === "play") {
     const playIdx = findPlayBodyStart(text);
     if (playIdx > 0) return text.slice(playIdx);
     // Fallback: novel-style chapter marker (rare for plays, but safe).
-    const novelIdx = findFirstIndex(text, NOVEL_START_PATTERNS);
+    const novelIdx = findNovelBodyStart(text);
     if (novelIdx > 0) return text.slice(novelIdx);
     // Last resort: first ACT I match even if it's a TOC entry.
     const anyAct = findFirstIndex(text, PLAY_START_PATTERNS);
     if (anyAct > 0) return text.slice(anyAct);
     return text;
   }
-  let idx = findFirstIndex(text, NOVEL_START_PATTERNS);
+  let idx = findNovelBodyStart(text);
+  if (idx < 0) idx = findFirstIndex(text, NOVEL_START_PATTERNS);
   if (idx < 0) idx = findFirstIndex(text, PLAY_START_PATTERNS);
   if (idx > 0) text = text.slice(idx);
   return text;
