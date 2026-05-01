@@ -441,6 +441,26 @@ Deno.serve(async (req) => {
       }).eq("id", document_id);
       if (upErr) throw upErr;
 
+      // Optionally invalidate audio for a specific chunk range (so they regenerate
+      // on next play under the new SSML/cleaner). Other chunks' cached audio is
+      // preserved if their text hash still matches.
+      let deleted_audio_rows = 0;
+      if (scope === "chunks" && chunkIndices.length > 0) {
+        const { data: rows } = await admin
+          .from("audio_assets")
+          .select("id, storage_path")
+          .eq("document_id", document_id)
+          .in("chunk_index", chunkIndices);
+        if (rows && rows.length > 0) {
+          const paths = rows.map((r) => r.storage_path).filter(Boolean);
+          if (paths.length > 0) {
+            await admin.storage.from("assets").remove(paths).catch(() => {});
+          }
+          await admin.from("audio_assets").delete().in("id", rows.map((r) => r.id));
+          deleted_audio_rows = rows.length;
+        }
+      }
+
       return json({
         success: true,
         document_id,
@@ -448,6 +468,9 @@ Deno.serve(async (req) => {
         chunks: chunks.length,
         invalid_chunks: invalid,
         kind,
+        scope,
+        chunk_indices: chunkIndices,
+        deleted_audio_rows,
       });
     }
 
