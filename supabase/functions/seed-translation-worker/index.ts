@@ -19,7 +19,7 @@ const corsHeaders = {
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
-const INTER_CHUNK_DELAY_MS = 250;
+const INTER_CHUNK_DELAY_MS = 0;
 const MAX_ATTEMPTS = 5;
 const RATE_LIMIT_DELAY_MIN_MS = 5_000;
 const RATE_LIMIT_DELAY_MAX_MS = 15_000;
