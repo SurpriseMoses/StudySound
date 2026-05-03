@@ -90,12 +90,16 @@ class RateLimitedError extends Error {
   }
 }
 
-async function azureTranslate(text: string, sourceLang: string, targetLang: string, apiKey: string): Promise<string> {
+async function azureTranslateMulti(text: string, sourceLang: string, targetLangs: string[], apiKey: string): Promise<Record<string, string>> {
   const from = AZURE_TRANSLATOR_LANG[sourceLang];
-  const to = AZURE_TRANSLATOR_LANG[targetLang];
-  if (!from || !to) throw new Error(`AZURE_LANG_UNSUPPORTED:${sourceLang}->${targetLang}`);
-
-  const url = `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=${from}&to=${to}&textType=plain`;
+  if (!from) throw new Error(`AZURE_LANG_UNSUPPORTED:${sourceLang}`);
+  const tos = targetLangs.map((l) => {
+    const t = AZURE_TRANSLATOR_LANG[l];
+    if (!t) throw new Error(`AZURE_LANG_UNSUPPORTED:->${l}`);
+    return t;
+  });
+  const toQs = tos.map((t) => `to=${t}`).join("&");
+  const url = `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=${from}&${toQs}&textType=plain`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -107,9 +111,17 @@ async function azureTranslate(text: string, sourceLang: string, targetLang: stri
   });
   if (res.ok) {
     const json = await res.json();
-    const out = json?.[0]?.translations?.[0]?.text;
-    if (!out || typeof out !== "string") throw new Error("Empty Azure response");
-    return out.trim();
+    const translations = json?.[0]?.translations;
+    if (!Array.isArray(translations)) throw new Error("Empty Azure response");
+    const out: Record<string, string> = {};
+    for (const tr of translations) {
+      // Map Azure's `to` back to our lang code
+      const idx = tos.indexOf(tr.to);
+      if (idx >= 0 && typeof tr.text === "string") {
+        out[targetLangs[idx]] = tr.text.trim();
+      }
+    }
+    return out;
   }
   const body = await res.text();
   const errMsg = `Azure ${res.status}: ${body.slice(0, 200)}`;
