@@ -19,14 +19,14 @@ const corsHeaders = {
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
-const INTER_CHUNK_DELAY_MS = 250;
+const INTER_CHUNK_DELAY_MS = 0;
 const MAX_ATTEMPTS = 5;
 const RATE_LIMIT_DELAY_MIN_MS = 5_000;
 const RATE_LIMIT_DELAY_MAX_MS = 15_000;
 const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000;
 const LOCK_TIMEOUT_MS = 90_000;
 const HARD_DEADLINE_MS = 50_000;
-const MAX_CHUNKS_PER_INVOCATION = 25;
+const MAX_CHUNKS_PER_INVOCATION = 200;
 
 const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "southafricanorth";
 
@@ -90,12 +90,16 @@ class RateLimitedError extends Error {
   }
 }
 
-async function azureTranslate(text: string, sourceLang: string, targetLang: string, apiKey: string): Promise<string> {
+async function azureTranslateMulti(text: string, sourceLang: string, targetLangs: string[], apiKey: string): Promise<Record<string, string>> {
   const from = AZURE_TRANSLATOR_LANG[sourceLang];
-  const to = AZURE_TRANSLATOR_LANG[targetLang];
-  if (!from || !to) throw new Error(`AZURE_LANG_UNSUPPORTED:${sourceLang}->${targetLang}`);
-
-  const url = `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=${from}&to=${to}&textType=plain`;
+  if (!from) throw new Error(`AZURE_LANG_UNSUPPORTED:${sourceLang}`);
+  const tos = targetLangs.map((l) => {
+    const t = AZURE_TRANSLATOR_LANG[l];
+    if (!t) throw new Error(`AZURE_LANG_UNSUPPORTED:->${l}`);
+    return t;
+  });
+  const toQs = tos.map((t) => `to=${t}`).join("&");
+  const url = `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=${from}&${toQs}&textType=plain`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -107,9 +111,17 @@ async function azureTranslate(text: string, sourceLang: string, targetLang: stri
   });
   if (res.ok) {
     const json = await res.json();
-    const out = json?.[0]?.translations?.[0]?.text;
-    if (!out || typeof out !== "string") throw new Error("Empty Azure response");
-    return out.trim();
+    const translations = json?.[0]?.translations;
+    if (!Array.isArray(translations)) throw new Error("Empty Azure response");
+    const out: Record<string, string> = {};
+    for (const tr of translations) {
+      // Map Azure's `to` back to our lang code
+      const idx = tos.indexOf(tr.to);
+      if (idx >= 0 && typeof tr.text === "string") {
+        out[targetLangs[idx]] = tr.text.trim();
+      }
+    }
+    return out;
   }
   const body = await res.text();
   const errMsg = `Azure ${res.status}: ${body.slice(0, 200)}`;
@@ -126,6 +138,7 @@ type DocCacheEntry = { chunks: string[]; sourceLang: string; title: string };
 // deno-lint-ignore no-explicit-any
 async function processOne(admin: any, azureKey: string, cache: Map<string, DocCacheEntry>) {
   const nowIso = new Date().toISOString();
+  // Pick one pending row to determine (document_id, chunk_index) batch
   const { data: row, error: pickErr } = await admin
     .from("translation_seed_queue")
     .select("id, document_id, chunk_index, target_language, attempts")
@@ -136,33 +149,40 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
     .limit(1)
     .maybeSingle();
   if (pickErr) throw pickErr;
-  if (!row) return { result: "empty" as const };
+  if (!row) return { result: "empty" as const, count: 0 };
 
+  // Grab all sibling pending rows for same doc+chunk (different target langs)
+  const { data: siblings } = await admin
+    .from("translation_seed_queue")
+    .select("id, document_id, chunk_index, target_language, attempts")
+    .eq("status", "pending")
+    .eq("document_id", row.document_id)
+    .eq("chunk_index", row.chunk_index)
+    .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`);
+
+  const batch = (siblings && siblings.length > 0 ? siblings : [row]) as Array<typeof row>;
+  const ids = batch.map((b) => b.id);
+
+  // Atomically claim
   const { data: claimed, error: claimErr } = await admin
     .from("translation_seed_queue")
     .update({ status: "processing", started_at: new Date().toISOString() })
-    .eq("id", row.id).eq("status", "pending")
-    .select("id").maybeSingle();
+    .in("id", ids).eq("status", "pending")
+    .select("id, target_language, attempts");
   if (claimErr) throw claimErr;
-  if (!claimed) return { result: "empty" as const };
+  if (!claimed || claimed.length === 0) return { result: "empty" as const, count: 0 };
+
+  const claimedRows = batch.filter((b) => claimed.some((c: any) => c.id === b.id));
+  const claimedIds = claimedRows.map((b) => b.id);
 
   await admin.from("translation_worker_state").update({
     current_queue_id: row.id,
     current_document_id: row.document_id,
-    current_language: row.target_language,
+    current_language: claimedRows.map((c) => c.target_language).join(","),
     last_heartbeat: new Date().toISOString(),
   }).eq("id", 1);
 
-  const retryCount = row.attempts ?? 0;
-  await admin.from("translation_seed_logs").insert({
-    document_id: row.document_id,
-    chunk_index: row.chunk_index,
-    target_language: row.target_language,
-    status: "started",
-    retry_count: retryCount,
-  });
-
-  // Load doc + chunk text
+  // Load doc + chunks
   let entry = cache.get(row.document_id);
   if (!entry) {
     const { data: doc, error: docErr } = await admin
@@ -174,9 +194,8 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
     if (!doc?.clean_text) {
       await admin.from("translation_seed_queue").update({
         status: "failed", last_error: "Document missing clean_text",
-        attempts: retryCount + 1,
-      }).eq("id", row.id);
-      return { result: "error" as const, detail: "missing clean_text" };
+      }).in("id", claimedIds);
+      return { result: "error" as const, count: 0, detail: "missing clean_text" };
     }
     entry = {
       chunks: chunkText(doc.clean_text),
@@ -190,85 +209,75 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
     await admin.from("translation_seed_queue").update({
       status: "failed",
       last_error: `chunk_index ${row.chunk_index} out of range (${entry.chunks.length})`,
-      attempts: retryCount + 1,
-    }).eq("id", row.id);
-    return { result: "error" as const, detail: "out of range" };
+    }).in("id", claimedIds);
+    return { result: "error" as const, count: 0, detail: "out of range" };
   }
 
   const sourceText = entry.chunks[row.chunk_index];
 
-  // Skip junk fragments (TOC remnants, page numbers) — never spend MT on them.
+  // Skip junk fragments
   if (isInvalidChunk(sourceText)) {
     await admin.from("translation_seed_queue").update({
       status: "done", completed_at: new Date().toISOString(),
-      attempts: retryCount + 1, last_error: "skipped: invalid chunk",
-    }).eq("id", row.id);
-    await admin.from("translation_seed_logs").insert({
-      document_id: row.document_id,
-      chunk_index: row.chunk_index,
-      target_language: row.target_language,
-      status: "success",
-      error_message: "invalid_chunk_skipped",
-      retry_count: retryCount,
-    });
-    return { result: "done" as const, detail: "invalid chunk skipped" };
+      last_error: "skipped: invalid chunk",
+    }).in("id", claimedIds);
+    return { result: "done" as const, count: claimedRows.length, detail: "invalid chunk skipped" };
   }
 
-  // Idempotency check
+  // Idempotency: drop langs already cached
   const { data: existing } = await admin
     .from("translation_assets")
-    .select("id")
+    .select("target_language")
     .eq("document_id", row.document_id)
     .eq("chunk_index", row.chunk_index)
-    .eq("target_language", row.target_language)
-    .maybeSingle();
-  if (existing) {
+    .in("target_language", claimedRows.map((c) => c.target_language));
+  const cachedLangs = new Set((existing ?? []).map((e: any) => e.target_language));
+  const cachedRows = claimedRows.filter((c) => cachedLangs.has(c.target_language));
+  const todoRows = claimedRows.filter((c) => !cachedLangs.has(c.target_language));
+
+  if (cachedRows.length > 0) {
     await admin.from("translation_seed_queue").update({
       status: "done", completed_at: new Date().toISOString(),
-      attempts: retryCount + 1,
-    }).eq("id", row.id);
-    await admin.from("translation_seed_logs").insert({
-      document_id: row.document_id,
-      chunk_index: row.chunk_index,
-      target_language: row.target_language,
-      status: "success",
-      error_message: "cached",
-      retry_count: retryCount,
-    });
-    return { result: "done" as const, detail: "cached" };
+      last_error: "cached",
+    }).in("id", cachedRows.map((c) => c.id));
+  }
+
+  if (todoRows.length === 0) {
+    return { result: "done" as const, count: cachedRows.length, detail: "all cached" };
   }
 
   try {
-    // Preprocess (normalize caps), then translate
     const prepared = normalizeAllCaps(sourceText);
-    const translated = await azureTranslate(prepared, entry.sourceLang, row.target_language, azureKey);
+    const targetLangs = todoRows.map((c) => c.target_language);
+    const translations = await azureTranslateMulti(prepared, entry.sourceLang, targetLangs, azureKey);
 
-    const { error: insErr } = await admin.from("translation_assets").insert({
-      document_id: row.document_id,
-      chunk_index: row.chunk_index,
-      source_language: entry.sourceLang,
-      target_language: row.target_language,
-      translated_text: translated,
-      char_count: translated.length,
-    });
-    if (insErr && insErr.code !== "23505") {
-      throw new Error(`Insert translation_asset: ${insErr.message}`);
+    const inserts = todoRows
+      .map((c) => {
+        const t = translations[c.target_language];
+        if (!t) return null;
+        return {
+          document_id: c.document_id,
+          chunk_index: c.chunk_index,
+          source_language: entry!.sourceLang,
+          target_language: c.target_language,
+          translated_text: t,
+          char_count: t.length,
+        };
+      })
+      .filter(Boolean);
+
+    if (inserts.length > 0) {
+      const { error: insErr } = await admin.from("translation_assets").insert(inserts);
+      if (insErr && insErr.code !== "23505") {
+        throw new Error(`Insert translation_assets: ${insErr.message}`);
+      }
     }
 
     await admin.from("translation_seed_queue").update({
-      status: "done", completed_at: new Date().toISOString(),
-      attempts: retryCount + 1, last_error: null,
-    }).eq("id", row.id);
+      status: "done", completed_at: new Date().toISOString(), last_error: null,
+    }).in("id", todoRows.map((c) => c.id));
 
-    await admin.from("translation_seed_logs").insert({
-      document_id: row.document_id,
-      chunk_index: row.chunk_index,
-      target_language: row.target_language,
-      status: "success",
-      retry_count: retryCount,
-    });
-
-    // Mark doc done if no more outstanding rows
+    // Mark doc done if no outstanding
     const { count: pendingForDoc } = await admin.from("translation_seed_queue")
       .select("id", { count: "exact", head: true })
       .eq("document_id", row.document_id)
@@ -279,55 +288,40 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
       }).eq("id", row.document_id);
     }
 
-    console.log(`[t-worker] ✓ doc=${row.document_id} chunk=${row.chunk_index} ${entry.sourceLang}→${row.target_language}`);
-    return { result: "done" as const };
+    console.log(`[t-worker] ✓ doc=${row.document_id} chunk=${row.chunk_index} langs=${targetLangs.join(",")}`);
+    return { result: "done" as const, count: cachedRows.length + todoRows.length };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const attempts = retryCount + 1;
 
     if (e instanceof RateLimitedError) {
-      const exhausted = attempts >= MAX_ATTEMPTS;
       const baseDelay = e.retryAfterMs ?? RATE_LIMIT_DELAY_MIN_MS;
       const jitter = Math.floor(Math.random() * (RATE_LIMIT_DELAY_MAX_MS - RATE_LIMIT_DELAY_MIN_MS));
       const delayMs = Math.min(Math.max(baseDelay, RATE_LIMIT_DELAY_MIN_MS) + jitter, RATE_LIMIT_DELAY_HARD_CAP_MS);
+      // Increment attempts per row; mark exhausted ones failed
+      for (const c of todoRows) {
+        const attempts = (c.attempts ?? 0) + 1;
+        const exhausted = attempts >= MAX_ATTEMPTS;
+        await admin.from("translation_seed_queue").update({
+          status: exhausted ? "failed" : "pending",
+          started_at: null, attempts,
+          delayed_until: exhausted ? null : new Date(Date.now() + delayMs).toISOString(),
+          last_error: `rate-limited (${attempts}/${MAX_ATTEMPTS}): ${msg}`,
+        }).eq("id", c.id);
+      }
+      return { result: "rate_limited" as const, count: 0, detail: msg };
+    }
+
+    for (const c of todoRows) {
+      const attempts = (c.attempts ?? 0) + 1;
+      const exhausted = attempts >= MAX_ATTEMPTS;
       await admin.from("translation_seed_queue").update({
         status: exhausted ? "failed" : "pending",
         started_at: null, attempts,
-        delayed_until: exhausted ? null : new Date(Date.now() + delayMs).toISOString(),
-        last_error: `rate-limited (${attempts}/${MAX_ATTEMPTS}): ${msg}`,
-      }).eq("id", row.id);
-      await admin.from("translation_seed_logs").insert({
-        document_id: row.document_id,
-        chunk_index: row.chunk_index,
-        target_language: row.target_language,
-        status: "rate_limited",
-        error_message: msg,
-        retry_count: attempts,
-      });
-      return { result: "rate_limited" as const, detail: msg };
+        delayed_until: exhausted ? null : new Date(Date.now() + 30_000).toISOString(),
+        last_error: msg,
+      }).eq("id", c.id);
     }
-
-    const exhausted = attempts >= MAX_ATTEMPTS;
-    await admin.from("translation_seed_queue").update({
-      status: exhausted ? "failed" : "pending",
-      started_at: null, attempts,
-      delayed_until: exhausted ? null : new Date(Date.now() + 30_000).toISOString(),
-      last_error: msg,
-    }).eq("id", row.id);
-    await admin.from("translation_seed_logs").insert({
-      document_id: row.document_id,
-      chunk_index: row.chunk_index,
-      target_language: row.target_language,
-      status: "failed",
-      error_message: msg,
-      retry_count: attempts,
-    });
-    if (exhausted) {
-      await admin.from("documents").update({
-        translation_status: "failed",
-      }).eq("id", row.document_id);
-    }
-    return { result: "error" as const, detail: msg };
+    return { result: "error" as const, count: 0, detail: msg };
   }
 }
 
@@ -376,12 +370,12 @@ Deno.serve(async (req) => {
       if (Date.now() - startedAt > HARD_DEADLINE_MS) break;
       const r = await processOne(admin, AZURE_KEY, cache);
       if (r.result === "empty") { stop = true; break; }
-      if (r.result === "done") processed++;
+      if (r.result === "done") processed += r.count ?? 1;
       await admin.from("translation_worker_state").update({
         last_heartbeat: new Date().toISOString(),
         total_processed: (state.total_processed ?? 0) + processed,
       }).eq("id", 1);
-      await sleep(INTER_CHUNK_DELAY_MS);
+      if (INTER_CHUNK_DELAY_MS > 0) await sleep(INTER_CHUNK_DELAY_MS);
     }
 
     return new Response(JSON.stringify({ ok: true, processed, ms: Date.now() - startedAt }), {
