@@ -370,12 +370,12 @@ Deno.serve(async (req) => {
       if (Date.now() - startedAt > HARD_DEADLINE_MS) break;
       const r = await processOne(admin, AZURE_KEY, cache);
       if (r.result === "empty") { stop = true; break; }
-      if (r.result === "done") processed++;
+      if (r.result === "done") processed += r.count ?? 1;
       await admin.from("translation_worker_state").update({
         last_heartbeat: new Date().toISOString(),
         total_processed: (state.total_processed ?? 0) + processed,
       }).eq("id", 1);
-      await sleep(INTER_CHUNK_DELAY_MS);
+      if (INTER_CHUNK_DELAY_MS > 0) await sleep(INTER_CHUNK_DELAY_MS);
     }
 
     return new Response(JSON.stringify({ ok: true, processed, ms: Date.now() - startedAt }), {
