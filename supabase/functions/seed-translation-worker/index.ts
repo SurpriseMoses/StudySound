@@ -20,13 +20,29 @@ const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
 const INTER_CHUNK_DELAY_MS = 0;
-const MAX_ATTEMPTS = 5;
-const RATE_LIMIT_DELAY_MIN_MS = 5_000;
-const RATE_LIMIT_DELAY_MAX_MS = 15_000;
-const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000;
+const MAX_ATTEMPTS = 8;
+// Exponential back-off for rate-limited rows: base * 2^(attempt-1) + jitter,
+// clamped to [MIN, HARD_CAP]. Honours Azure's Retry-After when supplied.
+const RATE_LIMIT_BASE_MS = 2_000;
+const RATE_LIMIT_DELAY_MIN_MS = 2_000;
+const RATE_LIMIT_DELAY_HARD_CAP_MS = 5 * 60_000; // 5 min
+const RATE_LIMIT_JITTER_MS = 1_500;
+// Generic transient errors back off more gently
+const ERROR_BASE_MS = 10_000;
+const ERROR_HARD_CAP_MS = 2 * 60_000;
 const LOCK_TIMEOUT_MS = 90_000;
 const HARD_DEADLINE_MS = 50_000;
 const MAX_CHUNKS_PER_INVOCATION = 200;
+// If the only remaining work is delayed, wait up to this long inside the
+// invocation for the soonest row to become ready (avoids cron-only requeue lag).
+const MAX_INLINE_WAIT_MS = 8_000;
+
+function expBackoffMs(attempts: number, base: number, cap: number, jitter = RATE_LIMIT_JITTER_MS): number {
+  // attempts is the new attempt count (1 = first failure)
+  const exp = Math.min(cap, base * Math.pow(2, Math.max(0, attempts - 1)));
+  const j = Math.floor(Math.random() * jitter);
+  return Math.min(cap, Math.max(RATE_LIMIT_DELAY_MIN_MS, exp + j));
+}
 
 const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "southafricanorth";
 
@@ -294,18 +310,17 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
     const msg = e instanceof Error ? e.message : String(e);
 
     if (e instanceof RateLimitedError) {
-      const baseDelay = e.retryAfterMs ?? RATE_LIMIT_DELAY_MIN_MS;
-      const jitter = Math.floor(Math.random() * (RATE_LIMIT_DELAY_MAX_MS - RATE_LIMIT_DELAY_MIN_MS));
-      const delayMs = Math.min(Math.max(baseDelay, RATE_LIMIT_DELAY_MIN_MS) + jitter, RATE_LIMIT_DELAY_HARD_CAP_MS);
-      // Increment attempts per row; mark exhausted ones failed
+      // Per-row exponential back-off; honour Retry-After as a floor.
       for (const c of todoRows) {
         const attempts = (c.attempts ?? 0) + 1;
         const exhausted = attempts >= MAX_ATTEMPTS;
+        const expDelay = expBackoffMs(attempts, RATE_LIMIT_BASE_MS, RATE_LIMIT_DELAY_HARD_CAP_MS);
+        const delayMs = Math.max(e.retryAfterMs ?? 0, expDelay);
         await admin.from("translation_seed_queue").update({
           status: exhausted ? "failed" : "pending",
           started_at: null, attempts,
           delayed_until: exhausted ? null : new Date(Date.now() + delayMs).toISOString(),
-          last_error: `rate-limited (${attempts}/${MAX_ATTEMPTS}): ${msg}`,
+          last_error: `rate-limited (${attempts}/${MAX_ATTEMPTS}, retry in ${Math.round(delayMs / 1000)}s): ${msg}`,
         }).eq("id", c.id);
       }
       return { result: "rate_limited" as const, count: 0, detail: msg };
@@ -314,11 +329,12 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
     for (const c of todoRows) {
       const attempts = (c.attempts ?? 0) + 1;
       const exhausted = attempts >= MAX_ATTEMPTS;
+      const delayMs = expBackoffMs(attempts, ERROR_BASE_MS, ERROR_HARD_CAP_MS);
       await admin.from("translation_seed_queue").update({
         status: exhausted ? "failed" : "pending",
         started_at: null, attempts,
-        delayed_until: exhausted ? null : new Date(Date.now() + 30_000).toISOString(),
-        last_error: msg,
+        delayed_until: exhausted ? null : new Date(Date.now() + delayMs).toISOString(),
+        last_error: `error (${attempts}/${MAX_ATTEMPTS}, retry in ${Math.round(delayMs / 1000)}s): ${msg}`,
       }).eq("id", c.id);
     }
     return { result: "error" as const, count: 0, detail: msg };
@@ -369,7 +385,30 @@ Deno.serve(async (req) => {
     while (!stop && processed < MAX_CHUNKS_PER_INVOCATION) {
       if (Date.now() - startedAt > HARD_DEADLINE_MS) break;
       const r = await processOne(admin, AZURE_KEY, cache);
-      if (r.result === "empty") { stop = true; break; }
+      if (r.result === "empty") {
+        // Nothing immediately ready. If a delayed row is due soon AND we still
+        // have deadline budget, sleep briefly and try once more — this keeps
+        // the rate-limit recovery loop tight without waiting for cron.
+        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
+        if (remaining < 2_000) { stop = true; break; }
+        const { data: nextDelayed } = await admin
+          .from("translation_seed_queue")
+          .select("delayed_until")
+          .eq("status", "pending")
+          .not("delayed_until", "is", null)
+          .order("delayed_until", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (!nextDelayed?.delayed_until) { stop = true; break; }
+        const waitMs = Math.max(
+          0,
+          Math.min(MAX_INLINE_WAIT_MS, remaining - 2_000,
+            new Date(nextDelayed.delayed_until).getTime() - Date.now()),
+        );
+        if (waitMs > MAX_INLINE_WAIT_MS) { stop = true; break; }
+        if (waitMs > 0) await sleep(waitMs);
+        continue; // retry pick on next iteration
+      }
       if (r.result === "done") processed += r.count ?? 1;
       await admin.from("translation_worker_state").update({
         last_heartbeat: new Date().toISOString(),
