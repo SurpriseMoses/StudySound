@@ -310,18 +310,17 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
     const msg = e instanceof Error ? e.message : String(e);
 
     if (e instanceof RateLimitedError) {
-      const baseDelay = e.retryAfterMs ?? RATE_LIMIT_DELAY_MIN_MS;
-      const jitter = Math.floor(Math.random() * (RATE_LIMIT_DELAY_MAX_MS - RATE_LIMIT_DELAY_MIN_MS));
-      const delayMs = Math.min(Math.max(baseDelay, RATE_LIMIT_DELAY_MIN_MS) + jitter, RATE_LIMIT_DELAY_HARD_CAP_MS);
-      // Increment attempts per row; mark exhausted ones failed
+      // Per-row exponential back-off; honour Retry-After as a floor.
       for (const c of todoRows) {
         const attempts = (c.attempts ?? 0) + 1;
         const exhausted = attempts >= MAX_ATTEMPTS;
+        const expDelay = expBackoffMs(attempts, RATE_LIMIT_BASE_MS, RATE_LIMIT_DELAY_HARD_CAP_MS);
+        const delayMs = Math.max(e.retryAfterMs ?? 0, expDelay);
         await admin.from("translation_seed_queue").update({
           status: exhausted ? "failed" : "pending",
           started_at: null, attempts,
           delayed_until: exhausted ? null : new Date(Date.now() + delayMs).toISOString(),
-          last_error: `rate-limited (${attempts}/${MAX_ATTEMPTS}): ${msg}`,
+          last_error: `rate-limited (${attempts}/${MAX_ATTEMPTS}, retry in ${Math.round(delayMs / 1000)}s): ${msg}`,
         }).eq("id", c.id);
       }
       return { result: "rate_limited" as const, count: 0, detail: msg };
@@ -330,11 +329,12 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
     for (const c of todoRows) {
       const attempts = (c.attempts ?? 0) + 1;
       const exhausted = attempts >= MAX_ATTEMPTS;
+      const delayMs = expBackoffMs(attempts, ERROR_BASE_MS, ERROR_HARD_CAP_MS);
       await admin.from("translation_seed_queue").update({
         status: exhausted ? "failed" : "pending",
         started_at: null, attempts,
-        delayed_until: exhausted ? null : new Date(Date.now() + 30_000).toISOString(),
-        last_error: msg,
+        delayed_until: exhausted ? null : new Date(Date.now() + delayMs).toISOString(),
+        last_error: `error (${attempts}/${MAX_ATTEMPTS}, retry in ${Math.round(delayMs / 1000)}s): ${msg}`,
       }).eq("id", c.id);
     }
     return { result: "error" as const, count: 0, detail: msg };
