@@ -20,13 +20,29 @@ const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
 const INTER_CHUNK_DELAY_MS = 0;
-const MAX_ATTEMPTS = 5;
-const RATE_LIMIT_DELAY_MIN_MS = 5_000;
-const RATE_LIMIT_DELAY_MAX_MS = 15_000;
-const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000;
+const MAX_ATTEMPTS = 8;
+// Exponential back-off for rate-limited rows: base * 2^(attempt-1) + jitter,
+// clamped to [MIN, HARD_CAP]. Honours Azure's Retry-After when supplied.
+const RATE_LIMIT_BASE_MS = 2_000;
+const RATE_LIMIT_DELAY_MIN_MS = 2_000;
+const RATE_LIMIT_DELAY_HARD_CAP_MS = 5 * 60_000; // 5 min
+const RATE_LIMIT_JITTER_MS = 1_500;
+// Generic transient errors back off more gently
+const ERROR_BASE_MS = 10_000;
+const ERROR_HARD_CAP_MS = 2 * 60_000;
 const LOCK_TIMEOUT_MS = 90_000;
 const HARD_DEADLINE_MS = 50_000;
 const MAX_CHUNKS_PER_INVOCATION = 200;
+// If the only remaining work is delayed, wait up to this long inside the
+// invocation for the soonest row to become ready (avoids cron-only requeue lag).
+const MAX_INLINE_WAIT_MS = 8_000;
+
+function expBackoffMs(attempts: number, base: number, cap: number, jitter = RATE_LIMIT_JITTER_MS): number {
+  // attempts is the new attempt count (1 = first failure)
+  const exp = Math.min(cap, base * Math.pow(2, Math.max(0, attempts - 1)));
+  const j = Math.floor(Math.random() * jitter);
+  return Math.min(cap, Math.max(RATE_LIMIT_DELAY_MIN_MS, exp + j));
+}
 
 const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "southafricanorth";
 
