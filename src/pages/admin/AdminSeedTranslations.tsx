@@ -146,7 +146,7 @@ export default function AdminSeedTranslations() {
 
   async function refreshAll() {
     setLoading(true);
-    await Promise.all([loadDocs(), loadQueueStatus()]);
+    await Promise.all([loadDocs(), loadQueueStatus(), loadBreakdown()]);
     setLoading(false);
   }
 
