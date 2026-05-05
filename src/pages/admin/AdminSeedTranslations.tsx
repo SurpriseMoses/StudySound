@@ -520,6 +520,8 @@ export default function AdminSeedTranslations() {
       </Card>
 
       <Card>
+        <CardHeader>
+          <CardTitle>Books</CardTitle>
           <CardDescription>
             Toggle <span className="font-mono">seed_translation</span> on a book and click "Add to queue" to start.
           </CardDescription>
