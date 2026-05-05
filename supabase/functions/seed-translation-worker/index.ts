@@ -385,7 +385,30 @@ Deno.serve(async (req) => {
     while (!stop && processed < MAX_CHUNKS_PER_INVOCATION) {
       if (Date.now() - startedAt > HARD_DEADLINE_MS) break;
       const r = await processOne(admin, AZURE_KEY, cache);
-      if (r.result === "empty") { stop = true; break; }
+      if (r.result === "empty") {
+        // Nothing immediately ready. If a delayed row is due soon AND we still
+        // have deadline budget, sleep briefly and try once more — this keeps
+        // the rate-limit recovery loop tight without waiting for cron.
+        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
+        if (remaining < 2_000) { stop = true; break; }
+        const { data: nextDelayed } = await admin
+          .from("translation_seed_queue")
+          .select("delayed_until")
+          .eq("status", "pending")
+          .not("delayed_until", "is", null)
+          .order("delayed_until", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (!nextDelayed?.delayed_until) { stop = true; break; }
+        const waitMs = Math.max(
+          0,
+          Math.min(MAX_INLINE_WAIT_MS, remaining - 2_000,
+            new Date(nextDelayed.delayed_until).getTime() - Date.now()),
+        );
+        if (waitMs > MAX_INLINE_WAIT_MS) { stop = true; break; }
+        if (waitMs > 0) await sleep(waitMs);
+        continue; // retry pick on next iteration
+      }
       if (r.result === "done") processed += r.count ?? 1;
       await admin.from("translation_worker_state").update({
         last_heartbeat: new Date().toISOString(),
