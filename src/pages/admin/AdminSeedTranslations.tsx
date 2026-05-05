@@ -63,7 +63,44 @@ export default function AdminSeedTranslations() {
   const [enqueuingDoc, setEnqueuingDoc] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [togglingDoc, setTogglingDoc] = useState<string | null>(null);
+  const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
+  const [breakdownOpen, setBreakdownOpen] = useState(true);
+  const [loadingBreakdown, setLoadingBreakdown] = useState(false);
   const tickRef = useRef<number | null>(null);
+
+  async function loadBreakdown() {
+    setLoadingBreakdown(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("seed-translation-manager", {
+        body: { action: "breakdown" },
+      });
+      if (error) throw error;
+      setBreakdown({
+        total_rows: data.total_rows,
+        by_language: data.by_language ?? {},
+        by_attempts: data.by_attempts ?? {},
+        documents: data.documents ?? [],
+        top_errors: data.top_errors ?? [],
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingBreakdown(false);
+    }
+  }
+
+  async function retryRows(filters: { document_id?: string; target_language?: string; category?: "rate_limited" | "failed" | "all_failed" }) {
+    try {
+      const { data, error } = await supabase.functions.invoke("seed-translation-manager", {
+        body: { action: "retry", ...filters },
+      });
+      if (error) throw error;
+      toast.success(`Re-queued ${data?.retried ?? 0} rows.`);
+      await Promise.all([loadBreakdown(), loadQueueStatus()]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   async function loadDocs() {
     const { data: docRows, error } = await supabase
