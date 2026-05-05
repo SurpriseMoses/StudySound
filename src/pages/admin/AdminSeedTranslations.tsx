@@ -36,6 +36,19 @@ type QueueStatus = {
   } | null;
 };
 
+type Category = "rate_limited" | "skipped" | "failed" | "other_pending";
+type Breakdown = {
+  total_rows: number;
+  by_language: Record<string, Record<Category, number>>;
+  by_attempts: Record<string, Record<Category, number>>;
+  documents: Array<{
+    document_id: string; title: string;
+    rate_limited: number; skipped: number; failed: number; other_pending: number;
+    max_attempts: number; sample_error: string | null;
+  }>;
+  top_errors: Array<{ message: string; count: number }>;
+};
+
 const statusColors: Record<SeedDoc["translation_status"], string> = {
   pending: "bg-muted text-muted-foreground",
   processing: "bg-primary/10 text-primary",
