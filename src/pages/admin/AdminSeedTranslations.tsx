@@ -161,7 +161,7 @@ export default function AdminSeedTranslations() {
     if (tickRef.current) return;
     tickRef.current = window.setInterval(async () => {
       supabase.functions.invoke("seed-translation-worker", { body: {} }).catch(() => {});
-      await Promise.all([loadDocs(), loadQueueStatus()]);
+      await Promise.all([loadDocs(), loadQueueStatus(), loadBreakdown()]);
     }, 8000);
     return () => {
       if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
