@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Languages, Sparkles, RefreshCw, Play, Pause, ListPlus, AlertCircle, Trash2 } from "lucide-react";
+import { Loader2, Languages, RefreshCw, Play, Pause, ListPlus, AlertCircle, Trash2, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
