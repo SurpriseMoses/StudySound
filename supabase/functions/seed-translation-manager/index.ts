@@ -251,6 +251,131 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "breakdown") {
+      // Return an aggregated retry/error breakdown of the queue.
+      // Categories are derived from `last_error` + `status`:
+      //   - rate_limited   : last_error starts with "rate-limited"
+      //   - skipped        : last_error starts with "skipped" OR equals "cached"
+      //   - failed         : status = failed (and not rate-limited/skipped above)
+      //   - other_pending  : pending/processing rows with a last_error (transient)
+      const PAGE = 1000;
+      type Row = {
+        id: string; document_id: string; chunk_index: number;
+        target_language: string; attempts: number; status: string;
+        last_error: string | null; delayed_until: string | null; updated_at: string;
+      };
+      const rows: Row[] = [];
+      let from = 0;
+      // Pull anything with last_error OR status in (failed, processing) — keeps payload small.
+      // deno-lint-ignore no-constant-condition
+      while (true) {
+        const { data, error } = await admin
+          .from("translation_seed_queue")
+          .select("id, document_id, chunk_index, target_language, attempts, status, last_error, delayed_until, updated_at")
+          .or("status.eq.failed,last_error.not.is.null")
+          .order("updated_at", { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const batch = (data ?? []) as Row[];
+        rows.push(...batch);
+        if (batch.length < PAGE) break;
+        from += PAGE;
+        if (rows.length >= 10000) break; // safety
+      }
+
+      const docIds = Array.from(new Set(rows.map((r) => r.document_id)));
+      const titleById = new Map<string, string>();
+      if (docIds.length > 0) {
+        const { data: titles } = await admin
+          .from("documents").select("id, title").in("id", docIds);
+        (titles ?? []).forEach((t: { id: string; title: string }) => titleById.set(t.id, t.title));
+      }
+
+      function categoryOf(r: Row): "rate_limited" | "skipped" | "failed" | "other_pending" {
+        const e = (r.last_error ?? "").toLowerCase();
+        if (e.startsWith("rate-limited")) return "rate_limited";
+        if (e.startsWith("skipped") || e === "cached") return "skipped";
+        if (r.status === "failed") return "failed";
+        return "other_pending";
+      }
+
+      // Per-language × per-category counts
+      const byLang: Record<string, Record<string, number>> = {};
+      // Per-attempts × per-category counts
+      const byAttempts: Record<string, Record<string, number>> = {};
+      // Per-document × per-category counts
+      const byDoc = new Map<string, {
+        document_id: string; title: string;
+        rate_limited: number; skipped: number; failed: number; other_pending: number;
+        max_attempts: number; sample_error: string | null;
+      }>();
+      // Top error messages
+      const errorTally = new Map<string, number>();
+
+      for (const r of rows) {
+        const cat = categoryOf(r);
+        byLang[r.target_language] ??= { rate_limited: 0, skipped: 0, failed: 0, other_pending: 0 };
+        byLang[r.target_language][cat]++;
+        const aKey = String(r.attempts ?? 0);
+        byAttempts[aKey] ??= { rate_limited: 0, skipped: 0, failed: 0, other_pending: 0 };
+        byAttempts[aKey][cat]++;
+        const dEntry = byDoc.get(r.document_id) ?? {
+          document_id: r.document_id,
+          title: titleById.get(r.document_id) ?? "(unknown)",
+          rate_limited: 0, skipped: 0, failed: 0, other_pending: 0,
+          max_attempts: 0, sample_error: null,
+        };
+        dEntry[cat]++;
+        dEntry.max_attempts = Math.max(dEntry.max_attempts, r.attempts ?? 0);
+        if (!dEntry.sample_error && r.last_error) dEntry.sample_error = r.last_error;
+        byDoc.set(r.document_id, dEntry);
+        if (r.last_error) {
+          // Normalise: drop trailing chunk-specific identifiers / numbers
+          const key = r.last_error.replace(/\b\d+\b/g, "N").slice(0, 160);
+          errorTally.set(key, (errorTally.get(key) ?? 0) + 1);
+        }
+      }
+
+      const documents = Array.from(byDoc.values())
+        .sort((a, b) => (b.failed + b.rate_limited) - (a.failed + a.rate_limited))
+        .slice(0, 50);
+      const top_errors = Array.from(errorTally.entries())
+        .map(([message, count]) => ({ message, count }))
+        .sort((a, b) => b.count - a.count).slice(0, 10);
+
+      return new Response(JSON.stringify({
+        ok: true,
+        total_rows: rows.length,
+        by_language: byLang,
+        by_attempts: byAttempts,
+        documents,
+        top_errors,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (action === "retry") {
+      // Reset matching rows back to `pending` so the worker picks them up again.
+      // Optional filters: document_id, target_language, category ("rate_limited"|"failed"|"all_failed")
+      const docId = body?.document_id ? String(body.document_id) : null;
+      const lang = body?.target_language ? String(body.target_language) : null;
+      const category = String(body?.category ?? "all_failed");
+
+      let q = admin.from("translation_seed_queue")
+        .update({ status: "pending", started_at: null, delayed_until: null, attempts: 0, last_error: null })
+        .eq("status", "failed");
+      if (docId) q = q.eq("document_id", docId);
+      if (lang) q = q.eq("target_language", lang);
+      if (category === "rate_limited") q = q.ilike("last_error", "rate-limited%");
+      // category "failed" → exclude rate-limited
+      if (category === "failed") q = q.not("last_error", "ilike", "rate-limited%");
+
+      const { data, error } = await q.select("id");
+      if (error) throw error;
+      return new Response(JSON.stringify({ ok: true, retried: data?.length ?? 0 }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // status
     const [pendingQ, processingQ, doneQ, failedQ, stateQ] = await Promise.all([
       admin.from("translation_seed_queue").select("id", { count: "exact", head: true }).eq("status", "pending"),
