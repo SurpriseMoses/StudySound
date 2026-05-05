@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Languages, Sparkles, RefreshCw, Play, Pause, ListPlus, AlertCircle, Trash2 } from "lucide-react";
+import { Loader2, Languages, RefreshCw, Play, Pause, ListPlus, AlertCircle, Trash2, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -35,6 +36,19 @@ type QueueStatus = {
   } | null;
 };
 
+type Category = "rate_limited" | "skipped" | "failed" | "other_pending";
+type Breakdown = {
+  total_rows: number;
+  by_language: Record<string, Record<Category, number>>;
+  by_attempts: Record<string, Record<Category, number>>;
+  documents: Array<{
+    document_id: string; title: string;
+    rate_limited: number; skipped: number; failed: number; other_pending: number;
+    max_attempts: number; sample_error: string | null;
+  }>;
+  top_errors: Array<{ message: string; count: number }>;
+};
+
 const statusColors: Record<SeedDoc["translation_status"], string> = {
   pending: "bg-muted text-muted-foreground",
   processing: "bg-primary/10 text-primary",
@@ -49,7 +63,44 @@ export default function AdminSeedTranslations() {
   const [enqueuingDoc, setEnqueuingDoc] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [togglingDoc, setTogglingDoc] = useState<string | null>(null);
+  const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
+  const [breakdownOpen, setBreakdownOpen] = useState(true);
+  const [loadingBreakdown, setLoadingBreakdown] = useState(false);
   const tickRef = useRef<number | null>(null);
+
+  async function loadBreakdown() {
+    setLoadingBreakdown(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("seed-translation-manager", {
+        body: { action: "breakdown" },
+      });
+      if (error) throw error;
+      setBreakdown({
+        total_rows: data.total_rows,
+        by_language: data.by_language ?? {},
+        by_attempts: data.by_attempts ?? {},
+        documents: data.documents ?? [],
+        top_errors: data.top_errors ?? [],
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingBreakdown(false);
+    }
+  }
+
+  async function retryRows(filters: { document_id?: string; target_language?: string; category?: "rate_limited" | "failed" | "all_failed" }) {
+    try {
+      const { data, error } = await supabase.functions.invoke("seed-translation-manager", {
+        body: { action: "retry", ...filters },
+      });
+      if (error) throw error;
+      toast.success(`Re-queued ${data?.retried ?? 0} rows.`);
+      await Promise.all([loadBreakdown(), loadQueueStatus()]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   async function loadDocs() {
     const { data: docRows, error } = await supabase
@@ -95,7 +146,7 @@ export default function AdminSeedTranslations() {
 
   async function refreshAll() {
     setLoading(true);
-    await Promise.all([loadDocs(), loadQueueStatus()]);
+    await Promise.all([loadDocs(), loadQueueStatus(), loadBreakdown()]);
     setLoading(false);
   }
 
@@ -110,7 +161,7 @@ export default function AdminSeedTranslations() {
     if (tickRef.current) return;
     tickRef.current = window.setInterval(async () => {
       supabase.functions.invoke("seed-translation-worker", { body: {} }).catch(() => {});
-      await Promise.all([loadDocs(), loadQueueStatus()]);
+      await Promise.all([loadDocs(), loadQueueStatus(), loadBreakdown()]);
     }, 8000);
     return () => {
       if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
@@ -278,6 +329,194 @@ export default function AdminSeedTranslations() {
             )}
           </div>
         </CardContent>
+      </Card>
+
+      <Card>
+        <Collapsible open={breakdownOpen} onOpenChange={setBreakdownOpen}>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5" /> Retry & error breakdown
+                </CardTitle>
+                <CardDescription>
+                  Rate-limited, failed, and skipped chunks broken down by target language and attempt count.
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button onClick={loadBreakdown} variant="ghost" size="sm" disabled={loadingBreakdown}>
+                  {loadingBreakdown
+                    ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
+                  Refresh
+                </Button>
+                <Button
+                  onClick={() => retryRows({ category: "all_failed" })}
+                  variant="outline" size="sm"
+                  disabled={!breakdown || (breakdown.documents.reduce((s, d) => s + d.failed + d.rate_limited, 0) === 0)}
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                  Retry all failed
+                </Button>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    {breakdownOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
+            </div>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="space-y-6">
+              {!breakdown ? (
+                <div className="flex items-center justify-center py-8 text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading breakdown…
+                </div>
+              ) : breakdown.total_rows === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  No retried, failed, or skipped rows. 🎉
+                </p>
+              ) : (
+                <>
+                  {/* By language */}
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                      By target language
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-xs text-muted-foreground border-b">
+                            <th className="py-1.5 pr-3">Language</th>
+                            <th className="py-1.5 px-2 text-right">Rate-limited</th>
+                            <th className="py-1.5 px-2 text-right">Failed</th>
+                            <th className="py-1.5 px-2 text-right">Skipped</th>
+                            <th className="py-1.5 px-2 text-right">Other</th>
+                            <th className="py-1.5 pl-2 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {TARGET_LANGS.map((l) => {
+                            const r = breakdown.by_language[l] ?? { rate_limited: 0, failed: 0, skipped: 0, other_pending: 0 };
+                            return (
+                              <tr key={l} className="border-b last:border-b-0">
+                                <td className="py-1.5 pr-3 font-medium">{LANG_LABEL[l]}</td>
+                                <td className="py-1.5 px-2 text-right font-mono">{r.rate_limited}</td>
+                                <td className="py-1.5 px-2 text-right font-mono">{r.failed}</td>
+                                <td className="py-1.5 px-2 text-right font-mono">{r.skipped}</td>
+                                <td className="py-1.5 px-2 text-right font-mono text-muted-foreground">{r.other_pending}</td>
+                                <td className="py-1.5 pl-2 text-right">
+                                  <Button
+                                    size="sm" variant="ghost"
+                                    disabled={r.rate_limited + r.failed === 0}
+                                    onClick={() => retryRows({ target_language: l, category: "all_failed" })}
+                                  >
+                                    <RotateCcw className="w-3 h-3 mr-1" /> Retry
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* By attempts */}
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                      By attempt count
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                      {Object.keys(breakdown.by_attempts)
+                        .sort((a, b) => Number(a) - Number(b))
+                        .map((k) => {
+                          const r = breakdown.by_attempts[k];
+                          const total = r.rate_limited + r.failed + r.skipped + r.other_pending;
+                          return (
+                            <div key={k} className="border rounded p-2 text-xs">
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium">attempt {k}</span>
+                                <span className="font-mono text-muted-foreground">{total}</span>
+                              </div>
+                              <div className="mt-1 space-y-0.5 text-muted-foreground">
+                                <div className="flex justify-between"><span>rate-limited</span><span className="font-mono">{r.rate_limited}</span></div>
+                                <div className="flex justify-between"><span>failed</span><span className="font-mono">{r.failed}</span></div>
+                                <div className="flex justify-between"><span>skipped</span><span className="font-mono">{r.skipped}</span></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+
+                  {/* Per-document */}
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                      Top documents with issues
+                    </div>
+                    <div className="space-y-2">
+                      {breakdown.documents.map((d) => (
+                        <div key={d.document_id} className="border rounded-lg p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="font-medium truncate">{d.title}</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {d.rate_limited > 0 && (
+                                <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                                  rate-limited {d.rate_limited}
+                                </Badge>
+                              )}
+                              {d.failed > 0 && (
+                                <Badge variant="secondary" className="bg-destructive/15 text-destructive">
+                                  failed {d.failed}
+                                </Badge>
+                              )}
+                              {d.skipped > 0 && (
+                                <Badge variant="secondary" className="bg-muted text-muted-foreground">
+                                  skipped {d.skipped}
+                                </Badge>
+                              )}
+                              <Badge variant="outline" className="font-mono">max {d.max_attempts} attempts</Badge>
+                              <Button
+                                size="sm" variant="outline"
+                                disabled={d.rate_limited + d.failed === 0}
+                                onClick={() => retryRows({ document_id: d.document_id, category: "all_failed" })}
+                              >
+                                <RotateCcw className="w-3 h-3 mr-1" /> Retry
+                              </Button>
+                            </div>
+                          </div>
+                          {d.sample_error && (
+                            <div className="text-xs text-muted-foreground font-mono truncate" title={d.sample_error}>
+                              {d.sample_error}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Top error messages */}
+                  {breakdown.top_errors.length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                        Top error messages
+                      </div>
+                      <div className="space-y-1">
+                        {breakdown.top_errors.map((e, i) => (
+                          <div key={i} className="flex items-start justify-between gap-3 text-xs border rounded px-2 py-1">
+                            <span className="font-mono truncate flex-1" title={e.message}>{e.message}</span>
+                            <span className="font-mono text-muted-foreground shrink-0">×{e.count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
       </Card>
 
       <Card>
