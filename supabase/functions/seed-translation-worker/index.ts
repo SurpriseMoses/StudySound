@@ -417,6 +417,16 @@ Deno.serve(async (req) => {
       if (INTER_CHUNK_DELAY_MS > 0) await sleep(INTER_CHUNK_DELAY_MS);
     }
 
+    // Release the soft lock when this invocation exits cleanly. If the
+    // function crashes, the heartbeat remains and LOCK_TIMEOUT_MS still lets a
+    // later cron tick recover after it goes stale.
+    await admin.from("translation_worker_state").update({
+      current_queue_id: null,
+      current_document_id: null,
+      current_language: null,
+      last_heartbeat: null,
+    }).eq("id", 1);
+
     return new Response(JSON.stringify({ ok: true, processed, ms: Date.now() - startedAt }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
