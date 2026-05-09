@@ -73,6 +73,7 @@ const App = () => (
               <Route path="documents" element={<AdminDocuments />} />
               <Route path="top-documents" element={<AdminTopDocuments />} />
               <Route path="pipeline" element={<AdminPipeline />} />
+              <Route path="seeding-status" element={<AdminSeedingStatus />} />
               <Route path="seed-audio" element={<AdminSeedAudio />} />
               <Route path="seed-translations" element={<AdminSeedTranslations />} />
               <Route path="users" element={<AdminUsers />} />
