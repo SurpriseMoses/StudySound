@@ -31,6 +31,7 @@ import AdminTopDocuments from "./pages/admin/AdminTopDocuments";
 import AdminSeedAudio from "./pages/admin/AdminSeedAudio";
 import AdminSeedTranslations from "./pages/admin/AdminSeedTranslations";
 import AdminPipeline from "./pages/admin/AdminPipeline";
+import AdminSeedingStatus from "./pages/admin/AdminSeedingStatus";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
