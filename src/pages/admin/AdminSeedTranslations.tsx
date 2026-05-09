@@ -20,6 +20,7 @@ type SeedDoc = {
   char_count: number;
   seed_translation: boolean;
   translation_status: "pending" | "processing" | "done" | "failed";
+  queue_counts: { pending: number; processing: number; done: number; failed: number };
   cached_per_lang: Record<string, number>;
   total_chunks_est: number;
 };
@@ -111,16 +112,29 @@ export default function AdminSeedTranslations() {
     if (error) { toast.error(error.message); return; }
     const ids = (docRows ?? []).map((d) => d.id);
     const cachedByDocLang = new Map<string, Record<string, number>>();
+    const queueByDoc = new Map<string, SeedDoc["queue_counts"]>();
     if (ids.length > 0) {
-      const { data: assets } = await supabase
-        .from("translation_assets")
-        .select("document_id, target_language")
-        .in("document_id", ids)
-        .in("target_language", TARGET_LANGS as unknown as string[]);
+      const [{ data: assets }, { data: queueRows }] = await Promise.all([
+        supabase
+          .from("translation_assets")
+          .select("document_id, target_language")
+          .in("document_id", ids)
+          .in("target_language", TARGET_LANGS as unknown as string[]),
+        supabase
+          .from("translation_seed_queue")
+          .select("document_id, status")
+          .in("document_id", ids),
+      ]);
       (assets ?? []).forEach((a) => {
         const m = cachedByDocLang.get(a.document_id) ?? {};
         m[a.target_language] = (m[a.target_language] ?? 0) + 1;
         cachedByDocLang.set(a.document_id, m);
+      });
+      (queueRows ?? []).forEach((row) => {
+        const counts = queueByDoc.get(row.document_id) ?? { pending: 0, processing: 0, done: 0, failed: 0 };
+        const status = row.status as keyof SeedDoc["queue_counts"];
+        if (status in counts) counts[status] += 1;
+        queueByDoc.set(row.document_id, counts);
       });
     }
     setDocs(
@@ -130,6 +144,7 @@ export default function AdminSeedTranslations() {
         char_count: d.char_count,
         seed_translation: !!d.seed_translation,
         translation_status: (d.translation_status ?? "pending") as SeedDoc["translation_status"],
+        queue_counts: queueByDoc.get(d.id) ?? { pending: 0, processing: 0, done: 0, failed: 0 },
         cached_per_lang: cachedByDocLang.get(d.id) ?? {},
         total_chunks_est: Math.max(1, Math.ceil((d.char_count || 0) / 700)),
       })),
@@ -539,15 +554,14 @@ export default function AdminSeedTranslations() {
                 const isCurrent = queueStatus?.worker?.current_document_id === d.id;
                 const totalCells = d.total_chunks_est * TARGET_LANGS.length;
                 const totalCached = TARGET_LANGS.reduce((s, l) => s + (d.cached_per_lang[l] ?? 0), 0);
-                const pct = Math.min(100, Math.round((totalCached / totalCells) * 100));
-                // Derive a display status from actual cache + current worker activity,
-                // not the stale global `translation_status` field on the document row.
+                const queueOutstanding = d.queue_counts.pending + d.queue_counts.processing + d.queue_counts.failed;
+                const hasQueueHistory = Object.values(d.queue_counts).some((count) => count > 0);
                 const displayStatus: SeedDoc["translation_status"] =
-                  isCurrent ? "processing"
-                  : totalCached >= totalCells && totalCells > 0 ? "done"
-                  : totalCached > 0 ? "processing"
-                  : !d.seed_translation ? "pending"
+                  d.translation_status === "done" || (d.seed_translation && hasQueueHistory && queueOutstanding === 0) ? "done"
+                  : d.queue_counts.failed > 0 || d.translation_status === "failed" ? "failed"
+                  : isCurrent || d.queue_counts.pending > 0 || d.queue_counts.processing > 0 || d.translation_status === "processing" ? "processing"
                   : "pending";
+                const pct = displayStatus === "done" ? 100 : Math.min(100, Math.round((totalCached / totalCells) * 100));
                 return (
                   <div key={d.id} className={`border rounded-lg p-4 space-y-2 ${isCurrent ? "border-primary/50 bg-primary/5" : ""}`}>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
