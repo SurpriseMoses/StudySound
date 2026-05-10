@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, Upload, Trash2, ImageIcon } from "lucide-react";
+import { Loader2, Upload, Trash2, ImageIcon, FileStack, X, CheckCircle2, AlertCircle } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 
 const TOTAL_SCENES = 4; // scene_index 0..3 (0 is free preview, 1..3 paid)
 
