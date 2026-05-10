@@ -32,6 +32,7 @@ import AdminSeedAudio from "./pages/admin/AdminSeedAudio";
 import AdminSeedTranslations from "./pages/admin/AdminSeedTranslations";
 import AdminPipeline from "./pages/admin/AdminPipeline";
 import AdminSeedingStatus from "./pages/admin/AdminSeedingStatus";
+import AdminVisuals from "./pages/admin/AdminVisuals";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -76,6 +77,7 @@ const App = () => (
               <Route path="seeding-status" element={<AdminSeedingStatus />} />
               <Route path="seed-audio" element={<AdminSeedAudio />} />
               <Route path="seed-translations" element={<AdminSeedTranslations />} />
+              <Route path="visuals" element={<AdminVisuals />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="economy" element={<AdminEconomy />} />
               <Route path="abuse" element={<AdminAbuse />} />
