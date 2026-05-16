@@ -770,23 +770,34 @@ Deno.serve(async (req) => {
         .eq("user_id", authedUserId)
         .maybeSingle();
       const balance = profile?.credits_balance ?? 0;
-      if (balance < 1) {
+
+      // Cache-first free access: if the audio is already cached, serve it
+      // without charging credits. This guarantees that any pre-seeded chunk
+      // is playable for everyone (useful for testing and demos) and only
+      // brand-new generations consume credits.
+      const cacheHit = !!cached;
+
+      if (!cacheHit && balance < 1) {
         return new Response(JSON.stringify({ error: "Insufficient credits", credits_balance: balance }), {
           status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      await admin
-        .from("profiles")
-        .update({ credits_balance: balance - 1 })
-        .eq("user_id", authedUserId);
+
+      const creditsToCharge = cacheHit ? 0 : 1;
+      if (creditsToCharge > 0) {
+        await admin
+          .from("profiles")
+          .update({ credits_balance: balance - creditsToCharge })
+          .eq("user_id", authedUserId);
+      }
       await admin.from("user_chunk_access").insert({
         user_id: authedUserId,
         document_id: doc.id,
         chunk_index,
         language: lang,
         asset_type: "audio",
-        credits_charged: 1,
+        credits_charged: creditsToCharge,
         voice_name: voiceName,
         speaking_style: speakingStyle,
       });
@@ -794,10 +805,10 @@ Deno.serve(async (req) => {
         user_id: authedUserId,
         document_id: doc.id,
         action_type: "audio",
-        credits_used: 1,
+        credits_used: creditsToCharge,
         request_id: `audio-${doc.id}-${lang}-${voiceName}-${speakingStyle}-${chunk_index}-${authedUserId}`,
       });
-      chargedCredits = 1;
+      chargedCredits = creditsToCharge;
     }
 
     let storagePath: string;
