@@ -335,17 +335,30 @@ async function ttsAzureWithFallback(
   text: string,
   lang: string,
   primaryVoice: string,
-  apiKey: string,
+  apiKey: string | undefined,
   mode: "story" | "study",
-): Promise<{ audio: ArrayBuffer; voiceUsed: string; voiceLang: string }> {
+  elevenKey?: string,
+): Promise<{ audio: ArrayBuffer; voiceUsed: string; voiceLang: string; providerUsed: "azure" | "elevenlabs" }> {
+  const isAuthError = (status: number | undefined) => status === 401 || status === 403;
   const isVoiceError = (status: number | undefined) =>
     !!status && status >= 400 && status < 500 && status !== 429;
+
+  const tryEleven = async (reason: string) => {
+    if (!elevenKey) throw new Error(`No ElevenLabs key for fallback (${reason})`);
+    console.warn(`[audio] falling back to ElevenLabs (${reason})`);
+    const audio = await ttsElevenLabs(text, elevenKey);
+    return { audio, voiceUsed: ELEVEN_VOICE_ID, voiceLang: lang, providerUsed: "elevenlabs" as const };
+  };
+
+  // If Azure key is missing entirely, go straight to ElevenLabs.
+  if (!apiKey) return tryEleven("azure key missing");
 
   // 1. Try the requested voice for the target language.
   try {
     const audio = await ttsAzure(text, lang, primaryVoice, apiKey, mode);
-    return { audio, voiceUsed: primaryVoice, voiceLang: lang };
+    return { audio, voiceUsed: primaryVoice, voiceLang: lang, providerUsed: "azure" };
   } catch (err: any) {
+    if (isAuthError(err?.status)) return tryEleven(`azure ${err.status}`);
     if (!isVoiceError(err?.status)) throw err;
     console.warn(`[audio] primary voice ${primaryVoice} (${lang}) failed (status ${err.status})`);
   }
@@ -356,20 +369,25 @@ async function ttsAzureWithFallback(
     try {
       const audio = await ttsAzure(text, lang, sameLangFallback, apiKey, mode);
       console.warn(`[audio] using same-language fallback voice ${sameLangFallback}`);
-      return { audio, voiceUsed: sameLangFallback, voiceLang: lang };
+      return { audio, voiceUsed: sameLangFallback, voiceLang: lang, providerUsed: "azure" };
     } catch (err: any) {
+      if (isAuthError(err?.status)) return tryEleven(`azure ${err.status}`);
       if (!isVoiceError(err?.status)) throw err;
       console.warn(`[audio] same-language fallback ${sameLangFallback} failed (status ${err.status})`);
     }
   }
 
-  // 3. Final fallback: English narrator (story or study) so audio still plays.
+  // 3. English narrator (story or study).
   const englishVoice = mode === "story"
     ? (VOICE_CONFIG.en.literature ?? VOICE_CONFIG.en.default)
     : VOICE_CONFIG.en.default;
   console.warn(`[audio] falling back to English voice ${englishVoice} for lang=${lang}`);
-  const audio = await ttsAzure(text, "en", englishVoice, apiKey, mode);
-  return { audio, voiceUsed: englishVoice, voiceLang: "en" };
+  try {
+    const audio = await ttsAzure(text, "en", englishVoice, apiKey, mode);
+    return { audio, voiceUsed: englishVoice, voiceLang: "en", providerUsed: "azure" };
+  } catch (err: any) {
+    return tryEleven(`azure english fallback failed (status ${err?.status ?? "?"})`);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -449,7 +467,7 @@ Deno.serve(async (req) => {
     const mode: "story" | "study" = isLiterature ? "story" : "study";
 
     const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
-    const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
+    let provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
     // If the requested language has no native voice config, fall back to the
     // English narrator so audio still plays in an English accent rather than
     // erroring out. Text content is already translated upstream.
@@ -523,7 +541,7 @@ Deno.serve(async (req) => {
         console.log("Preview audio: generating via Azure", { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
         const text = previewText;
         const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
-        if (!apiKey) {
+        if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
           return new Response(
             JSON.stringify({ success: false, preview: true, error: `${provider} API key not configured`, code: "TTS_NOT_CONFIGURED" }),
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -531,9 +549,10 @@ Deno.serve(async (req) => {
         }
         const ttsResult =
           provider === "azure"
-            ? await ttsAzureWithFallback(text, lang, voiceName, apiKey, mode)
-            : { audio: await ttsElevenLabs(text, apiKey), voiceUsed: voiceName };
+            ? await ttsAzureWithFallback(text, lang, voiceName, apiKey, mode, ELEVEN_KEY)
+            : { audio: await ttsElevenLabs(text, apiKey!), voiceUsed: voiceName, providerUsed: "elevenlabs" as const };
         voiceName = ttsResult.voiceUsed;
+        if ((ttsResult as any).providerUsed) provider = (ttsResult as any).providerUsed;
         const audio = ttsResult.audio;
         const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
         const { error: upErr } = await admin.storage
@@ -856,18 +875,24 @@ Deno.serve(async (req) => {
       reused = true;
     } else {
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
-      if (!apiKey) throw new Error(`${provider} API key not configured`);
+      if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
+        throw new Error(`${provider} API key not configured`);
+      }
       let audio: ArrayBuffer;
       try {
         if (provider === "azure") {
-          const result = await ttsAzureWithFallback(ttsText, lang, voiceName, apiKey, mode);
+          const result = await ttsAzureWithFallback(ttsText, lang, voiceName, apiKey, mode, ELEVEN_KEY);
           audio = result.audio;
+          if (result.providerUsed !== provider) {
+            console.warn(`[audio] provider fallback ${provider} -> ${result.providerUsed} for lang=${lang}`);
+            provider = result.providerUsed;
+          }
           if (result.voiceUsed !== voiceName) {
             console.warn(`[audio] voice fallback ${voiceName} -> ${result.voiceUsed} for lang=${lang}`);
             voiceName = result.voiceUsed;
           }
         } else {
-          audio = await ttsElevenLabs(ttsText, apiKey);
+          audio = await ttsElevenLabs(ttsText, apiKey!);
         }
       } catch (error) {
         const details = error instanceof Error ? error.message : "Audio generation failed";
