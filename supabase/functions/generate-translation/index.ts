@@ -581,34 +581,42 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3) Charge credits if user hasn't unlocked this chunk yet
+    // 3) Charge credits if user hasn't unlocked this chunk yet.
+    // Cache-first free access: if the translation was already cached (served
+    // from translation_assets without regenerating), grant access without
+    // charging credits. Brand-new generations still cost CREDITS_PER_CHUNK.
     let creditsCharged = 0;
+    const servedFromCache = !!cached;
     if (!alreadyPaid) {
-      if (balance < CREDITS_PER_CHUNK) {
+      const requireCredits = !servedFromCache;
+      if (requireCredits && balance < CREDITS_PER_CHUNK) {
         return new Response(JSON.stringify({
           error: "Insufficient credits", credits_balance: balance, credits_required: CREDITS_PER_CHUNK,
         }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      const chargeAmount = requireCredits ? CREDITS_PER_CHUNK : 0;
       const { error: accessErr } = await admin.from("user_translation_access").insert({
         user_id: userId, document_id: documentId, chunk_index: idx,
-        target_language, credits_charged: CREDITS_PER_CHUNK,
+        target_language, credits_charged: chargeAmount,
       });
 
       if (!accessErr) {
-        creditsCharged = CREDITS_PER_CHUNK;
-        await admin.from("profiles")
-          .update({ credits_balance: balance - CREDITS_PER_CHUNK })
-          .eq("user_id", userId);
+        creditsCharged = chargeAmount;
+        if (chargeAmount > 0) {
+          await admin.from("profiles")
+            .update({ credits_balance: balance - chargeAmount })
+            .eq("user_id", userId);
+        }
 
         // Log usage ledger
         await admin.from("user_usage").insert({
           user_id: userId, action_type: "audio", document_id: documentId,
-          credits_used: CREDITS_PER_CHUNK,
+          credits_used: chargeAmount,
           request_id: `translate:${documentId}:${idx}:${target_language}`,
         }).then(() => {}, () => {});
 
-        // Rate-limit log (only on accepted, charged requests)
+        // Rate-limit log (only on accepted requests)
         await admin.from("translation_rate_log").insert({
           user_id: userId, document_id: documentId,
           chunk_index: idx, target_language,
