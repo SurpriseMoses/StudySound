@@ -467,7 +467,7 @@ Deno.serve(async (req) => {
     const mode: "story" | "study" = isLiterature ? "story" : "study";
 
     const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
-    const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
+    let provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
     // If the requested language has no native voice config, fall back to the
     // English narrator so audio still plays in an English accent rather than
     // erroring out. Text content is already translated upstream.
