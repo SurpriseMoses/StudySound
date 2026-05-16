@@ -335,17 +335,30 @@ async function ttsAzureWithFallback(
   text: string,
   lang: string,
   primaryVoice: string,
-  apiKey: string,
+  apiKey: string | undefined,
   mode: "story" | "study",
-): Promise<{ audio: ArrayBuffer; voiceUsed: string; voiceLang: string }> {
+  elevenKey?: string,
+): Promise<{ audio: ArrayBuffer; voiceUsed: string; voiceLang: string; providerUsed: "azure" | "elevenlabs" }> {
+  const isAuthError = (status: number | undefined) => status === 401 || status === 403;
   const isVoiceError = (status: number | undefined) =>
     !!status && status >= 400 && status < 500 && status !== 429;
+
+  const tryEleven = async (reason: string) => {
+    if (!elevenKey) throw new Error(`No ElevenLabs key for fallback (${reason})`);
+    console.warn(`[audio] falling back to ElevenLabs (${reason})`);
+    const audio = await ttsElevenLabs(text, elevenKey);
+    return { audio, voiceUsed: ELEVEN_VOICE_ID, voiceLang: lang, providerUsed: "elevenlabs" as const };
+  };
+
+  // If Azure key is missing entirely, go straight to ElevenLabs.
+  if (!apiKey) return tryEleven("azure key missing");
 
   // 1. Try the requested voice for the target language.
   try {
     const audio = await ttsAzure(text, lang, primaryVoice, apiKey, mode);
-    return { audio, voiceUsed: primaryVoice, voiceLang: lang };
+    return { audio, voiceUsed: primaryVoice, voiceLang: lang, providerUsed: "azure" };
   } catch (err: any) {
+    if (isAuthError(err?.status)) return tryEleven(`azure ${err.status}`);
     if (!isVoiceError(err?.status)) throw err;
     console.warn(`[audio] primary voice ${primaryVoice} (${lang}) failed (status ${err.status})`);
   }
@@ -356,20 +369,25 @@ async function ttsAzureWithFallback(
     try {
       const audio = await ttsAzure(text, lang, sameLangFallback, apiKey, mode);
       console.warn(`[audio] using same-language fallback voice ${sameLangFallback}`);
-      return { audio, voiceUsed: sameLangFallback, voiceLang: lang };
+      return { audio, voiceUsed: sameLangFallback, voiceLang: lang, providerUsed: "azure" };
     } catch (err: any) {
+      if (isAuthError(err?.status)) return tryEleven(`azure ${err.status}`);
       if (!isVoiceError(err?.status)) throw err;
       console.warn(`[audio] same-language fallback ${sameLangFallback} failed (status ${err.status})`);
     }
   }
 
-  // 3. Final fallback: English narrator (story or study) so audio still plays.
+  // 3. English narrator (story or study).
   const englishVoice = mode === "story"
     ? (VOICE_CONFIG.en.literature ?? VOICE_CONFIG.en.default)
     : VOICE_CONFIG.en.default;
   console.warn(`[audio] falling back to English voice ${englishVoice} for lang=${lang}`);
-  const audio = await ttsAzure(text, "en", englishVoice, apiKey, mode);
-  return { audio, voiceUsed: englishVoice, voiceLang: "en" };
+  try {
+    const audio = await ttsAzure(text, "en", englishVoice, apiKey, mode);
+    return { audio, voiceUsed: englishVoice, voiceLang: "en", providerUsed: "azure" };
+  } catch (err: any) {
+    return tryEleven(`azure english fallback failed (status ${err?.status ?? "?"})`);
+  }
 }
 
 Deno.serve(async (req) => {
