@@ -327,8 +327,8 @@ async function ttsAzure(text: string, lang: string, voice: string, apiKey: strin
 
 /**
  * Try the requested voice (literature or default). If it fails with a voice/SSML
- * error (4xx that isn't 429), retry once with the language's default voice.
- * If THAT fails too, surface the error rather than silently switching to English.
+ * error, retry with the language's default voice, then finally fall back to
+ * the English narrator so playback is never blocked by an unsupported voice.
  * Returns { audio, voiceUsed }.
  */
 async function ttsAzureWithFallback(
@@ -337,38 +337,39 @@ async function ttsAzureWithFallback(
   primaryVoice: string,
   apiKey: string,
   mode: "story" | "study",
-): Promise<{ audio: ArrayBuffer; voiceUsed: string }> {
+): Promise<{ audio: ArrayBuffer; voiceUsed: string; voiceLang: string }> {
+  const isVoiceError = (status: number | undefined) =>
+    !!status && status >= 400 && status < 500 && status !== 429;
+
+  // 1. Try the requested voice for the target language.
   try {
     const audio = await ttsAzure(text, lang, primaryVoice, apiKey, mode);
-    return { audio, voiceUsed: primaryVoice };
+    return { audio, voiceUsed: primaryVoice, voiceLang: lang };
   } catch (err: any) {
-    const status = err?.status;
-    const isVoiceError = status && status >= 400 && status < 500 && status !== 429;
-    const fallback = pickFallbackVoice(lang);
-    if (isVoiceError && fallback && fallback !== primaryVoice) {
-      console.warn(`[audio] primary voice ${primaryVoice} failed (status ${status}); falling back to ${fallback}`);
-      try {
-        const audio = await ttsAzure(text, lang, fallback, apiKey, mode);
-        return { audio, voiceUsed: fallback };
-      } catch (err2: any) {
-        const status2 = err2?.status;
-        if (status2 && status2 >= 400 && status2 < 500 && status2 !== 429) {
-          const unsupportedError: any = new Error(`Voice not available for selected language: ${lang}`);
-          unsupportedError.code = "VOICE_UNSUPPORTED";
-          unsupportedError.fallback = true;
-          throw unsupportedError;
-        }
-        throw err2;
-      }
-    }
-    if (isVoiceError) {
-      const unsupportedError: any = new Error(`Voice not available for selected language: ${lang}`);
-      unsupportedError.code = "VOICE_UNSUPPORTED";
-      unsupportedError.fallback = true;
-      throw unsupportedError;
-    }
-    throw err;
+    if (!isVoiceError(err?.status)) throw err;
+    console.warn(`[audio] primary voice ${primaryVoice} (${lang}) failed (status ${err.status})`);
   }
+
+  // 2. Try the language's default voice (if different from primary).
+  const sameLangFallback = pickFallbackVoice(lang);
+  if (sameLangFallback && sameLangFallback !== primaryVoice) {
+    try {
+      const audio = await ttsAzure(text, lang, sameLangFallback, apiKey, mode);
+      console.warn(`[audio] using same-language fallback voice ${sameLangFallback}`);
+      return { audio, voiceUsed: sameLangFallback, voiceLang: lang };
+    } catch (err: any) {
+      if (!isVoiceError(err?.status)) throw err;
+      console.warn(`[audio] same-language fallback ${sameLangFallback} failed (status ${err.status})`);
+    }
+  }
+
+  // 3. Final fallback: English narrator (story or study) so audio still plays.
+  const englishVoice = mode === "story"
+    ? (VOICE_CONFIG.en.literature ?? VOICE_CONFIG.en.default)
+    : VOICE_CONFIG.en.default;
+  console.warn(`[audio] falling back to English voice ${englishVoice} for lang=${lang}`);
+  const audio = await ttsAzure(text, "en", englishVoice, apiKey, mode);
+  return { audio, voiceUsed: englishVoice, voiceLang: "en" };
 }
 
 Deno.serve(async (req) => {
@@ -449,13 +450,13 @@ Deno.serve(async (req) => {
 
     const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
     const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
-    if (!VOICE_CONFIG[lang] && provider === "azure") {
-      return new Response(
-        JSON.stringify({ error: `Voice not available for selected language: ${lang}`, code: "VOICE_UNSUPPORTED" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-    let voiceName = provider === "azure" ? pickVoice(lang, isLiterature) : "elevenlabs-multilingual";
+    // If the requested language has no native voice config, fall back to the
+    // English narrator so audio still plays in an English accent rather than
+    // erroring out. Text content is already translated upstream.
+    const hasNativeVoice = !!VOICE_CONFIG[lang];
+    let voiceName = provider === "azure"
+      ? (hasNativeVoice ? pickVoice(lang, isLiterature) : pickVoice("en", isLiterature))
+      : "elevenlabs-multilingual";
     const speakingStyle = mode === "story" ? "narration-professional" : "general";
     console.log(`[audio] route lang=${lang} subject=${doc.subject_type} literature=${isLiterature} voice=${voiceName} style=${speakingStyle}`);
 
