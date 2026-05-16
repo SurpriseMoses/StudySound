@@ -450,13 +450,13 @@ Deno.serve(async (req) => {
 
     const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
     const provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
-    if (!VOICE_CONFIG[lang] && provider === "azure") {
-      return new Response(
-        JSON.stringify({ error: `Voice not available for selected language: ${lang}`, code: "VOICE_UNSUPPORTED" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-    let voiceName = provider === "azure" ? pickVoice(lang, isLiterature) : "elevenlabs-multilingual";
+    // If the requested language has no native voice config, fall back to the
+    // English narrator so audio still plays in an English accent rather than
+    // erroring out. Text content is already translated upstream.
+    const hasNativeVoice = !!VOICE_CONFIG[lang];
+    let voiceName = provider === "azure"
+      ? (hasNativeVoice ? pickVoice(lang, isLiterature) : pickVoice("en", isLiterature))
+      : "elevenlabs-multilingual";
     const speakingStyle = mode === "story" ? "narration-professional" : "general";
     console.log(`[audio] route lang=${lang} subject=${doc.subject_type} literature=${isLiterature} voice=${voiceName} style=${speakingStyle}`);
 
