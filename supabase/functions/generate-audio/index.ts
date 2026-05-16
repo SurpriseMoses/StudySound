@@ -875,18 +875,24 @@ Deno.serve(async (req) => {
       reused = true;
     } else {
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
-      if (!apiKey) throw new Error(`${provider} API key not configured`);
+      if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
+        throw new Error(`${provider} API key not configured`);
+      }
       let audio: ArrayBuffer;
       try {
         if (provider === "azure") {
-          const result = await ttsAzureWithFallback(ttsText, lang, voiceName, apiKey, mode);
+          const result = await ttsAzureWithFallback(ttsText, lang, voiceName, apiKey, mode, ELEVEN_KEY);
           audio = result.audio;
+          if (result.providerUsed !== provider) {
+            console.warn(`[audio] provider fallback ${provider} -> ${result.providerUsed} for lang=${lang}`);
+            provider = result.providerUsed;
+          }
           if (result.voiceUsed !== voiceName) {
             console.warn(`[audio] voice fallback ${voiceName} -> ${result.voiceUsed} for lang=${lang}`);
             voiceName = result.voiceUsed;
           }
         } else {
-          audio = await ttsElevenLabs(ttsText, apiKey);
+          audio = await ttsElevenLabs(ttsText, apiKey!);
         }
       } catch (error) {
         const details = error instanceof Error ? error.message : "Audio generation failed";
