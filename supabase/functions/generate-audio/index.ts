@@ -541,7 +541,7 @@ Deno.serve(async (req) => {
         console.log("Preview audio: generating via Azure", { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
         const text = previewText;
         const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
-        if (!apiKey) {
+        if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
           return new Response(
             JSON.stringify({ success: false, preview: true, error: `${provider} API key not configured`, code: "TTS_NOT_CONFIGURED" }),
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -549,9 +549,10 @@ Deno.serve(async (req) => {
         }
         const ttsResult =
           provider === "azure"
-            ? await ttsAzureWithFallback(text, lang, voiceName, apiKey, mode)
-            : { audio: await ttsElevenLabs(text, apiKey), voiceUsed: voiceName };
+            ? await ttsAzureWithFallback(text, lang, voiceName, apiKey, mode, ELEVEN_KEY)
+            : { audio: await ttsElevenLabs(text, apiKey!), voiceUsed: voiceName, providerUsed: "elevenlabs" as const };
         voiceName = ttsResult.voiceUsed;
+        if ((ttsResult as any).providerUsed) provider = (ttsResult as any).providerUsed;
         const audio = ttsResult.audio;
         const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
         const { error: upErr } = await admin.storage
