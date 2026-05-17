@@ -756,30 +756,39 @@ export type Database = {
           chunk_index: number
           created_at: string
           document_id: string
+          english_leak_detected: boolean
           id: string
           source_language: string
+          source_text_hash: string | null
           target_language: string
           translated_text: string
+          translation_version: number
         }
         Insert: {
           char_count?: number
           chunk_index: number
           created_at?: string
           document_id: string
+          english_leak_detected?: boolean
           id?: string
           source_language?: string
+          source_text_hash?: string | null
           target_language: string
           translated_text: string
+          translation_version?: number
         }
         Update: {
           char_count?: number
           chunk_index?: number
           created_at?: string
           document_id?: string
+          english_leak_detected?: boolean
           id?: string
           source_language?: string
+          source_text_hash?: string | null
           target_language?: string
           translated_text?: string
+          translation_version?: number
         }
         Relationships: [
           {
