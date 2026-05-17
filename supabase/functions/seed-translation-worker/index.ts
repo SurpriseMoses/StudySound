@@ -15,6 +15,8 @@ import {
   preprocessForTranslation,
   sha256Hex,
   detectEnglishLeak,
+  geminiTranslateMulti,
+  TranslationRateLimitError,
 } from "../_shared/translation-pipeline.ts";
 
 const corsHeaders = {
@@ -105,60 +107,27 @@ function normalizeAllCaps(text: string): string {
     w.charAt(0) + w.slice(1).toLowerCase());
 }
 
-class RateLimitedError extends Error {
-  retryAfterMs?: number;
-  constructor(msg: string, retryAfterMs?: number) {
-    super(msg); this.name = "RateLimitedError"; this.retryAfterMs = retryAfterMs;
-  }
-}
-
-async function azureTranslateMulti(text: string, sourceLang: string, targetLangs: string[], apiKey: string): Promise<Record<string, string>> {
-  const from = AZURE_TRANSLATOR_LANG[sourceLang];
-  if (!from) throw new Error(`AZURE_LANG_UNSUPPORTED:${sourceLang}`);
-  const tos = targetLangs.map((l) => {
-    const t = AZURE_TRANSLATOR_LANG[l];
-    if (!t) throw new Error(`AZURE_LANG_UNSUPPORTED:->${l}`);
-    return t;
-  });
-  const toQs = tos.map((t) => `to=${t}`).join("&");
-  const url = `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=${from}&${toQs}&textType=plain`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Ocp-Apim-Subscription-Key": apiKey,
-      "Ocp-Apim-Subscription-Region": AZURE_TRANSLATOR_REGION,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify([{ Text: text }]),
-  });
-  if (res.ok) {
-    const json = await res.json();
-    const translations = json?.[0]?.translations;
-    if (!Array.isArray(translations)) throw new Error("Empty Azure response");
-    const out: Record<string, string> = {};
-    for (const tr of translations) {
-      // Map Azure's `to` back to our lang code
-      const idx = tos.indexOf(tr.to);
-      if (idx >= 0 && typeof tr.text === "string") {
-        out[targetLangs[idx]] = tr.text.trim();
-      }
+// Translate one source text into N target languages via Lovable AI (Gemini).
+// Re-uses the shared geminiTranslateMulti helper. Maps its 429 rate-limit
+// error onto the worker's back-off path via the existing pending-row delay.
+async function translateMulti(text: string, sourceLang: string, targetLangs: string[]): Promise<Record<string, string>> {
+  try {
+    return await geminiTranslateMulti(text, sourceLang, targetLangs);
+  } catch (e) {
+    if (e instanceof TranslationRateLimitError) {
+      // Re-throw as plain Error so existing catch path treats as transient/retry.
+      const err = new Error(e.message) as Error & { retryAfterMs?: number };
+      err.retryAfterMs = e.retryAfterMs;
+      throw err;
     }
-    return out;
+    throw e;
   }
-  const body = await res.text();
-  const errMsg = `Azure ${res.status}: ${body.slice(0, 200)}`;
-  if (res.status === 429 || res.status >= 500) {
-    const ra = Number(res.headers.get("retry-after"));
-    const retryAfterMs = Number.isFinite(ra) && ra > 0 ? ra * 1000 : undefined;
-    throw new RateLimitedError(errMsg, retryAfterMs);
-  }
-  throw new Error(errMsg);
 }
 
 type DocCacheEntry = { chunks: string[]; sourceLang: string; title: string };
 
 // deno-lint-ignore no-explicit-any
-async function processOne(admin: any, azureKey: string, cache: Map<string, DocCacheEntry>) {
+async function processOne(admin: any, _unused: string, cache: Map<string, DocCacheEntry>) {
   const nowIso = new Date().toISOString();
   // Pick one pending row to determine (document_id, chunk_index) batch
   const { data: row, error: pickErr } = await admin
@@ -294,7 +263,7 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
 
   try {
     const targetLangs = todoRows.map((c) => c.target_language);
-    const translations = await azureTranslateMulti(preparedSource, entry.sourceLang, targetLangs, azureKey);
+    const translations = await translateMulti(preparedSource, entry.sourceLang, targetLangs);
 
     const inserts = todoRows
       .map((c) => {
@@ -381,9 +350,8 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const AZURE_KEY = Deno.env.get("Azure_Secret_Key_Translator");
-    if (!AZURE_KEY) throw new Error("Azure Translator key not configured");
-    if (!AZURE_KEY) throw new Error("Azure Translator key not configured");
+    const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
     // Auth: allow either an admin user JWT OR a cron/internal call (any valid JWT
     // — anon or service role — is fine since this is a non-destructive worker
@@ -417,7 +385,7 @@ Deno.serve(async (req) => {
     let stop = false;
     while (!stop && processed < MAX_CHUNKS_PER_INVOCATION) {
       if (Date.now() - startedAt > HARD_DEADLINE_MS) break;
-      const r = await processOne(admin, AZURE_KEY, cache);
+      const r = await processOne(admin, LOVABLE_KEY, cache);
       if (r.result === "empty") {
         // Nothing immediately ready. If a delayed row is due soon AND we still
         // have deadline budget, sleep briefly and try once more — this keeps
