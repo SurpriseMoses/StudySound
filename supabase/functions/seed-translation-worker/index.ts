@@ -246,16 +246,40 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
     return { result: "done" as const, count: claimedRows.length, detail: "invalid chunk skipped" };
   }
 
-  // Idempotency: drop langs already cached
+  // Compute hash of the preprocessed source up-front so cache validation matches generate-translation.
+  const preparedSource = preprocessForTranslation(sourceText);
+  const currentHash = await sha256Hex(preparedSource);
+
+  // Idempotency: only treat rows as "cached" if version + hash match AND no leak.
   const { data: existing } = await admin
     .from("translation_assets")
-    .select("target_language")
+    .select("id, target_language, translated_text, source_text_hash, translation_version, english_leak_detected")
     .eq("document_id", row.document_id)
     .eq("chunk_index", row.chunk_index)
     .in("target_language", claimedRows.map((c) => c.target_language));
-  const cachedLangs = new Set((existing ?? []).map((e: any) => e.target_language));
-  const cachedRows = claimedRows.filter((c) => cachedLangs.has(c.target_language));
-  const todoRows = claimedRows.filter((c) => !cachedLangs.has(c.target_language));
+
+  const validCachedLangs = new Set<string>();
+  const staleRowIds: string[] = [];
+  for (const e of existing ?? []) {
+    const ver = e.translation_version ?? 1;
+    const dirty =
+      e.english_leak_detected === true ||
+      ver < CURRENT_TRANSLATION_VERSION ||
+      (e.source_text_hash && e.source_text_hash !== currentHash) ||
+      detectEnglishLeak(e.translated_text ?? "", e.target_language).leaked;
+    if (dirty) {
+      staleRowIds.push(e.id);
+    } else {
+      validCachedLangs.add(e.target_language);
+    }
+  }
+  if (staleRowIds.length > 0) {
+    console.log(`[t-worker] deleting ${staleRowIds.length} stale translation_assets for doc=${row.document_id} chunk=${row.chunk_index}`);
+    await admin.from("translation_assets").delete().in("id", staleRowIds);
+  }
+
+  const cachedRows = claimedRows.filter((c) => validCachedLangs.has(c.target_language));
+  const todoRows = claimedRows.filter((c) => !validCachedLangs.has(c.target_language));
 
   if (cachedRows.length > 0) {
     await admin.from("translation_seed_queue").update({
@@ -269,14 +293,14 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
   }
 
   try {
-    const prepared = normalizeAllCaps(sourceText);
     const targetLangs = todoRows.map((c) => c.target_language);
-    const translations = await azureTranslateMulti(prepared, entry.sourceLang, targetLangs, azureKey);
+    const translations = await azureTranslateMulti(preparedSource, entry.sourceLang, targetLangs, azureKey);
 
     const inserts = todoRows
       .map((c) => {
         const t = translations[c.target_language];
         if (!t) return null;
+        const leak = detectEnglishLeak(t, c.target_language);
         return {
           document_id: c.document_id,
           chunk_index: c.chunk_index,
@@ -284,6 +308,9 @@ async function processOne(admin: any, azureKey: string, cache: Map<string, DocCa
           target_language: c.target_language,
           translated_text: t,
           char_count: t.length,
+          source_text_hash: currentHash,
+          translation_version: CURRENT_TRANSLATION_VERSION,
+          english_leak_detected: leak.leaked,
         };
       })
       .filter(Boolean);
