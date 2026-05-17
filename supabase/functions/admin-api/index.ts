@@ -621,6 +621,57 @@ Deno.serve(async (req) => {
       return json({ success: true });
     }
 
+    // -------------------- TRANSLATION HEALTH --------------------
+    // Per-document counters: dirty/stale/leaked translation_assets rows.
+    if (action === "translation_health") {
+      const document_id = body?.document_id as string | undefined;
+      const CURRENT_VERSION = 2; // keep in sync with _shared/translation-pipeline.ts
+      let q = admin.from("translation_assets")
+        .select("document_id, target_language, translation_version, english_leak_detected, source_text_hash");
+      if (document_id) q = q.eq("document_id", document_id);
+      const { data: rows, error } = await q;
+      if (error) throw error;
+
+      type Stat = { total: number; leaked: number; stale_version: number; missing_hash: number };
+      const perDoc = new Map<string, Stat>();
+      for (const r of rows ?? []) {
+        const k = r.document_id as string;
+        const s = perDoc.get(k) ?? { total: 0, leaked: 0, stale_version: 0, missing_hash: 0 };
+        s.total += 1;
+        if (r.english_leak_detected) s.leaked += 1;
+        if ((r.translation_version ?? 1) < CURRENT_VERSION) s.stale_version += 1;
+        if (!r.source_text_hash) s.missing_hash += 1;
+        perDoc.set(k, s);
+      }
+      return json({
+        success: true,
+        current_version: CURRENT_VERSION,
+        documents: Array.from(perDoc.entries()).map(([id, s]) => ({ document_id: id, ...s })),
+      });
+    }
+
+    // Delete dirty translation rows for a doc so the next request / worker run regenerates them.
+    if (action === "reprocess_dirty_translations") {
+      const document_id = body?.document_id as string | undefined;
+      if (!document_id) throw new Error("document_id required");
+      const CURRENT_VERSION = 2;
+      const { data: rows } = await admin
+        .from("translation_assets")
+        .select("id, translation_version, english_leak_detected, source_text_hash")
+        .eq("document_id", document_id);
+      const dirtyIds = (rows ?? [])
+        .filter((r) =>
+          r.english_leak_detected === true ||
+          (r.translation_version ?? 1) < CURRENT_VERSION ||
+          !r.source_text_hash,
+        )
+        .map((r) => r.id);
+      if (dirtyIds.length === 0) return json({ success: true, deleted: 0 });
+      const { error } = await admin.from("translation_assets").delete().in("id", dirtyIds);
+      if (error) throw error;
+      return json({ success: true, deleted: dirtyIds.length });
+    }
+
     return json({ error: "Unknown action" }, 400);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
