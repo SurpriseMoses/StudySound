@@ -565,10 +565,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 1) Cache hit?
+    // Compute deterministic source hash on the preprocessed text (= what Azure will see)
+    const preparedSource = preprocessForTranslation(chunks[idx] ?? "");
+    const currentHash = await pipelineSha256Hex(preparedSource);
+
+    // 1) Cache hit? Validate by version + hash + leak flag.
     const { data: cached } = await admin
       .from("translation_assets")
-      .select("translated_text")
+      .select("translated_text, source_text_hash, translation_version, english_leak_detected")
       .eq("document_id", documentId)
       .eq("chunk_index", idx)
       .eq("target_language", target_language)
@@ -576,29 +580,38 @@ Deno.serve(async (req) => {
 
     let translatedText = cached?.translated_text ?? null;
 
-    if (translatedText && shouldRefreshCachedTranslation(chunks[idx] ?? "", translatedText, target_language)) {
-      console.log(`[translate] refreshing stale cache for ${target_language} doc=${documentId} chunk=${idx}`);
+    const cacheStale = !!cached && (
+      cached.english_leak_detected === true ||
+      (cached.translation_version ?? 1) < CURRENT_TRANSLATION_VERSION ||
+      (cached.source_text_hash && cached.source_text_hash !== currentHash) ||
+      (translatedText && detectEnglishLeak(translatedText, target_language).leaked)
+    );
+
+    if (cacheStale) {
+      console.log(`[translate] cache invalid for ${target_language} doc=${documentId} chunk=${idx} — regenerating`);
       translatedText = null;
-      const { error: deleteErr } = await admin
-        .from("translation_assets")
+      await admin.from("translation_assets")
         .delete()
         .eq("document_id", documentId)
         .eq("chunk_index", idx)
         .eq("target_language", target_language);
-
-      if (deleteErr) {
-        console.error("translation_assets stale cache delete failed:", deleteErr);
-      }
     }
 
     // 2) Generate if missing
+    let leakDetected = false;
     if (!translatedText) {
-      const sourceChunk = chunks[idx];
-      translatedText = await translateWithAI(sourceChunk, sourceLang, target_language);
+      const result = await translateWithAI(preparedSource, sourceLang, target_language);
+      translatedText = result.text;
+      leakDetected = result.leaked;
 
+      // Per spec: NEVER save partial / leaked translations silently — still
+      // persist but flag so a future request / admin sweep can regenerate.
       const { error: insErr } = await admin.from("translation_assets").insert({
         document_id: documentId, chunk_index: idx, source_language: sourceLang,
         target_language, translated_text: translatedText, char_count: translatedText.length,
+        source_text_hash: currentHash,
+        translation_version: CURRENT_TRANSLATION_VERSION,
+        english_leak_detected: leakDetected,
       });
       if (insErr && !insErr.message.includes("duplicate")) {
         console.error("translation_assets insert failed:", insErr);
