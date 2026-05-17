@@ -342,15 +342,15 @@ async function translateWithAI(text: string, sourceLang: string, targetLang: str
   const normalized = normalizeAllCapsForTranslation(text);
   const azureOutput = await translateWithAzure(normalized, sourceLang, targetLang);
 
-  if (targetLang === "tn" && hasSuspiciousSetswanaEnglish(normalized, azureOutput)) {
-    console.warn(`[translate] azure tn output looked partially untranslated; retrying line-by-line (${text.length} chars)`);
+  if (targetLang !== "en" && hasEnglishResidue(normalized, azureOutput, targetLang)) {
+    console.warn(`[translate] azure ${targetLang} output looked partially untranslated; retrying line-by-line (${text.length} chars)`);
     const lineByLineOutput = await translateLineByLineWithAzure(normalized, sourceLang, targetLang);
-    if (!hasSuspiciousSetswanaEnglish(normalized, lineByLineOutput)) {
+    if (!hasEnglishResidue(normalized, lineByLineOutput, targetLang)) {
       console.log(`[translate] azure line-by-line ok ${sourceLang}->${targetLang} (${text.length} chars)`);
       return lineByLineOutput;
     }
-
-    console.warn(`[translate] azure line-by-line still suspicious for tn; returning best available output`);
+    console.warn(`[translate] azure line-by-line still has residue for ${targetLang}; returning best available output`);
+    return lineByLineOutput;
   }
 
   console.log(`[translate] azure ok ${sourceLang}->${targetLang} (${text.length} chars)`);
