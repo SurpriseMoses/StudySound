@@ -1397,6 +1397,16 @@ export type Database = {
           users: number
         }[]
       }
+      admin_translation_health: {
+        Args: { _current_version?: number; _document_id?: string }
+        Returns: {
+          document_id: string
+          leaked: number
+          missing_hash: number
+          stale_version: number
+          total: number
+        }[]
+      }
       count_translations_last_minute: {
         Args: { _user_id: string }
         Returns: number
