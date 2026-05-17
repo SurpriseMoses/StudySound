@@ -500,9 +500,34 @@ export default function AdminPipeline() {
                         <div className="text-xs uppercase text-muted-foreground flex items-center gap-1">
                           <Languages className="w-3 h-3" /> Translations
                         </div>
-                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={transAllBusy} onClick={() => enqueueAllTranslations(d)}>
-                          {transAllBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Enqueue all"}
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {(() => {
+                            const h = health[d.id];
+                            if (!h) return null;
+                            const dirty = h.leaked + h.stale_version + h.missing_hash;
+                            if (h.total === 0) return null;
+                            return (
+                              <Badge variant={dirty > 0 ? "destructive" : "secondary"} className="h-5 text-[10px]">
+                                {dirty > 0 ? `${dirty} dirty` : `${h.total} clean`}
+                                {h.leaked > 0 && <span className="ml-1">· {h.leaked} leak</span>}
+                              </Badge>
+                            );
+                          })()}
+                          {(() => {
+                            const h = health[d.id];
+                            const dirty = h ? h.leaked + h.stale_version + h.missing_hash : 0;
+                            if (dirty === 0) return null;
+                            const dirtyBusy = busy === `dirty:${d.id}`;
+                            return (
+                              <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={dirtyBusy} onClick={() => reprocessDirtyTranslations(d)}>
+                                {dirtyBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Reprocess dirty"}
+                              </Button>
+                            );
+                          })()}
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={transAllBusy} onClick={() => enqueueAllTranslations(d)}>
+                            {transAllBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Enqueue all"}
+                          </Button>
+                        </div>
                       </div>
                       <div className="space-y-1">
                         {d.stages.translation.languages.map((l) => {
