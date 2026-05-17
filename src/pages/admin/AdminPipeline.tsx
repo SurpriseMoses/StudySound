@@ -82,6 +82,8 @@ export default function AdminPipeline() {
   const [errorFilter, setErrorFilter] = useState<"all" | "errors" | "invalid" | "failed_queue" | "incomplete_audio" | "clean">("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [worker, setWorker] = useState<WorkerState>({ audio: null, trans: null });
+  type Health = { total: number; leaked: number; stale_version: number; missing_hash: number };
+  const [health, setHealth] = useState<Record<string, Health>>({});
   const tickRef = useRef<number | null>(null);
 
   const loadPipeline = async () => {
@@ -106,9 +108,20 @@ export default function AdminPipeline() {
     });
   };
 
+  const loadHealth = async () => {
+    const { data } = await supabase.functions.invoke("admin-api", {
+      body: { action: "translation_health" },
+    });
+    const map: Record<string, Health> = {};
+    for (const r of (data?.documents ?? []) as Array<Health & { document_id: string }>) {
+      map[r.document_id] = { total: r.total, leaked: r.leaked, stale_version: r.stale_version, missing_hash: r.missing_hash };
+    }
+    setHealth(map);
+  };
+
   const refreshAll = async () => {
     setLoading(true);
-    await Promise.all([loadPipeline(), loadWorkerState()]);
+    await Promise.all([loadPipeline(), loadWorkerState(), loadHealth()]);
     setLoading(false);
   };
 
@@ -213,6 +226,25 @@ export default function AdminPipeline() {
     setBusy(null);
     toast({ title: "Queued all languages", description: `${total} chunks across ${ALL_LANGS.length} languages.` });
     await refreshAll();
+  }
+
+  async function reprocessDirtyTranslations(doc: PipelineDoc) {
+    setBusy(`dirty:${doc.id}`);
+    const { data, error } = await supabase.functions.invoke("admin-api", {
+      body: { action: "reprocess_dirty_translations", document_id: doc.id },
+    });
+    if (!error) {
+      // After deletion, requeue all languages so the worker regenerates them.
+      for (const lang of ALL_LANGS) {
+        await supabase.functions.invoke("seed-translation-manager", {
+          body: { action: "enqueue", document_id: doc.id, target_language: lang },
+        });
+      }
+    }
+    setBusy(null);
+    if (error) { toast({ title: "Failed", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Dirty translations cleared", description: `${data?.deleted ?? 0} rows deleted and re-queued.` });
+    await Promise.all([refreshAll()]);
   }
 
   async function workerControl(kind: "audio" | "trans", op: "start" | "pause") {
@@ -468,9 +500,34 @@ export default function AdminPipeline() {
                         <div className="text-xs uppercase text-muted-foreground flex items-center gap-1">
                           <Languages className="w-3 h-3" /> Translations
                         </div>
-                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={transAllBusy} onClick={() => enqueueAllTranslations(d)}>
-                          {transAllBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Enqueue all"}
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {(() => {
+                            const h = health[d.id];
+                            if (!h) return null;
+                            const dirty = h.leaked + h.stale_version + h.missing_hash;
+                            if (h.total === 0) return null;
+                            return (
+                              <Badge variant={dirty > 0 ? "destructive" : "secondary"} className="h-5 text-[10px]">
+                                {dirty > 0 ? `${dirty} dirty` : `${h.total} clean`}
+                                {h.leaked > 0 && <span className="ml-1">· {h.leaked} leak</span>}
+                              </Badge>
+                            );
+                          })()}
+                          {(() => {
+                            const h = health[d.id];
+                            const dirty = h ? h.leaked + h.stale_version + h.missing_hash : 0;
+                            if (dirty === 0) return null;
+                            const dirtyBusy = busy === `dirty:${d.id}`;
+                            return (
+                              <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={dirtyBusy} onClick={() => reprocessDirtyTranslations(d)}>
+                                {dirtyBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Reprocess dirty"}
+                              </Button>
+                            );
+                          })()}
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={transAllBusy} onClick={() => enqueueAllTranslations(d)}>
+                            {transAllBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Enqueue all"}
+                          </Button>
+                        </div>
                       </div>
                       <div className="space-y-1">
                         {d.stages.translation.languages.map((l) => {
