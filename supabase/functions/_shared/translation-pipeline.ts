@@ -11,6 +11,116 @@
 
 export const CURRENT_TRANSLATION_VERSION = 2;
 
+// ---------------- Gemini-based translation (via Lovable AI Gateway) ----------------
+
+export const LANGUAGE_LABELS: Record<string, string> = {
+  en: "English",
+  af: "Afrikaans",
+  zu: "isiZulu",
+  xh: "isiXhosa",
+  nso: "Sepedi (Northern Sotho)",
+  tn: "Setswana",
+  st: "Sesotho",
+  ts: "Xitsonga",
+  ve: "Tshivenda",
+  ss: "siSwati",
+  nr: "isiNdebele",
+  fr: "French",
+};
+
+export class TranslationRateLimitError extends Error {
+  retryAfterMs?: number;
+  constructor(msg: string, retryAfterMs?: number) {
+    super(msg);
+    this.name = "TranslationRateLimitError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const LOVABLE_AI_MODEL = "google/gemini-3-flash-preview";
+
+// Translate a single text into ONE target language using Gemini via Lovable AI.
+// Returns plain translated text only — no commentary, no quotes, no source.
+export async function geminiTranslate(
+  text: string,
+  sourceLang: string,
+  targetLang: string,
+): Promise<string> {
+  if (!text.trim()) return text;
+  if (sourceLang === targetLang) return text;
+
+  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
+
+  const sourceLabel = LANGUAGE_LABELS[sourceLang] ?? sourceLang;
+  const targetLabel = LANGUAGE_LABELS[targetLang] ?? targetLang;
+
+  const system =
+    `You are a professional translator for South African high-school study material. ` +
+    `Translate the user's text from ${sourceLabel} to ${targetLabel}. ` +
+    `Rules:\n` +
+    `1. Output ONLY the translated text. No preface, no quotes, no notes, no source.\n` +
+    `2. Preserve line breaks and paragraph structure exactly.\n` +
+    `3. Translate ALL words — do NOT leave English words, headings, or ALL-CAPS phrases untranslated, unless they are proper names (e.g. people, places).\n` +
+    `4. Keep numbers, dates, and proper nouns as-is.\n` +
+    `5. Use natural, clear ${targetLabel} suitable for a teenage learner.`;
+
+  const res = await fetch(LOVABLE_AI_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: LOVABLE_AI_MODEL,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: text },
+      ],
+      temperature: 0.2,
+    }),
+  });
+
+  if (res.status === 429) {
+    const ra = Number(res.headers.get("retry-after"));
+    throw new TranslationRateLimitError(
+      "Lovable AI rate limit (429)",
+      Number.isFinite(ra) && ra > 0 ? ra * 1000 : 30_000,
+    );
+  }
+  if (res.status === 402) {
+    throw new Error("Lovable AI credits exhausted (402)");
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Lovable AI ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const json = await res.json();
+  const out = json?.choices?.[0]?.message?.content;
+  if (typeof out !== "string" || !out.trim()) {
+    throw new Error("Empty Gemini translation response");
+  }
+  // Strip accidental wrapping quotes/code fences the model sometimes adds.
+  return out
+    .replace(/^```[a-z]*\n?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+}
+
+// Translate the same source text into multiple target languages in parallel.
+export async function geminiTranslateMulti(
+  text: string,
+  sourceLang: string,
+  targetLangs: string[],
+): Promise<Record<string, string>> {
+  const results = await Promise.all(
+    targetLangs.map(async (lang) => [lang, await geminiTranslate(text, sourceLang, lang)] as const),
+  );
+  return Object.fromEntries(results);
+}
+
 // ---------------- Preprocessing ----------------
 
 function toSentenceCaseHeading(line: string): string {
