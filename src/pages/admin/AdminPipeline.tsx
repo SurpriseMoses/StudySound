@@ -228,6 +228,25 @@ export default function AdminPipeline() {
     await refreshAll();
   }
 
+  async function reprocessDirtyTranslations(doc: PipelineDoc) {
+    setBusy(`dirty:${doc.id}`);
+    const { data, error } = await supabase.functions.invoke("admin-api", {
+      body: { action: "reprocess_dirty_translations", document_id: doc.id },
+    });
+    if (!error) {
+      // After deletion, requeue all languages so the worker regenerates them.
+      for (const lang of ALL_LANGS) {
+        await supabase.functions.invoke("seed-translation-manager", {
+          body: { action: "enqueue", document_id: doc.id, target_language: lang },
+        });
+      }
+    }
+    setBusy(null);
+    if (error) { toast({ title: "Failed", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Dirty translations cleared", description: `${data?.deleted ?? 0} rows deleted and re-queued.` });
+    await Promise.all([refreshAll()]);
+  }
+
   async function workerControl(kind: "audio" | "trans", op: "start" | "pause") {
     const fn = kind === "audio" ? "seed-queue-manager" : "seed-translation-manager";
     setBusy(`${kind}-${op}`);
