@@ -344,23 +344,20 @@ async function translateWithAzure(text: string, sourceLang: string, targetLang: 
   throw new Error(lastError);
 }
 
-async function translateWithAI(text: string, sourceLang: string, targetLang: string): Promise<string> {
-  const normalized = normalizeAllCapsForTranslation(text);
+async function translateWithAI(text: string, sourceLang: string, targetLang: string): Promise<{ text: string; leaked: boolean }> {
+  const normalized = preprocessForTranslation(text);
   const azureOutput = await translateWithAzure(normalized, sourceLang, targetLang);
 
-  if (targetLang !== "en" && hasEnglishResidue(normalized, azureOutput, targetLang)) {
-    console.warn(`[translate] azure ${targetLang} output looked partially untranslated; retrying line-by-line (${text.length} chars)`);
+  let finalOutput = azureOutput;
+  if (targetLang !== "en" && detectEnglishLeak(azureOutput, targetLang).leaked) {
+    console.warn(`[translate] azure ${targetLang} output had english leak; retrying line-by-line (${text.length} chars)`);
     const lineByLineOutput = await translateLineByLineWithAzure(normalized, sourceLang, targetLang);
-    if (!hasEnglishResidue(normalized, lineByLineOutput, targetLang)) {
-      console.log(`[translate] azure line-by-line ok ${sourceLang}->${targetLang} (${text.length} chars)`);
-      return lineByLineOutput;
-    }
-    console.warn(`[translate] azure line-by-line still has residue for ${targetLang}; returning best available output`);
-    return lineByLineOutput;
+    finalOutput = lineByLineOutput;
   }
 
-  console.log(`[translate] azure ok ${sourceLang}->${targetLang} (${text.length} chars)`);
-  return azureOutput;
+  const leak = detectEnglishLeak(finalOutput, targetLang);
+  console.log(`[translate] ${sourceLang}->${targetLang} (${text.length} chars) leaked=${leak.leaked} ratio=${leak.englishRatio.toFixed(3)}`);
+  return { text: finalOutput, leaked: leak.leaked };
 }
 
 Deno.serve(async (req) => {
