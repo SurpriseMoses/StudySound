@@ -6,6 +6,12 @@
 // - Charge ONLY after successful generation/cache hit + access row insert
 // - Rate log written ONLY on accepted requests (not on throttled/failed)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import {
+  CURRENT_TRANSLATION_VERSION,
+  preprocessForTranslation,
+  sha256Hex as pipelineSha256Hex,
+  detectEnglishLeak,
+} from "../_shared/translation-pipeline.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
