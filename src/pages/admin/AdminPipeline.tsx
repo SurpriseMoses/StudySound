@@ -82,6 +82,8 @@ export default function AdminPipeline() {
   const [errorFilter, setErrorFilter] = useState<"all" | "errors" | "invalid" | "failed_queue" | "incomplete_audio" | "clean">("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [worker, setWorker] = useState<WorkerState>({ audio: null, trans: null });
+  type Health = { total: number; leaked: number; stale_version: number; missing_hash: number };
+  const [health, setHealth] = useState<Record<string, Health>>({});
   const tickRef = useRef<number | null>(null);
 
   const loadPipeline = async () => {
