@@ -674,8 +674,12 @@ Deno.serve(async (req) => {
 
     return json({ error: "Unknown action" }, 400);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Unknown error";
-    console.error("admin-api error:", msg);
+    const msg = e instanceof Error
+      ? e.message
+      : (typeof e === "object" && e !== null
+        ? (JSON.stringify(e) || String(e))
+        : String(e ?? "Unknown error"));
+    console.error("admin-api error:", msg, e);
     return new Response(JSON.stringify({ error: msg }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
