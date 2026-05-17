@@ -108,9 +108,20 @@ export default function AdminPipeline() {
     });
   };
 
+  const loadHealth = async () => {
+    const { data } = await supabase.functions.invoke("admin-api", {
+      body: { action: "translation_health" },
+    });
+    const map: Record<string, Health> = {};
+    for (const r of (data?.documents ?? []) as Array<Health & { document_id: string }>) {
+      map[r.document_id] = { total: r.total, leaked: r.leaked, stale_version: r.stale_version, missing_hash: r.missing_hash };
+    }
+    setHealth(map);
+  };
+
   const refreshAll = async () => {
     setLoading(true);
-    await Promise.all([loadPipeline(), loadWorkerState()]);
+    await Promise.all([loadPipeline(), loadWorkerState(), loadHealth()]);
     setLoading(false);
   };
 
