@@ -135,14 +135,35 @@ function hasSuspiciousSetswanaEnglish(sourceText: string, translatedText: string
   return englishCarryOvers.length >= 8;
 }
 
-function shouldRefreshCachedTranslation(sourceText: string, translatedText: string, targetLang: string): boolean {
-  if (targetLang !== "tn") return false;
+// Generic English-residue detector: catches untranslated proper nouns, ALL-CAPS
+// headings, and high-frequency English function words bleeding through into ANY
+// non-English target. Designed for African-language targets where Azure
+// frequently preserves title-cased / capitalized fragments verbatim.
+function hasEnglishResidue(sourceText: string, translatedText: string, targetLang: string): boolean {
+  if (targetLang === "en") return false;
 
-  return [
-    /\b(?:STORY|SEARCH|CONTENTS|CHAPTER|BOOK|PART|CASE|INCIDENT|LETTER|WINDOW|MURDER|NIGHT)\b/,
-    /\b(?:MR|MRS|MS|DR)\.\s+[A-Z]{2,}\b/,
-    /\b[A-Z]{2,}(?:\s+[A-Z]{2,}){2,}\b/,
-  ].some((pattern) => pattern.test(translatedText)) || hasSuspiciousSetswanaEnglish(sourceText, translatedText);
+  // ALL-CAPS headings preserved verbatim (e.g., "STORY OF THE DOOR")
+  if (/\b[A-Z]{2,}(?:\s+[A-Z]{2,}){2,}\b/.test(translatedText)) return true;
+  if (/\b(?:STORY|SEARCH|CONTENTS|CHAPTER|BOOK|PART|CASE|INCIDENT|LETTER|WINDOW|MURDER|NIGHT|SECTION|UNIT|LESSON)\b/.test(translatedText)) return true;
+
+  // High-frequency English words that should rarely survive a real translation.
+  const englishStopwords =
+    translatedText.match(/\b(?:the|and|of|for|with|that|this|from|have|been|were|will|would|could|should|about|which|their|there|where|when|what|which|while|because|story|search|contents|chapter|section|case|incident|window|night|letter)\b/gi) ?? [];
+
+  // Count source-side English words for ratio.
+  const sourceEnglish = sourceText.match(/\b[A-Za-z]+\b/g)?.length ?? 0;
+  const translatedWords = translatedText.match(/\b[A-Za-zÀ-ÿ]+\b/g)?.length ?? 1;
+
+  // Absolute threshold (small chunks) OR a high ratio of English residue.
+  if (englishStopwords.length >= 6) return true;
+  if (englishStopwords.length >= 3 && englishStopwords.length / translatedWords > 0.08) return true;
+
+  return false;
+}
+
+function shouldRefreshCachedTranslation(sourceText: string, translatedText: string, targetLang: string): boolean {
+  if (targetLang === "en") return false;
+  return hasEnglishResidue(sourceText, translatedText, targetLang);
 }
 
 // Lowercase a "title-like" short sentence so Azure doesn't treat it as a proper-noun
@@ -321,15 +342,15 @@ async function translateWithAI(text: string, sourceLang: string, targetLang: str
   const normalized = normalizeAllCapsForTranslation(text);
   const azureOutput = await translateWithAzure(normalized, sourceLang, targetLang);
 
-  if (targetLang === "tn" && hasSuspiciousSetswanaEnglish(normalized, azureOutput)) {
-    console.warn(`[translate] azure tn output looked partially untranslated; retrying line-by-line (${text.length} chars)`);
+  if (targetLang !== "en" && hasEnglishResidue(normalized, azureOutput, targetLang)) {
+    console.warn(`[translate] azure ${targetLang} output looked partially untranslated; retrying line-by-line (${text.length} chars)`);
     const lineByLineOutput = await translateLineByLineWithAzure(normalized, sourceLang, targetLang);
-    if (!hasSuspiciousSetswanaEnglish(normalized, lineByLineOutput)) {
+    if (!hasEnglishResidue(normalized, lineByLineOutput, targetLang)) {
       console.log(`[translate] azure line-by-line ok ${sourceLang}->${targetLang} (${text.length} chars)`);
       return lineByLineOutput;
     }
-
-    console.warn(`[translate] azure line-by-line still suspicious for tn; returning best available output`);
+    console.warn(`[translate] azure line-by-line still has residue for ${targetLang}; returning best available output`);
+    return lineByLineOutput;
   }
 
   console.log(`[translate] azure ok ${sourceLang}->${targetLang} (${text.length} chars)`);
