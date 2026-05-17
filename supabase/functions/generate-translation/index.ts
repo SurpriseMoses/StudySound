@@ -291,57 +291,11 @@ function jsonResponse(payload: Record<string, unknown>, status = 200, extraHeade
   });
 }
 
+// Translate via Lovable AI Gateway (Gemini). Replaces Azure Translator.
+// Kept the same name/signature so call sites don't change.
 async function translateWithAzure(text: string, sourceLang: string, targetLang: string): Promise<string> {
-  const key = Deno.env.get("Azure_Secret_Key_Translator");
-  if (!key) throw new Error("AZURE_TRANSLATOR_NOT_CONFIGURED");
-
-  const from = AZURE_TRANSLATOR_LANG[sourceLang];
-  const to = AZURE_TRANSLATOR_LANG[targetLang];
-  if (!from || !to) throw new Error(`AZURE_LANG_UNSUPPORTED:${sourceLang}->${targetLang}`);
-
-  const url = `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=${from}&to=${to}&textType=plain`;
-  const regionCandidates = Array.from(new Set([
-    AZURE_TRANSLATOR_REGION,
-    "southafricanorth",
-    "global",
-  ].filter(Boolean)));
-
-  let lastError = "Azure Translator request failed";
-  for (const region of regionCandidates) {
-    const headers: Record<string, string> = {
-      "Ocp-Apim-Subscription-Key": key,
-      "Content-Type": "application/json",
-    };
-
-    if (region && region !== "global") {
-      headers["Ocp-Apim-Subscription-Region"] = region;
-    }
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify([{ Text: text }]),
-    });
-
-    if (res.ok) {
-      const json = await res.json();
-      const out = json?.[0]?.translations?.[0]?.text;
-      if (!out || typeof out !== "string") throw new Error("Empty Azure translation response");
-      console.log(`[translate] azure auth ok via ${region === "global" ? "global" : region}`);
-      return out.trim();
-    }
-
-    const body = await res.text();
-    lastError = `Azure Translator ${res.status}: ${body.slice(0, 200)}`;
-
-    if (res.status !== 401 && res.status !== 403) {
-      throw new Error(lastError);
-    }
-
-    console.warn(`[translate] azure auth failed via ${region === "global" ? "global" : region}: ${lastError}`);
-  }
-
-  throw new Error(lastError);
+  const { geminiTranslate } = await import("../_shared/translation-pipeline.ts");
+  return await geminiTranslate(text, sourceLang, targetLang);
 }
 
 async function translateWithAI(text: string, sourceLang: string, targetLang: string): Promise<{ text: string; leaked: boolean }> {
