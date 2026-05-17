@@ -10,6 +10,12 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { isInvalidChunk } from "../_shared/clean-text.ts";
+import {
+  CURRENT_TRANSLATION_VERSION,
+  preprocessForTranslation,
+  sha256Hex,
+  detectEnglishLeak,
+} from "../_shared/translation-pipeline.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
