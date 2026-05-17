@@ -311,13 +311,14 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
 
-    if (e instanceof RateLimitedError) {
+    const retryAfterMs = (e as { retryAfterMs?: number })?.retryAfterMs;
+    if (retryAfterMs !== undefined || /rate.?limit|429/i.test(msg)) {
       // Per-row exponential back-off; honour Retry-After as a floor.
       for (const c of todoRows) {
         const attempts = (c.attempts ?? 0) + 1;
         const exhausted = attempts >= MAX_ATTEMPTS;
         const expDelay = expBackoffMs(attempts, RATE_LIMIT_BASE_MS, RATE_LIMIT_DELAY_HARD_CAP_MS);
-        const delayMs = Math.max(e.retryAfterMs ?? 0, expDelay);
+        const delayMs = Math.max(retryAfterMs ?? 0, expDelay);
         await admin.from("translation_seed_queue").update({
           status: exhausted ? "failed" : "pending",
           started_at: null, attempts,
