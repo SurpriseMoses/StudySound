@@ -97,7 +97,7 @@ export default function AdminSeedTranslations() {
       });
       if (error) throw error;
       toast.success(`Re-queued ${data?.retried ?? 0} rows.`);
-      await Promise.all([loadBreakdown(), loadQueueStatus()]);
+      await Promise.all([loadBreakdown(), loadQueueStatus(), loadDocs()]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
@@ -161,7 +161,8 @@ export default function AdminSeedTranslations() {
 
   async function refreshAll() {
     setLoading(true);
-    await Promise.all([loadDocs(), loadQueueStatus(), loadBreakdown()]);
+    await Promise.all([loadDocs(), loadQueueStatus()]);
+    if (breakdownOpen) await loadBreakdown();
     setLoading(false);
   }
 
@@ -176,7 +177,7 @@ export default function AdminSeedTranslations() {
     if (tickRef.current) return;
     tickRef.current = window.setInterval(async () => {
       supabase.functions.invoke("seed-translation-worker", { body: {} }).catch(() => {});
-      await Promise.all([loadDocs(), loadQueueStatus(), loadBreakdown()]);
+      await Promise.all([loadDocs(), loadQueueStatus()]);
     }, 8000);
     return () => {
       if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }

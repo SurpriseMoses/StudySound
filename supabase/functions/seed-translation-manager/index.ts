@@ -21,6 +21,7 @@ const corsHeaders = {
 const TARGET_LANGUAGES = ["zu", "xh", "tn", "nso"];
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
+const MUTATION_BATCH_SIZE = 500;
 
 function chunkText(text: string): string[] {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -129,6 +130,59 @@ async function enqueueDocument(admin: any, documentId: string) {
     .eq("id", doc.id);
 
   return { added: rows.length, total_chunks: total, languages: langs.length, skipped };
+}
+
+// deno-lint-ignore no-explicit-any
+function applyRetryFilters(q: any, filters: { documentId?: string | null; lang?: string | null; category?: string }) {
+  let next = q.eq("status", "failed");
+  if (filters.documentId) next = next.eq("document_id", filters.documentId);
+  if (filters.lang) next = next.eq("target_language", filters.lang);
+  if (filters.category === "rate_limited") next = next.ilike("last_error", "rate-limited%");
+  if (filters.category === "failed") next = next.not("last_error", "ilike", "rate-limited%");
+  return next;
+}
+
+// deno-lint-ignore no-explicit-any
+async function retryFailedRows(admin: any, filters: { documentId?: string | null; lang?: string | null; category?: string }) {
+  let total = 0;
+  while (true) {
+    const q = applyRetryFilters(admin.from("translation_seed_queue").select("id"), filters)
+      .order("id", { ascending: true })
+      .limit(MUTATION_BATCH_SIZE);
+    const { data: rows, error: selectErr } = await q;
+    if (selectErr) throw selectErr;
+    const ids = (rows ?? []).map((row: { id: string }) => row.id);
+    if (ids.length === 0) break;
+
+    const { error: updateErr } = await admin.from("translation_seed_queue")
+      .update({ status: "pending", started_at: null, delayed_until: null, attempts: 0, last_error: null })
+      .in("id", ids);
+    if (updateErr) throw updateErr;
+    total += ids.length;
+    if (ids.length < MUTATION_BATCH_SIZE) break;
+  }
+  return total;
+}
+
+// deno-lint-ignore no-explicit-any
+async function deleteFailedRows(admin: any) {
+  let total = 0;
+  while (true) {
+    const { data: rows, error: selectErr } = await admin.from("translation_seed_queue")
+      .select("id")
+      .eq("status", "failed")
+      .order("id", { ascending: true })
+      .limit(MUTATION_BATCH_SIZE);
+    if (selectErr) throw selectErr;
+    const ids = (rows ?? []).map((row: { id: string }) => row.id);
+    if (ids.length === 0) break;
+
+    const { error: deleteErr } = await admin.from("translation_seed_queue").delete().in("id", ids);
+    if (deleteErr) throw deleteErr;
+    total += ids.length;
+    if (ids.length < MUTATION_BATCH_SIZE) break;
+  }
+  return total;
 }
 
 Deno.serve(async (req) => {
@@ -243,10 +297,8 @@ Deno.serve(async (req) => {
     }
 
     if (action === "clear_failed") {
-      const { data, error } = await admin.from("translation_seed_queue")
-        .delete().eq("status", "failed").select("id");
-      if (error) throw error;
-      return new Response(JSON.stringify({ ok: true, deleted: data?.length ?? 0 }), {
+      const deleted = await deleteFailedRows(admin);
+      return new Response(JSON.stringify({ ok: true, deleted }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -360,18 +412,8 @@ Deno.serve(async (req) => {
       const lang = body?.target_language ? String(body.target_language) : null;
       const category = String(body?.category ?? "all_failed");
 
-      let q = admin.from("translation_seed_queue")
-        .update({ status: "pending", started_at: null, delayed_until: null, attempts: 0, last_error: null })
-        .eq("status", "failed");
-      if (docId) q = q.eq("document_id", docId);
-      if (lang) q = q.eq("target_language", lang);
-      if (category === "rate_limited") q = q.ilike("last_error", "rate-limited%");
-      // category "failed" → exclude rate-limited
-      if (category === "failed") q = q.not("last_error", "ilike", "rate-limited%");
-
-      const { data, error } = await q.select("id");
-      if (error) throw error;
-      return new Response(JSON.stringify({ ok: true, retried: data?.length ?? 0 }), {
+      const retried = await retryFailedRows(admin, { documentId: docId, lang, category });
+      return new Response(JSON.stringify({ ok: true, retried }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
