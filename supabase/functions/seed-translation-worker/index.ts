@@ -28,25 +28,26 @@ const corsHeaders = {
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
-const INTER_CHUNK_DELAY_MS = 8_000;
+const INTER_CHUNK_DELAY_MS = 200;
 const MAX_ATTEMPTS = 8;
 // Exponential back-off for rate-limited rows: base * 2^(attempt-1) + jitter,
-// clamped to [MIN, HARD_CAP]. Honours Azure's Retry-After when supplied.
+// clamped to [MIN, HARD_CAP]. Honours Retry-After when supplied.
 const RATE_LIMIT_BASE_MS = 2_000;
-const RATE_LIMIT_DELAY_MIN_MS = 2_000;
-const RATE_LIMIT_DELAY_HARD_CAP_MS = 5 * 60_000; // 5 min
-const RATE_LIMIT_JITTER_MS = 1_500;
+const RATE_LIMIT_DELAY_MIN_MS = 1_000;
+const RATE_LIMIT_DELAY_HARD_CAP_MS = 2 * 60_000;
+const RATE_LIMIT_JITTER_MS = 1_000;
 // Generic transient errors back off more gently
-const ERROR_BASE_MS = 10_000;
-const ERROR_HARD_CAP_MS = 2 * 60_000;
-const CREDIT_EXHAUSTED_DELAY_MS = 30 * 60_000;
-const LOCK_TIMEOUT_MS = 90_000;
-const MIN_WORKER_INTERVAL_MS = 90_000;
-const HARD_DEADLINE_MS = 50_000;
-const MAX_CHUNKS_PER_INVOCATION = 2;
+const ERROR_BASE_MS = 5_000;
+const ERROR_HARD_CAP_MS = 60_000;
+const CREDIT_EXHAUSTED_DELAY_MS = 10 * 60_000;
+const LOCK_TIMEOUT_MS = 20_000;
+const MIN_WORKER_INTERVAL_MS = 5_000;
+const HARD_DEADLINE_MS = 120_000;
+const MAX_CHUNKS_PER_INVOCATION = 80;
+const PARALLEL_WORKERS = 4;
 // If the only remaining work is delayed, wait up to this long inside the
-// invocation for the soonest row to become ready (avoids cron-only requeue lag).
-const MAX_INLINE_WAIT_MS = 8_000;
+// invocation for the soonest row to become ready.
+const MAX_INLINE_WAIT_MS = 5_000;
 
 function expBackoffMs(attempts: number, base: number, cap: number, jitter = RATE_LIMIT_JITTER_MS): number {
   // attempts is the new attempt count (1 = first failure)
@@ -411,11 +412,26 @@ Deno.serve(async (req) => {
     let stop = false;
     while (!stop && processed < MAX_CHUNKS_PER_INVOCATION) {
       if (Date.now() - startedAt > HARD_DEADLINE_MS) break;
-      const r = await processOne(admin, "", cache);
-      if (r.result === "empty") {
-        // Nothing immediately ready. If a delayed row is due soon AND we still
-        // have deadline budget, sleep briefly and try once more — this keeps
-        // the rate-limit recovery loop tight without waiting for cron.
+      // Run PARALLEL_WORKERS processOne calls concurrently for throughput.
+      const batchSize = Math.min(PARALLEL_WORKERS, MAX_CHUNKS_PER_INVOCATION - processed);
+      const results = await Promise.all(
+        Array.from({ length: batchSize }, () => processOne(admin, "", cache).catch((e) => ({
+          result: "error" as const, count: 0, detail: e instanceof Error ? e.message : String(e),
+        }))),
+      );
+      let anyEmpty = false;
+      let anyHalt = false;
+      for (const r of results) {
+        if (r.result === "empty") { anyEmpty = true; continue; }
+        if (r.result === "done") processed += r.count ?? 1;
+        if (r.result === "credit_exhausted") anyHalt = true;
+      }
+      if (anyHalt) { stop = true; break; }
+      await admin.from("translation_worker_state").update({
+        last_heartbeat: new Date().toISOString(),
+        total_processed: (lockedState.total_processed ?? 0) + processed,
+      }).eq("id", 1);
+      if (anyEmpty) {
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
         if (remaining < 2_000) { stop = true; break; }
         const { data: nextDelayed } = await admin
@@ -434,16 +450,8 @@ Deno.serve(async (req) => {
         );
         if (waitMs > MAX_INLINE_WAIT_MS) { stop = true; break; }
         if (waitMs > 0) await sleep(waitMs);
-        continue; // retry pick on next iteration
+        continue;
       }
-      if (r.result === "done") processed += r.count ?? 1;
-      if (r.result === "rate_limited" || r.result === "credit_exhausted" || r.result === "error") {
-        stop = true;
-      }
-      await admin.from("translation_worker_state").update({
-        last_heartbeat: new Date().toISOString(),
-        total_processed: (lockedState.total_processed ?? 0) + processed,
-      }).eq("id", 1);
       if (INTER_CHUNK_DELAY_MS > 0) await sleep(INTER_CHUNK_DELAY_MS);
     }
 

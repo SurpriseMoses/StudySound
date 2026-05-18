@@ -1,0 +1,2 @@
+UPDATE public.translation_worker_state SET is_running=true, last_heartbeat=NULL, last_error=NULL, current_queue_id=NULL, current_document_id=NULL, current_language=NULL WHERE id=1;
+UPDATE public.translation_seed_queue SET delayed_until=NULL, last_error=NULL WHERE status='pending' AND delayed_until IS NOT NULL;
