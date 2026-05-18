@@ -363,8 +363,14 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const hasTranslationProvider = Boolean(
+      Deno.env.get("Gemini_Secret_Key") ||
+      Deno.env.get("LOVABLE_API_KEY") ||
+      Deno.env.get("Azure_Secret_Key_Translator"),
+    );
+    if (!hasTranslationProvider) {
+      throw new Error("No translation provider is configured");
+    }
 
     // Auth: allow either an admin user JWT OR a cron/internal call (any valid JWT
     // — anon or service role — is fine since this is a non-destructive worker
@@ -398,7 +404,7 @@ Deno.serve(async (req) => {
     let stop = false;
     while (!stop && processed < MAX_CHUNKS_PER_INVOCATION) {
       if (Date.now() - startedAt > HARD_DEADLINE_MS) break;
-      const r = await processOne(admin, LOVABLE_KEY, cache);
+      const r = await processOne(admin, "", cache);
       if (r.result === "empty") {
         // Nothing immediately ready. If a delayed row is due soon AND we still
         // have deadline budget, sleep briefly and try once more — this keeps
