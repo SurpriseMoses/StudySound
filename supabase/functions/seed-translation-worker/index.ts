@@ -41,6 +41,7 @@ const ERROR_BASE_MS = 10_000;
 const ERROR_HARD_CAP_MS = 2 * 60_000;
 const CREDIT_EXHAUSTED_DELAY_MS = 30 * 60_000;
 const LOCK_TIMEOUT_MS = 90_000;
+const MIN_WORKER_INTERVAL_MS = 90_000;
 const HARD_DEADLINE_MS = 50_000;
 const MAX_CHUNKS_PER_INVOCATION = 2;
 // If the only remaining work is delayed, wait up to this long inside the
