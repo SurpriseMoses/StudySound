@@ -17,6 +17,7 @@ import {
   detectEnglishLeak,
   geminiTranslateMulti,
   TranslationRateLimitError,
+  TranslationCreditsExhaustedError,
 } from "../_shared/translation-pipeline.ts";
 
 const corsHeaders = {
@@ -27,7 +28,7 @@ const corsHeaders = {
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
-const INTER_CHUNK_DELAY_MS = 0;
+const INTER_CHUNK_DELAY_MS = 1_500;
 const MAX_ATTEMPTS = 8;
 // Exponential back-off for rate-limited rows: base * 2^(attempt-1) + jitter,
 // clamped to [MIN, HARD_CAP]. Honours Azure's Retry-After when supplied.
@@ -38,9 +39,10 @@ const RATE_LIMIT_JITTER_MS = 1_500;
 // Generic transient errors back off more gently
 const ERROR_BASE_MS = 10_000;
 const ERROR_HARD_CAP_MS = 2 * 60_000;
+const CREDIT_EXHAUSTED_DELAY_MS = 30 * 60_000;
 const LOCK_TIMEOUT_MS = 90_000;
 const HARD_DEADLINE_MS = 50_000;
-const MAX_CHUNKS_PER_INVOCATION = 200;
+const MAX_CHUNKS_PER_INVOCATION = 20;
 // If the only remaining work is delayed, wait up to this long inside the
 // invocation for the soonest row to become ready (avoids cron-only requeue lag).
 const MAX_INLINE_WAIT_MS = 8_000;
