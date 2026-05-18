@@ -28,7 +28,7 @@ const corsHeaders = {
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
-const INTER_CHUNK_DELAY_MS = 1_500;
+const INTER_CHUNK_DELAY_MS = 8_000;
 const MAX_ATTEMPTS = 8;
 // Exponential back-off for rate-limited rows: base * 2^(attempt-1) + jitter,
 // clamped to [MIN, HARD_CAP]. Honours Azure's Retry-After when supplied.
@@ -42,7 +42,7 @@ const ERROR_HARD_CAP_MS = 2 * 60_000;
 const CREDIT_EXHAUSTED_DELAY_MS = 30 * 60_000;
 const LOCK_TIMEOUT_MS = 90_000;
 const HARD_DEADLINE_MS = 50_000;
-const MAX_CHUNKS_PER_INVOCATION = 20;
+const MAX_CHUNKS_PER_INVOCATION = 2;
 // If the only remaining work is delayed, wait up to this long inside the
 // invocation for the soonest row to become ready (avoids cron-only requeue lag).
 const MAX_INLINE_WAIT_MS = 8_000;
@@ -334,7 +334,7 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
       // Per-row exponential back-off; honour Retry-After as a floor.
       for (const c of todoRows) {
         const attempts = (c.attempts ?? 0) + 1;
-        const exhausted = attempts >= MAX_ATTEMPTS;
+        const exhausted = false;
         const expDelay = expBackoffMs(attempts, RATE_LIMIT_BASE_MS, RATE_LIMIT_DELAY_HARD_CAP_MS);
         const delayMs = Math.max(retryAfterMs ?? 0, expDelay);
         await admin.from("translation_seed_queue").update({
