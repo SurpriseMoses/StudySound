@@ -307,7 +307,10 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
 
-    if (e instanceof TranslationCreditsExhaustedError || /credits exhausted|\b402\b/i.test(msg)) {
+    const retryAfterMs = (e as { retryAfterMs?: number })?.retryAfterMs;
+    const isProviderRateLimit = e instanceof TranslationRateLimitError || /^All translation providers are rate-limited:/i.test(msg);
+
+    if (!isProviderRateLimit && (e instanceof TranslationCreditsExhaustedError || /credits exhausted|\b402\b/i.test(msg))) {
       const delayedUntil = new Date(Date.now() + CREDIT_EXHAUSTED_DELAY_MS).toISOString();
       await admin.from("translation_seed_queue").update({
         status: "pending",
@@ -323,8 +326,7 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
       return { result: "credit_exhausted" as const, count: 0, detail: msg };
     }
 
-    const retryAfterMs = (e as { retryAfterMs?: number })?.retryAfterMs;
-    if (retryAfterMs !== undefined || /rate.?limit|429/i.test(msg)) {
+    if (isProviderRateLimit || retryAfterMs !== undefined || /rate.?limit|429/i.test(msg)) {
       // Per-row exponential back-off; honour Retry-After as a floor.
       for (const c of todoRows) {
         const attempts = (c.attempts ?? 0) + 1;
