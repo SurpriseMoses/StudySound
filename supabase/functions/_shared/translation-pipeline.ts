@@ -210,6 +210,43 @@ async function callLovableGateway(system: string, text: string): Promise<string>
   return out;
 }
 
+async function callAzureTranslator(text: string, sourceLang: string, targetLang: string): Promise<string> {
+  const apiKey = Deno.env.get("Azure_Secret_Key_Translator");
+  if (!apiKey) throw new Error("Azure_Secret_Key_Translator is not configured");
+
+  const from = AZURE_TRANSLATOR_LANG[sourceLang] ?? sourceLang;
+  const to = AZURE_TRANSLATOR_LANG[targetLang] ?? targetLang;
+  const params = new URLSearchParams({ "api-version": "3.0", from, to });
+  const headers: Record<string, string> = {
+    "Ocp-Apim-Subscription-Key": apiKey,
+    "Content-Type": "application/json",
+  };
+  if (AZURE_TRANSLATOR_REGION) headers["Ocp-Apim-Subscription-Region"] = AZURE_TRANSLATOR_REGION;
+
+  const res = await fetch(`${AZURE_TRANSLATOR_ENDPOINT}?${params.toString()}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify([{ text }]),
+  });
+  if (res.status === 429) {
+    const ra = Number(res.headers.get("retry-after"));
+    throw new TranslationRateLimitError(
+      "Azure Translator rate limit (429)",
+      Number.isFinite(ra) && ra > 0 ? ra * 1000 : 60_000,
+    );
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Azure Translator ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const json = await res.json();
+  const out = json?.[0]?.translations?.[0]?.text;
+  if (typeof out !== "string" || !out.trim()) {
+    throw new Error("Empty Azure translation response");
+  }
+  return out;
+}
+
 
 // Translate the same source text into multiple target languages in parallel.
 export async function geminiTranslateMulti(
