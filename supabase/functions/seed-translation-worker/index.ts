@@ -28,25 +28,26 @@ const corsHeaders = {
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
-const INTER_CHUNK_DELAY_MS = 8_000;
+const INTER_CHUNK_DELAY_MS = 200;
 const MAX_ATTEMPTS = 8;
 // Exponential back-off for rate-limited rows: base * 2^(attempt-1) + jitter,
-// clamped to [MIN, HARD_CAP]. Honours Azure's Retry-After when supplied.
+// clamped to [MIN, HARD_CAP]. Honours Retry-After when supplied.
 const RATE_LIMIT_BASE_MS = 2_000;
-const RATE_LIMIT_DELAY_MIN_MS = 2_000;
-const RATE_LIMIT_DELAY_HARD_CAP_MS = 5 * 60_000; // 5 min
-const RATE_LIMIT_JITTER_MS = 1_500;
+const RATE_LIMIT_DELAY_MIN_MS = 1_000;
+const RATE_LIMIT_DELAY_HARD_CAP_MS = 2 * 60_000;
+const RATE_LIMIT_JITTER_MS = 1_000;
 // Generic transient errors back off more gently
-const ERROR_BASE_MS = 10_000;
-const ERROR_HARD_CAP_MS = 2 * 60_000;
-const CREDIT_EXHAUSTED_DELAY_MS = 30 * 60_000;
-const LOCK_TIMEOUT_MS = 90_000;
-const MIN_WORKER_INTERVAL_MS = 90_000;
-const HARD_DEADLINE_MS = 50_000;
-const MAX_CHUNKS_PER_INVOCATION = 2;
+const ERROR_BASE_MS = 5_000;
+const ERROR_HARD_CAP_MS = 60_000;
+const CREDIT_EXHAUSTED_DELAY_MS = 10 * 60_000;
+const LOCK_TIMEOUT_MS = 20_000;
+const MIN_WORKER_INTERVAL_MS = 5_000;
+const HARD_DEADLINE_MS = 120_000;
+const MAX_CHUNKS_PER_INVOCATION = 80;
+const PARALLEL_WORKERS = 4;
 // If the only remaining work is delayed, wait up to this long inside the
-// invocation for the soonest row to become ready (avoids cron-only requeue lag).
-const MAX_INLINE_WAIT_MS = 8_000;
+// invocation for the soonest row to become ready.
+const MAX_INLINE_WAIT_MS = 5_000;
 
 function expBackoffMs(attempts: number, base: number, cap: number, jitter = RATE_LIMIT_JITTER_MS): number {
   // attempts is the new attempt count (1 = first failure)
