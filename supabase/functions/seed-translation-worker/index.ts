@@ -144,16 +144,10 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
   if (pickErr) throw pickErr;
   if (!row) return { result: "empty" as const, count: 0 };
 
-  // Grab all sibling pending rows for same doc+chunk (different target langs)
-  const { data: siblings } = await admin
-    .from("translation_seed_queue")
-    .select("id, document_id, chunk_index, target_language, attempts")
-    .eq("status", "pending")
-    .eq("document_id", row.document_id)
-    .eq("chunk_index", row.chunk_index)
-    .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`);
-
-  const batch = (siblings && siblings.length > 0 ? siblings : [row]) as Array<typeof row>;
+  // Process only one language row per invocation. Google Gemini often applies
+  // strict per-minute quotas, so batching all languages for one chunk causes
+  // repeated 429s and makes the queue look stuck.
+  const batch = [row] as Array<typeof row>;
   const ids = batch.map((b) => b.id);
 
   // Atomically claim
