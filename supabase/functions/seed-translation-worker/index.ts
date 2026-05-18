@@ -412,11 +412,26 @@ Deno.serve(async (req) => {
     let stop = false;
     while (!stop && processed < MAX_CHUNKS_PER_INVOCATION) {
       if (Date.now() - startedAt > HARD_DEADLINE_MS) break;
-      const r = await processOne(admin, "", cache);
-      if (r.result === "empty") {
-        // Nothing immediately ready. If a delayed row is due soon AND we still
-        // have deadline budget, sleep briefly and try once more — this keeps
-        // the rate-limit recovery loop tight without waiting for cron.
+      // Run PARALLEL_WORKERS processOne calls concurrently for throughput.
+      const batchSize = Math.min(PARALLEL_WORKERS, MAX_CHUNKS_PER_INVOCATION - processed);
+      const results = await Promise.all(
+        Array.from({ length: batchSize }, () => processOne(admin, "", cache).catch((e) => ({
+          result: "error" as const, count: 0, detail: e instanceof Error ? e.message : String(e),
+        }))),
+      );
+      let anyEmpty = false;
+      let anyHalt = false;
+      for (const r of results) {
+        if (r.result === "empty") { anyEmpty = true; continue; }
+        if (r.result === "done") processed += r.count ?? 1;
+        if (r.result === "credit_exhausted") anyHalt = true;
+      }
+      if (anyHalt) { stop = true; break; }
+      await admin.from("translation_worker_state").update({
+        last_heartbeat: new Date().toISOString(),
+        total_processed: (lockedState.total_processed ?? 0) + processed,
+      }).eq("id", 1);
+      if (anyEmpty) {
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
         if (remaining < 2_000) { stop = true; break; }
         const { data: nextDelayed } = await admin
@@ -435,16 +450,8 @@ Deno.serve(async (req) => {
         );
         if (waitMs > MAX_INLINE_WAIT_MS) { stop = true; break; }
         if (waitMs > 0) await sleep(waitMs);
-        continue; // retry pick on next iteration
+        continue;
       }
-      if (r.result === "done") processed += r.count ?? 1;
-      if (r.result === "rate_limited" || r.result === "credit_exhausted" || r.result === "error") {
-        stop = true;
-      }
-      await admin.from("translation_worker_state").update({
-        last_heartbeat: new Date().toISOString(),
-        total_processed: (lockedState.total_processed ?? 0) + processed,
-      }).eq("id", 1);
       if (INTER_CHUNK_DELAY_MS > 0) await sleep(INTER_CHUNK_DELAY_MS);
     }
 
