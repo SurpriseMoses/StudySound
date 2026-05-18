@@ -269,7 +269,12 @@ Deno.serve(async (req) => {
 
     if (action === "start") {
       await admin.from("translation_worker_state").update({
-        is_running: true, last_heartbeat: new Date().toISOString(), last_error: null,
+        is_running: true,
+        current_queue_id: null,
+        current_document_id: null,
+        current_language: null,
+        last_heartbeat: null,
+        last_error: null,
       }).eq("id", 1);
       return new Response(JSON.stringify({ ok: true, is_running: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

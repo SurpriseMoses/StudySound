@@ -17,6 +17,7 @@ import {
   detectEnglishLeak,
   geminiTranslateMulti,
   TranslationRateLimitError,
+  TranslationCreditsExhaustedError,
 } from "../_shared/translation-pipeline.ts";
 
 const corsHeaders = {
@@ -27,7 +28,7 @@ const corsHeaders = {
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
-const INTER_CHUNK_DELAY_MS = 0;
+const INTER_CHUNK_DELAY_MS = 1_500;
 const MAX_ATTEMPTS = 8;
 // Exponential back-off for rate-limited rows: base * 2^(attempt-1) + jitter,
 // clamped to [MIN, HARD_CAP]. Honours Azure's Retry-After when supplied.
@@ -38,9 +39,10 @@ const RATE_LIMIT_JITTER_MS = 1_500;
 // Generic transient errors back off more gently
 const ERROR_BASE_MS = 10_000;
 const ERROR_HARD_CAP_MS = 2 * 60_000;
+const CREDIT_EXHAUSTED_DELAY_MS = 30 * 60_000;
 const LOCK_TIMEOUT_MS = 90_000;
 const HARD_DEADLINE_MS = 50_000;
-const MAX_CHUNKS_PER_INVOCATION = 200;
+const MAX_CHUNKS_PER_INVOCATION = 20;
 // If the only remaining work is delayed, wait up to this long inside the
 // invocation for the soonest row to become ready (avoids cron-only requeue lag).
 const MAX_INLINE_WAIT_MS = 8_000;
@@ -311,6 +313,22 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
 
+    if (e instanceof TranslationCreditsExhaustedError || /credits exhausted|\b402\b/i.test(msg)) {
+      const delayedUntil = new Date(Date.now() + CREDIT_EXHAUSTED_DELAY_MS).toISOString();
+      await admin.from("translation_seed_queue").update({
+        status: "pending",
+        started_at: null,
+        delayed_until: delayedUntil,
+        last_error: `credits-exhausted (paused 30m, attempts preserved): ${msg}`,
+      }).in("id", todoRows.map((c) => c.id));
+      await admin.from("translation_worker_state").update({
+        is_running: false,
+        last_error: `Paused: ${msg}`,
+        last_heartbeat: null,
+      }).eq("id", 1);
+      return { result: "credit_exhausted" as const, count: 0, detail: msg };
+    }
+
     const retryAfterMs = (e as { retryAfterMs?: number })?.retryAfterMs;
     if (retryAfterMs !== undefined || /rate.?limit|429/i.test(msg)) {
       // Per-row exponential back-off; honour Retry-After as a floor.
@@ -412,6 +430,9 @@ Deno.serve(async (req) => {
         continue; // retry pick on next iteration
       }
       if (r.result === "done") processed += r.count ?? 1;
+      if (r.result === "rate_limited" || r.result === "credit_exhausted" || r.result === "error") {
+        stop = true;
+      }
       await admin.from("translation_worker_state").update({
         last_heartbeat: new Date().toISOString(),
         total_processed: (state.total_processed ?? 0) + processed,
