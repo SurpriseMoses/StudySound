@@ -313,6 +313,22 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
 
+    if (e instanceof TranslationCreditsExhaustedError || /credits exhausted|\b402\b/i.test(msg)) {
+      const delayedUntil = new Date(Date.now() + CREDIT_EXHAUSTED_DELAY_MS).toISOString();
+      await admin.from("translation_seed_queue").update({
+        status: "pending",
+        started_at: null,
+        delayed_until: delayedUntil,
+        last_error: `credits-exhausted (paused 30m, attempts preserved): ${msg}`,
+      }).in("id", todoRows.map((c) => c.id));
+      await admin.from("translation_worker_state").update({
+        is_running: false,
+        last_error: `Paused: ${msg}`,
+        last_heartbeat: null,
+      }).eq("id", 1);
+      return { result: "credit_exhausted" as const, count: 0, detail: msg };
+    }
+
     const retryAfterMs = (e as { retryAfterMs?: number })?.retryAfterMs;
     if (retryAfterMs !== undefined || /rate.?limit|429/i.test(msg)) {
       // Per-row exponential back-off; honour Retry-After as a floor.
