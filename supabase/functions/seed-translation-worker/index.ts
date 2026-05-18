@@ -454,7 +454,7 @@ Deno.serve(async (req) => {
       current_queue_id: null,
       current_document_id: null,
       current_language: null,
-      last_heartbeat: null,
+      last_heartbeat: new Date(Date.now() - LOCK_TIMEOUT_MS + MIN_WORKER_INTERVAL_MS).toISOString(),
     }).eq("id", 1);
 
     return new Response(JSON.stringify({ ok: true, processed, ms: Date.now() - startedAt }), {
