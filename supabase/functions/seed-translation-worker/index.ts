@@ -430,6 +430,9 @@ Deno.serve(async (req) => {
         continue; // retry pick on next iteration
       }
       if (r.result === "done") processed += r.count ?? 1;
+      if (r.result === "rate_limited" || r.result === "credit_exhausted" || r.result === "error") {
+        stop = true;
+      }
       await admin.from("translation_worker_state").update({
         last_heartbeat: new Date().toISOString(),
         total_processed: (state.total_processed ?? 0) + processed,
