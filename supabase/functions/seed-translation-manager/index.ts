@@ -396,8 +396,13 @@ Deno.serve(async (req) => {
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[seed-translation-manager]", msg);
+    let msg: string;
+    if (e instanceof Error) msg = e.message;
+    else if (e && typeof e === "object") {
+      const obj = e as Record<string, unknown>;
+      msg = (obj.message as string) ?? (obj.error as string) ?? (obj.hint as string) ?? JSON.stringify(obj);
+    } else msg = String(e);
+    console.error("[seed-translation-manager]", msg, e);
     return new Response(JSON.stringify({ error: msg }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
