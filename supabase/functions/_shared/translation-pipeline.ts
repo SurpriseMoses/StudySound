@@ -159,13 +159,6 @@ async function callLovableGateway(system: string, text: string): Promise<string>
   return out;
 }
 
-function _unused_post(out: string): string {
-  // Strip accidental wrapping quotes/code fences the model sometimes adds.
-  return out
-    .replace(/^```[a-z]*\n?/i, "")
-    .replace(/```$/i, "")
-    .trim();
-}
 
 // Translate the same source text into multiple target languages in parallel.
 export async function geminiTranslateMulti(
