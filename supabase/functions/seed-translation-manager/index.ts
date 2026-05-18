@@ -297,10 +297,8 @@ Deno.serve(async (req) => {
     }
 
     if (action === "clear_failed") {
-      const { data, error } = await admin.from("translation_seed_queue")
-        .delete().eq("status", "failed").select("id");
-      if (error) throw error;
-      return new Response(JSON.stringify({ ok: true, deleted: data?.length ?? 0 }), {
+      const deleted = await deleteFailedRows(admin);
+      return new Response(JSON.stringify({ ok: true, deleted }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -414,18 +412,8 @@ Deno.serve(async (req) => {
       const lang = body?.target_language ? String(body.target_language) : null;
       const category = String(body?.category ?? "all_failed");
 
-      let q = admin.from("translation_seed_queue")
-        .update({ status: "pending", started_at: null, delayed_until: null, attempts: 0, last_error: null })
-        .eq("status", "failed");
-      if (docId) q = q.eq("document_id", docId);
-      if (lang) q = q.eq("target_language", lang);
-      if (category === "rate_limited") q = q.ilike("last_error", "rate-limited%");
-      // category "failed" → exclude rate-limited
-      if (category === "failed") q = q.not("last_error", "ilike", "rate-limited%");
-
-      const { data, error } = await q.select("id");
-      if (error) throw error;
-      return new Response(JSON.stringify({ ok: true, retried: data?.length ?? 0 }), {
+      const retried = await retryFailedRows(admin, { documentId: docId, lang, category });
+      return new Response(JSON.stringify({ ok: true, retried }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
