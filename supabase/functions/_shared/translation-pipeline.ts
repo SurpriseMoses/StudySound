@@ -37,6 +37,13 @@ export class TranslationRateLimitError extends Error {
   }
 }
 
+export class TranslationCreditsExhaustedError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = "TranslationCreditsExhaustedError";
+  }
+}
+
 const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const LOVABLE_AI_MODEL = "google/gemini-3-flash-preview";
 
@@ -69,7 +76,8 @@ export async function geminiTranslate(
   const res = await fetch(LOVABLE_AI_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      "Lovable-API-Key": apiKey,
+      "X-Lovable-AIG-SDK": "edge-fetch",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -90,7 +98,7 @@ export async function geminiTranslate(
     );
   }
   if (res.status === 402) {
-    throw new Error("Lovable AI credits exhausted (402)");
+    throw new TranslationCreditsExhaustedError("Lovable AI credits exhausted (402)");
   }
   if (!res.ok) {
     const body = await res.text();
@@ -115,9 +123,10 @@ export async function geminiTranslateMulti(
   sourceLang: string,
   targetLangs: string[],
 ): Promise<Record<string, string>> {
-  const results = await Promise.all(
-    targetLangs.map(async (lang) => [lang, await geminiTranslate(text, sourceLang, lang)] as const),
-  );
+  const results: Array<readonly [string, string]> = [];
+  for (const lang of targetLangs) {
+    results.push([lang, await geminiTranslate(text, sourceLang, lang)] as const);
+  }
   return Object.fromEntries(results);
 }
 
