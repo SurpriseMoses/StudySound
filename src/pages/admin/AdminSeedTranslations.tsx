@@ -9,9 +9,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-const TARGET_LANGS = ["zu", "xh", "tn", "nso"] as const;
+const TARGET_LANGS = ["zu", "xh", "tn", "nso", "af"] as const;
 const LANG_LABEL: Record<string, string> = {
-  zu: "Zulu", xh: "Xhosa", tn: "Setswana", nso: "Sepedi",
+  zu: "Zulu", xh: "Xhosa", tn: "Setswana", nso: "Sepedi", af: "Afrikaans",
 };
 
 type SeedDoc = {
