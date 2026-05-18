@@ -46,9 +46,13 @@ export class TranslationCreditsExhaustedError extends Error {
 
 const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const LOVABLE_AI_MODEL = "google/gemini-3-flash-preview";
+const GOOGLE_GEMINI_MODEL = "gemini-2.0-flash";
+const GOOGLE_GEMINI_URL = (model: string, key: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
-// Translate a single text into ONE target language using Gemini via Lovable AI.
-// Returns plain translated text only — no commentary, no quotes, no source.
+// Translate a single text into ONE target language using Gemini.
+// Prefers direct Google Gemini API (Gemini_Secret_Key) when available,
+// otherwise falls back to Lovable AI gateway (LOVABLE_API_KEY).
 export async function geminiTranslate(
   text: string,
   sourceLang: string,
@@ -56,9 +60,6 @@ export async function geminiTranslate(
 ): Promise<string> {
   if (!text.trim()) return text;
   if (sourceLang === targetLang) return text;
-
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
-  if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
   const sourceLabel = LANGUAGE_LABELS[sourceLang] ?? sourceLang;
   const targetLabel = LANGUAGE_LABELS[targetLang] ?? targetLang;
@@ -72,6 +73,52 @@ export async function geminiTranslate(
     `3. Translate ALL words — do NOT leave English words, headings, or ALL-CAPS phrases untranslated, unless they are proper names (e.g. people, places).\n` +
     `4. Keep numbers, dates, and proper nouns as-is.\n` +
     `5. Use natural, clear ${targetLabel} suitable for a teenage learner.`;
+
+  const googleKey = Deno.env.get("Gemini_Secret_Key");
+  const out = googleKey
+    ? await callGoogleGemini(system, text, googleKey)
+    : await callLovableGateway(system, text);
+
+  // Strip accidental wrapping quotes/code fences the model sometimes adds.
+  return out
+    .replace(/^```[a-z]*\n?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+}
+
+async function callGoogleGemini(system: string, text: string, apiKey: string): Promise<string> {
+  const res = await fetch(GOOGLE_GEMINI_URL(GOOGLE_GEMINI_MODEL, apiKey), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ text }] }],
+      generationConfig: { temperature: 0.2 },
+    }),
+  });
+
+  if (res.status === 429) {
+    const ra = Number(res.headers.get("retry-after"));
+    throw new TranslationRateLimitError(
+      "Google Gemini rate limit (429)",
+      Number.isFinite(ra) && ra > 0 ? ra * 1000 : 30_000,
+    );
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Google Gemini ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const json = await res.json();
+  const out = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
+  if (typeof out !== "string" || !out.trim()) {
+    throw new Error("Empty Google Gemini translation response");
+  }
+  return out;
+}
+
+async function callLovableGateway(system: string, text: string): Promise<string> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!apiKey) throw new Error("No translation API key configured (Gemini_Secret_Key or LOVABLE_API_KEY)");
 
   const res = await fetch(LOVABLE_AI_URL, {
     method: "POST",
@@ -104,18 +151,14 @@ export async function geminiTranslate(
     const body = await res.text();
     throw new Error(`Lovable AI ${res.status}: ${body.slice(0, 200)}`);
   }
-
   const json = await res.json();
   const out = json?.choices?.[0]?.message?.content;
   if (typeof out !== "string" || !out.trim()) {
     throw new Error("Empty Gemini translation response");
   }
-  // Strip accidental wrapping quotes/code fences the model sometimes adds.
-  return out
-    .replace(/^```[a-z]*\n?/i, "")
-    .replace(/```$/i, "")
-    .trim();
+  return out;
 }
+
 
 // Translate the same source text into multiple target languages in parallel.
 export async function geminiTranslateMulti(
