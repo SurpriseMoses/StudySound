@@ -114,28 +114,62 @@ export default function AdminSeedTranslations() {
     const cachedByDocLang = new Map<string, Record<string, number>>();
     const queueByDoc = new Map<string, SeedDoc["queue_counts"]>();
     if (ids.length > 0) {
-      const [{ data: assets }, { data: queueRows }] = await Promise.all([
-        supabase
-          .from("translation_assets")
-          .select("document_id, target_language")
-          .in("document_id", ids)
-          .in("target_language", TARGET_LANGS as unknown as string[]),
-        supabase
-          .from("translation_seed_queue")
-          .select("document_id, status")
-          .in("document_id", ids),
-      ]);
-      (assets ?? []).forEach((a) => {
-        const m = cachedByDocLang.get(a.document_id) ?? {};
-        m[a.target_language] = (m[a.target_language] ?? 0) + 1;
-        cachedByDocLang.set(a.document_id, m);
-      });
-      (queueRows ?? []).forEach((row) => {
-        const counts = queueByDoc.get(row.document_id) ?? { pending: 0, processing: 0, done: 0, failed: 0 };
-        const status = row.status as keyof SeedDoc["queue_counts"];
-        if (status in counts) counts[status] += 1;
-        queueByDoc.set(row.document_id, counts);
-      });
+      // Paginate both queries — Supabase caps each request at 1000 rows,
+      // which silently undercounted books with many chunks × 4 languages.
+      const PAGE = 1000;
+      async function fetchAllAssets() {
+        const out: Array<{ document_id: string; target_language: string }> = [];
+        let from = 0;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { data, error: e } = await supabase
+            .from("translation_assets")
+            .select("document_id, target_language")
+            .in("document_id", ids)
+            .in("target_language", TARGET_LANGS as unknown as string[])
+            .range(from, from + PAGE - 1);
+          if (e) throw e;
+          const batch = data ?? [];
+          out.push(...batch);
+          if (batch.length < PAGE) break;
+          from += PAGE;
+        }
+        return out;
+      }
+      async function fetchAllQueue() {
+        const out: Array<{ document_id: string; status: string }> = [];
+        let from = 0;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { data, error: e } = await supabase
+            .from("translation_seed_queue")
+            .select("document_id, status")
+            .in("document_id", ids)
+            .range(from, from + PAGE - 1);
+          if (e) throw e;
+          const batch = data ?? [];
+          out.push(...batch);
+          if (batch.length < PAGE) break;
+          from += PAGE;
+        }
+        return out;
+      }
+      try {
+        const [assets, queueRows] = await Promise.all([fetchAllAssets(), fetchAllQueue()]);
+        assets.forEach((a) => {
+          const m = cachedByDocLang.get(a.document_id) ?? {};
+          m[a.target_language] = (m[a.target_language] ?? 0) + 1;
+          cachedByDocLang.set(a.document_id, m);
+        });
+        queueRows.forEach((row) => {
+          const counts = queueByDoc.get(row.document_id) ?? { pending: 0, processing: 0, done: 0, failed: 0 };
+          const status = row.status as keyof SeedDoc["queue_counts"];
+          if (status in counts) counts[status] += 1;
+          queueByDoc.set(row.document_id, counts);
+        });
+      } catch (e) {
+        console.error("loadDocs aggregation failed", e);
+      }
     }
     setDocs(
       (docRows ?? []).map((d) => ({
