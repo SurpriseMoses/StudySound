@@ -146,10 +146,10 @@ function applyRetryFilters(q: any, filters: { documentId?: string | null; lang?:
 async function retryFailedRows(admin: any, filters: { documentId?: string | null; lang?: string | null; category?: string }) {
   let total = 0;
   while (true) {
-    const { data: rows, error: selectErr } = await applyRetryFilters(
-      admin.from("translation_seed_queue").select("id").order("id", { ascending: true }).limit(MUTATION_BATCH_SIZE),
-      filters,
-    );
+    const q = applyRetryFilters(admin.from("translation_seed_queue").select("id"), filters)
+      .order("id", { ascending: true })
+      .limit(MUTATION_BATCH_SIZE);
+    const { data: rows, error: selectErr } = await q;
     if (selectErr) throw selectErr;
     const ids = (rows ?? []).map((row: { id: string }) => row.id);
     if (ids.length === 0) break;
