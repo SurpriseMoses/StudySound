@@ -11,7 +11,7 @@
 
 export const CURRENT_TRANSLATION_VERSION = 2;
 
-// ---------------- Gemini-based translation (via Lovable AI Gateway) ----------------
+// ---------------- Translation providers (Gemini first, resilient fallbacks) ----------------
 
 export const LANGUAGE_LABELS: Record<string, string> = {
   en: "English",
@@ -49,6 +49,11 @@ const LOVABLE_AI_MODEL = "google/gemini-3-flash-preview";
 const GOOGLE_GEMINI_MODEL = "gemini-2.0-flash";
 const GOOGLE_GEMINI_URL = (model: string, key: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+const AZURE_TRANSLATOR_ENDPOINT = "https://api.cognitive.microsofttranslator.com/translate";
+const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "southafricanorth";
+const AZURE_TRANSLATOR_LANG: Record<string, string> = {
+  en: "en", af: "af", zu: "zu", xh: "xh", nso: "nso", tn: "tn", fr: "fr",
+};
 const GEMINI_LANGUAGE_DELAY_MS = 6_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -77,16 +82,59 @@ export async function geminiTranslate(
     `4. Keep numbers, dates, and proper nouns as-is.\n` +
     `5. Use natural, clear ${targetLabel} suitable for a teenage learner.`;
 
-  const googleKey = Deno.env.get("Gemini_Secret_Key");
-  const out = googleKey
-    ? await callGoogleGemini(system, text, googleKey)
-    : await callLovableGateway(system, text);
+  const out = await callBestAvailableTranslator(system, text, sourceLang, targetLang);
 
   // Strip accidental wrapping quotes/code fences the model sometimes adds.
   return out
     .replace(/^```[a-z]*\n?/i, "")
     .replace(/```$/i, "")
     .trim();
+}
+
+async function callBestAvailableTranslator(
+  system: string,
+  text: string,
+  sourceLang: string,
+  targetLang: string,
+): Promise<string> {
+  const errors: string[] = [];
+  const googleKey = Deno.env.get("Gemini_Secret_Key");
+  if (googleKey) {
+    try {
+      return await callGoogleGemini(system, text, googleKey);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(msg);
+      console.warn(`[translate] Google Gemini failed; trying fallback: ${msg}`);
+    }
+  }
+
+  if (Deno.env.get("LOVABLE_API_KEY")) {
+    try {
+      return await callLovableGateway(system, text);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(msg);
+      console.warn(`[translate] Lovable Gemini gateway failed; trying fallback: ${msg}`);
+    }
+  }
+
+  if (Deno.env.get("Azure_Secret_Key_Translator")) {
+    try {
+      return await callAzureTranslator(text, sourceLang, targetLang);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(msg);
+    }
+  }
+
+  if (errors.some((msg) => /rate.?limit|429/i.test(msg))) {
+    throw new TranslationRateLimitError(`All translation providers are rate-limited: ${errors.join(" | ")}`, 60_000);
+  }
+  if (errors.some((msg) => /credits exhausted|\b402\b/i.test(msg))) {
+    throw new TranslationCreditsExhaustedError(`Translation credits exhausted: ${errors.join(" | ")}`);
+  }
+  throw new Error(errors.length ? `No translation provider succeeded: ${errors.join(" | ")}` : "No translation API key configured");
 }
 
 async function callGoogleGemini(system: string, text: string, apiKey: string): Promise<string> {
@@ -158,6 +206,43 @@ async function callLovableGateway(system: string, text: string): Promise<string>
   const out = json?.choices?.[0]?.message?.content;
   if (typeof out !== "string" || !out.trim()) {
     throw new Error("Empty Gemini translation response");
+  }
+  return out;
+}
+
+async function callAzureTranslator(text: string, sourceLang: string, targetLang: string): Promise<string> {
+  const apiKey = Deno.env.get("Azure_Secret_Key_Translator");
+  if (!apiKey) throw new Error("Azure_Secret_Key_Translator is not configured");
+
+  const from = AZURE_TRANSLATOR_LANG[sourceLang] ?? sourceLang;
+  const to = AZURE_TRANSLATOR_LANG[targetLang] ?? targetLang;
+  const params = new URLSearchParams({ "api-version": "3.0", from, to });
+  const headers: Record<string, string> = {
+    "Ocp-Apim-Subscription-Key": apiKey,
+    "Content-Type": "application/json",
+  };
+  if (AZURE_TRANSLATOR_REGION) headers["Ocp-Apim-Subscription-Region"] = AZURE_TRANSLATOR_REGION;
+
+  const res = await fetch(`${AZURE_TRANSLATOR_ENDPOINT}?${params.toString()}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify([{ text }]),
+  });
+  if (res.status === 429) {
+    const ra = Number(res.headers.get("retry-after"));
+    throw new TranslationRateLimitError(
+      "Azure Translator rate limit (429)",
+      Number.isFinite(ra) && ra > 0 ? ra * 1000 : 60_000,
+    );
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Azure Translator ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const json = await res.json();
+  const out = json?.[0]?.translations?.[0]?.text;
+  if (typeof out !== "string" || !out.trim()) {
+    throw new Error("Empty Azure translation response");
   }
   return out;
 }

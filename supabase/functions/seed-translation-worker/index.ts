@@ -41,6 +41,7 @@ const ERROR_BASE_MS = 10_000;
 const ERROR_HARD_CAP_MS = 2 * 60_000;
 const CREDIT_EXHAUSTED_DELAY_MS = 30 * 60_000;
 const LOCK_TIMEOUT_MS = 90_000;
+const MIN_WORKER_INTERVAL_MS = 90_000;
 const HARD_DEADLINE_MS = 50_000;
 const MAX_CHUNKS_PER_INVOCATION = 2;
 // If the only remaining work is delayed, wait up to this long inside the
@@ -307,7 +308,10 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
 
-    if (e instanceof TranslationCreditsExhaustedError || /credits exhausted|\b402\b/i.test(msg)) {
+    const retryAfterMs = (e as { retryAfterMs?: number })?.retryAfterMs;
+    const isProviderRateLimit = e instanceof TranslationRateLimitError || /^All translation providers are rate-limited:/i.test(msg);
+
+    if (!isProviderRateLimit && (e instanceof TranslationCreditsExhaustedError || /credits exhausted|\b402\b/i.test(msg))) {
       const delayedUntil = new Date(Date.now() + CREDIT_EXHAUSTED_DELAY_MS).toISOString();
       await admin.from("translation_seed_queue").update({
         status: "pending",
@@ -323,8 +327,7 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
       return { result: "credit_exhausted" as const, count: 0, detail: msg };
     }
 
-    const retryAfterMs = (e as { retryAfterMs?: number })?.retryAfterMs;
-    if (retryAfterMs !== undefined || /rate.?limit|429/i.test(msg)) {
+    if (isProviderRateLimit || retryAfterMs !== undefined || /rate.?limit|429/i.test(msg)) {
       // Per-row exponential back-off; honour Retry-After as a floor.
       for (const c of todoRows) {
         const attempts = (c.attempts ?? 0) + 1;
@@ -363,8 +366,14 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const hasTranslationProvider = Boolean(
+      Deno.env.get("Gemini_Secret_Key") ||
+      Deno.env.get("LOVABLE_API_KEY") ||
+      Deno.env.get("Azure_Secret_Key_Translator"),
+    );
+    if (!hasTranslationProvider) {
+      throw new Error("No translation provider is configured");
+    }
 
     // Auth: allow either an admin user JWT OR a cron/internal call (any valid JWT
     // — anon or service role — is fine since this is a non-destructive worker
@@ -378,27 +387,31 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Lock: refuse if another worker heartbeated recently
-    const now = Date.now();
-    if (state.last_heartbeat) {
-      const last = new Date(state.last_heartbeat).getTime();
-      if (now - last < LOCK_TIMEOUT_MS) {
-        return new Response(JSON.stringify({
-          ok: true, status: "another_worker_active", processed: 0,
-          last_heartbeat: state.last_heartbeat,
-        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
+    // Atomic lock + cooldown: prevents concurrent browser/cron pings from
+    // running multiple Gemini calls and exhausting the per-minute quota.
+    const lockCutoff = new Date(Date.now() - LOCK_TIMEOUT_MS).toISOString();
+    const { data: lockRows, error: lockErr } = await admin
+      .from("translation_worker_state")
+      .update({ last_heartbeat: new Date().toISOString() })
+      .eq("id", 1)
+      .eq("is_running", true)
+      .or(`last_heartbeat.is.null,last_heartbeat.lt.${lockCutoff}`)
+      .select("*");
+    if (lockErr) throw lockErr;
+    const lockedState = lockRows?.[0];
+    if (!lockedState) {
+      return new Response(JSON.stringify({
+        ok: true, status: "cooldown_or_active", processed: 0,
+        last_heartbeat: state.last_heartbeat,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    await admin.from("translation_worker_state").update({
-      last_heartbeat: new Date().toISOString(),
-    }).eq("id", 1);
 
     const cache = new Map<string, DocCacheEntry>();
     let processed = 0;
     let stop = false;
     while (!stop && processed < MAX_CHUNKS_PER_INVOCATION) {
       if (Date.now() - startedAt > HARD_DEADLINE_MS) break;
-      const r = await processOne(admin, LOVABLE_KEY, cache);
+      const r = await processOne(admin, "", cache);
       if (r.result === "empty") {
         // Nothing immediately ready. If a delayed row is due soon AND we still
         // have deadline budget, sleep briefly and try once more — this keeps
@@ -429,7 +442,7 @@ Deno.serve(async (req) => {
       }
       await admin.from("translation_worker_state").update({
         last_heartbeat: new Date().toISOString(),
-        total_processed: (state.total_processed ?? 0) + processed,
+        total_processed: (lockedState.total_processed ?? 0) + processed,
       }).eq("id", 1);
       if (INTER_CHUNK_DELAY_MS > 0) await sleep(INTER_CHUNK_DELAY_MS);
     }
@@ -441,7 +454,7 @@ Deno.serve(async (req) => {
       current_queue_id: null,
       current_document_id: null,
       current_language: null,
-      last_heartbeat: null,
+      last_heartbeat: new Date(Date.now() - LOCK_TIMEOUT_MS + MIN_WORKER_INTERVAL_MS).toISOString(),
     }).eq("id", 1);
 
     return new Response(JSON.stringify({ ok: true, processed, ms: Date.now() - startedAt }), {
