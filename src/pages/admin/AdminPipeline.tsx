@@ -140,7 +140,7 @@ export default function AdminPipeline() {
       if (worker.audio?.is_running) supabase.functions.invoke("seed-queue-worker", { body: {} }).catch(() => {});
       if (worker.trans?.is_running) supabase.functions.invoke("seed-translation-worker", { body: {} }).catch(() => {});
       Promise.all([loadPipeline(), loadWorkerState()]);
-    }, 8000);
+    }, 45000);
     return () => {
       if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
     };

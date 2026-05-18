@@ -168,7 +168,7 @@ export default function AdminSeedTranslations() {
 
   useEffect(() => { refreshAll(); }, []);
 
-  // Auto-tick: while worker is running, ping it every 8s and refresh status.
+  // Auto-tick: while worker is running, ping it slowly to stay under Gemini quotas.
   useEffect(() => {
     if (!queueStatus?.worker?.is_running) {
       if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
@@ -178,7 +178,7 @@ export default function AdminSeedTranslations() {
     tickRef.current = window.setInterval(async () => {
       supabase.functions.invoke("seed-translation-worker", { body: {} }).catch(() => {});
       await Promise.all([loadDocs(), loadQueueStatus()]);
-    }, 8000);
+    }, 45000);
     return () => {
       if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
     };
