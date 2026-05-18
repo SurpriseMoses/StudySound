@@ -49,6 +49,9 @@ const LOVABLE_AI_MODEL = "google/gemini-3-flash-preview";
 const GOOGLE_GEMINI_MODEL = "gemini-2.0-flash";
 const GOOGLE_GEMINI_URL = (model: string, key: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+const GEMINI_LANGUAGE_DELAY_MS = 6_000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Translate a single text into ONE target language using Gemini.
 // Prefers direct Google Gemini API (Gemini_Secret_Key) when available,
@@ -167,7 +170,9 @@ export async function geminiTranslateMulti(
   targetLangs: string[],
 ): Promise<Record<string, string>> {
   const results: Array<readonly [string, string]> = [];
-  for (const lang of targetLangs) {
+  for (let i = 0; i < targetLangs.length; i++) {
+    const lang = targetLangs[i];
+    if (i > 0) await sleep(GEMINI_LANGUAGE_DELAY_MS);
     results.push([lang, await geminiTranslate(text, sourceLang, lang)] as const);
   }
   return Object.fromEntries(results);
