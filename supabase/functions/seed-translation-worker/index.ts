@@ -387,20 +387,24 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Lock: refuse if another worker heartbeated recently
-    const now = Date.now();
-    if (state.last_heartbeat) {
-      const last = new Date(state.last_heartbeat).getTime();
-      if (now - last < LOCK_TIMEOUT_MS) {
-        return new Response(JSON.stringify({
-          ok: true, status: "another_worker_active", processed: 0,
-          last_heartbeat: state.last_heartbeat,
-        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
+    // Atomic lock + cooldown: prevents concurrent browser/cron pings from
+    // running multiple Gemini calls and exhausting the per-minute quota.
+    const lockCutoff = new Date(Date.now() - LOCK_TIMEOUT_MS).toISOString();
+    const { data: lockRows, error: lockErr } = await admin
+      .from("translation_worker_state")
+      .update({ last_heartbeat: new Date().toISOString() })
+      .eq("id", 1)
+      .eq("is_running", true)
+      .or(`last_heartbeat.is.null,last_heartbeat.lt.${lockCutoff}`)
+      .select("*");
+    if (lockErr) throw lockErr;
+    const lockedState = lockRows?.[0];
+    if (!lockedState) {
+      return new Response(JSON.stringify({
+        ok: true, status: "cooldown_or_active", processed: 0,
+        last_heartbeat: state.last_heartbeat,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    await admin.from("translation_worker_state").update({
-      last_heartbeat: new Date().toISOString(),
-    }).eq("id", 1);
 
     const cache = new Map<string, DocCacheEntry>();
     let processed = 0;
@@ -438,7 +442,7 @@ Deno.serve(async (req) => {
       }
       await admin.from("translation_worker_state").update({
         last_heartbeat: new Date().toISOString(),
-        total_processed: (state.total_processed ?? 0) + processed,
+        total_processed: (lockedState.total_processed ?? 0) + processed,
       }).eq("id", 1);
       if (INTER_CHUNK_DELAY_MS > 0) await sleep(INTER_CHUNK_DELAY_MS);
     }
