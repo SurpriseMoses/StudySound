@@ -313,7 +313,7 @@ export default function AdminSeedTranslations() {
       <div>
         <h1 className="text-2xl font-display font-bold">Seed translations</h1>
         <p className="text-muted-foreground text-sm">
-          Pre-translate seeded books into Zulu, Xhosa, Setswana, and Sepedi. Cron pings the worker every 5 minutes while it's running.
+          Pre-translate seeded books into Zulu, Xhosa, Setswana, Sepedi, Afrikaans, and Xitsonga. Cron pings the worker every 5 minutes while it's running.
         </p>
       </div>
 
