@@ -505,6 +505,8 @@ function GeneratePromptsPanel({ docs }: { docs: DocOpt[] }) {
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<PromptResult[]>([]);
   const [existing, setExisting] = useState<VisualPrompt[] | null>(null);
+  const [showExisting, setShowExisting] = useState(true);
+  const [hiddenResults, setHiddenResults] = useState<Record<string, boolean>>({});
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -512,16 +514,19 @@ function GeneratePromptsPanel({ docs }: { docs: DocOpt[] }) {
     return docs.filter((d) => d.title.toLowerCase().includes(q));
   }, [docs, search]);
 
+  const loadExisting = async (id: string) => {
+    const { data } = await supabase
+      .from("translation_blueprints")
+      .select("visual_prompts")
+      .eq("document_id", id)
+      .maybeSingle();
+    setExisting((data?.visual_prompts as unknown as VisualPrompt[] | null) ?? null);
+  };
+
   useEffect(() => {
     if (!docId) { setExisting(null); return; }
-    (async () => {
-      const { data } = await supabase
-        .from("translation_blueprints")
-        .select("visual_prompts")
-        .eq("document_id", docId)
-        .maybeSingle();
-      setExisting((data?.visual_prompts as unknown as VisualPrompt[] | null) ?? null);
-    })();
+    setShowExisting(true);
+    loadExisting(docId);
   }, [docId]);
 
   const run = async () => {
@@ -540,6 +545,7 @@ function GeneratePromptsPanel({ docs }: { docs: DocOpt[] }) {
       if ((data as any)?.ok === false) throw new Error((data as any).error);
       setResults((data as any)?.results ?? []);
       toast({ title: "Done", description: `${(data as any)?.results?.length ?? 0} book(s) processed.` });
+      if (docId) await loadExisting(docId);
     } catch (e: any) {
       toast({ title: "Failed", description: e.message, variant: "destructive" });
     } finally {
