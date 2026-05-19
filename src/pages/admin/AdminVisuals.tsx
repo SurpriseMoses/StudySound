@@ -9,7 +9,8 @@ import { Loader2, Upload, Trash2, ImageIcon, FileStack, X, CheckCircle2, AlertCi
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 
-const TOTAL_SCENES = 4; // scene_index 0..3 (0 is free preview, 1..3 paid)
+const TOTAL_SCENES = 12; // scene_index 0..11 (0 is free preview, 1..11 paid)
+const MAX_SCENE_INDEX = TOTAL_SCENES - 1;
 
 interface DocOpt { id: string; title: string; subject_type: string; }
 interface SceneRow {
@@ -294,17 +295,17 @@ function BatchUpload({ docs }: { docs: DocOpt[] }) {
         continue;
       }
       const base = file.name.replace(/\.[^.]+$/, "");
-      // Patterns: "{slug-or-id}__scene{N}" or "{slug-or-id}__{N}" or "{slug-or-id}-scene-{N}"
-      const m = base.match(/^(.+?)(?:__|--|-+)(?:scene[-_]?)?(\d)$/i);
+      // Patterns: "{slug-or-id}__scene{N}" or "{slug-or-id}__{N}" or "{slug-or-id}-scene-{N}" (N may be 1 or 2 digits)
+      const m = base.match(/^(.+?)(?:__|--|-+)(?:scene[-_]?)?(\d{1,2})$/i);
       if (!m) {
         out.push({ file, scene_index: null, doc_id: null, doc_title: null, candidates: [], status: "bad-name",
-          message: 'Use "{book-slug}__sceneN.png" (N = 0-3)' });
+          message: `Use "{book-slug}__sceneN.png" (N = 0-${MAX_SCENE_INDEX})` });
         continue;
       }
       const key = m[1].toLowerCase();
       const sceneIdx = Number(m[2]);
-      if (sceneIdx < 0 || sceneIdx > 3) {
-        out.push({ file, scene_index: null, doc_id: null, doc_title: null, candidates: [], status: "bad-name", message: "Scene must be 0-3" });
+      if (sceneIdx < 0 || sceneIdx > MAX_SCENE_INDEX) {
+        out.push({ file, scene_index: null, doc_id: null, doc_title: null, candidates: [], status: "bad-name", message: `Scene must be 0-${MAX_SCENE_INDEX}` });
         continue;
       }
       // Try exact slug, then docId prefix, then contains
