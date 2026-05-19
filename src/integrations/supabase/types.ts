@@ -270,6 +270,36 @@ export type Database = {
         }
         Relationships: []
       }
+      gemini_context_caches: {
+        Row: {
+          cache_name: string
+          created_at: string
+          document_id: string
+          expires_at: string
+          id: string
+          model: string
+          target_language: string
+        }
+        Insert: {
+          cache_name: string
+          created_at?: string
+          document_id: string
+          expires_at: string
+          id?: string
+          model: string
+          target_language: string
+        }
+        Update: {
+          cache_name?: string
+          created_at?: string
+          document_id?: string
+          expires_at?: string
+          id?: string
+          model?: string
+          target_language?: string
+        }
+        Relationships: []
+      }
       image_assets: {
         Row: {
           created_at: string
@@ -799,6 +829,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      translation_blueprints: {
+        Row: {
+          blueprint_text: string
+          created_at: string
+          document_id: string
+          id: string
+          model: string
+          token_estimate: number
+          updated_at: string
+        }
+        Insert: {
+          blueprint_text: string
+          created_at?: string
+          document_id: string
+          id?: string
+          model?: string
+          token_estimate?: number
+          updated_at?: string
+        }
+        Update: {
+          blueprint_text?: string
+          created_at?: string
+          document_id?: string
+          id?: string
+          model?: string
+          token_estimate?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       translation_rate_log: {
         Row: {

@@ -114,9 +114,19 @@ function normalizeAllCaps(text: string): string {
 // Translate one source text into N target languages via Lovable AI (Gemini).
 // Re-uses the shared geminiTranslateMulti helper. Maps its 429 rate-limit
 // error onto the worker's back-off path via the existing pending-row delay.
-async function translateMulti(text: string, sourceLang: string, targetLangs: string[]): Promise<Record<string, string>> {
+async function translateMulti(
+  text: string,
+  sourceLang: string,
+  targetLangs: string[],
+  // deno-lint-ignore no-explicit-any
+  admin?: any,
+  documentId?: string,
+  blueprintText?: string,
+): Promise<Record<string, string>> {
   try {
-    return await geminiTranslateMulti(text, sourceLang, targetLangs);
+    return await geminiTranslateMulti(text, sourceLang, targetLangs, {
+      admin, documentId, blueprintText,
+    });
   } catch (e) {
     if (e instanceof TranslationRateLimitError) {
       // Re-throw as plain Error so existing catch path treats as transient/retry.
@@ -128,7 +138,7 @@ async function translateMulti(text: string, sourceLang: string, targetLangs: str
   }
 }
 
-type DocCacheEntry = { chunks: string[]; sourceLang: string; title: string };
+type DocCacheEntry = { chunks: string[]; sourceLang: string; title: string; blueprint?: string };
 
 // deno-lint-ignore no-explicit-any
 async function processOne(admin: any, _unused: string, cache: Map<string, DocCacheEntry>) {
@@ -171,14 +181,13 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
     last_heartbeat: new Date().toISOString(),
   }).eq("id", 1);
 
-  // Load doc + chunks
+  // Load doc + chunks + blueprint
   let entry = cache.get(row.document_id);
   if (!entry) {
-    const { data: doc, error: docErr } = await admin
-      .from("documents")
-      .select("id, title, clean_text, language")
-      .eq("id", row.document_id)
-      .maybeSingle();
+    const [{ data: doc, error: docErr }, { data: bp }] = await Promise.all([
+      admin.from("documents").select("id, title, clean_text, language").eq("id", row.document_id).maybeSingle(),
+      admin.from("translation_blueprints").select("blueprint_text").eq("document_id", row.document_id).maybeSingle(),
+    ]);
     if (docErr) throw docErr;
     if (!doc?.clean_text) {
       await admin.from("translation_seed_queue").update({
@@ -190,8 +199,14 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
       chunks: chunkText(doc.clean_text),
       sourceLang: (doc.language ?? "en").toLowerCase(),
       title: doc.title,
+      blueprint: bp?.blueprint_text ?? undefined,
     };
     cache.set(row.document_id, entry);
+    if (entry.blueprint) {
+      console.log(`[t-worker] loaded blueprint (${entry.blueprint.length} chars) for doc=${row.document_id}`);
+    } else {
+      console.warn(`[t-worker] no blueprint for doc=${row.document_id} — caching disabled, quality reduced`);
+    }
   }
 
   if (row.chunk_index >= entry.chunks.length) {
@@ -261,7 +276,14 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
 
   try {
     const targetLangs = todoRows.map((c) => c.target_language);
-    const translations = await translateMulti(preparedSource, entry.sourceLang, targetLangs);
+    const translations = await translateMulti(
+      preparedSource,
+      entry.sourceLang,
+      targetLangs,
+      admin,
+      row.document_id,
+      entry.blueprint,
+    );
 
     const inserts = todoRows
       .map((c) => {
