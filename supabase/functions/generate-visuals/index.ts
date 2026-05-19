@@ -99,7 +99,7 @@ ${excerpts.map((e, i) => `EXCERPT ${i + 1}:\n${e.slice(0, 1200)}`).join("\n\n")}
   const args = data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
   if (!args) throw new Error("No scene plan returned");
   const parsed = JSON.parse(args);
-  return (parsed.scenes as ScenePlan[]).slice(0, SCENE_COUNT);
+  return (parsed.scenes as ScenePlan[]);
 }
 
 async function generateImage(apiKey: string, prompt: string): Promise<Uint8Array> {
