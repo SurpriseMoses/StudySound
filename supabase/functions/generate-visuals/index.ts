@@ -42,11 +42,12 @@ async function planScenes(
   title: string,
   subjectType: string,
   excerpts: string[],
+  sceneCount: number,
 ): Promise<ScenePlan[]> {
   const sys = `You write vivid, concrete image prompts for an illustrator. Subject type: ${subjectType}. Style: warm, cinematic, painterly digital illustration suitable for African high-school students. No text in image, no watermarks. Keep characters consistent across scenes (describe them the same way each time).`;
   const user = `Book/Lesson: "${title}"
 
-For each numbered excerpt below, write ONE image prompt (1-2 sentences, max 60 words) that captures the most striking visual moment. Also include the exact short paragraph (max 220 chars) that the image illustrates.
+Produce exactly ${sceneCount} image scenes covering the work in chronological order. For each numbered excerpt below, write ONE image prompt (1-2 sentences, max 60 words) that captures the most striking visual moment. Also include the exact short paragraph (max 220 chars) that the image illustrates.
 
 ${excerpts.map((e, i) => `EXCERPT ${i + 1}:\n${e.slice(0, 1200)}`).join("\n\n")}`;
 
