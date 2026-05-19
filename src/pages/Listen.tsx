@@ -28,6 +28,7 @@ const LANGS = [
   { code: "xh", label: "isiXhosa" },
   { code: "nso", label: "Sepedi" },
   { code: "tn", label: "Setswana" },
+  { code: "ts", label: "Xitsonga" },
 ];
 
 interface ListenProps {

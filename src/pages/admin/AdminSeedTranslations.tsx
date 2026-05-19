@@ -9,9 +9,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-const TARGET_LANGS = ["zu", "xh", "tn", "nso", "af"] as const;
+const TARGET_LANGS = ["zu", "xh", "tn", "nso", "af", "ts"] as const;
 const LANG_LABEL: Record<string, string> = {
-  zu: "Zulu", xh: "Xhosa", tn: "Setswana", nso: "Sepedi", af: "Afrikaans",
+  zu: "Zulu", xh: "Xhosa", tn: "Setswana", nso: "Sepedi", af: "Afrikaans", ts: "Xitsonga",
 };
 
 type SeedDoc = {
@@ -313,7 +313,7 @@ export default function AdminSeedTranslations() {
       <div>
         <h1 className="text-2xl font-display font-bold">Seed translations</h1>
         <p className="text-muted-foreground text-sm">
-          Pre-translate seeded books into Zulu, Xhosa, Setswana, and Sepedi. Cron pings the worker every 5 minutes while it's running.
+          Pre-translate seeded books into Zulu, Xhosa, Setswana, Sepedi, Afrikaans, and Xitsonga. Cron pings the worker every 5 minutes while it's running.
         </p>
       </div>
 

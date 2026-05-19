@@ -1,5 +1,5 @@
 // seed-translation-manager — admin queue for pre-translating seeded books
-// into Zulu, Xhosa, Setswana, Sepedi.
+// into Zulu, Xhosa, Setswana, Sepedi, Afrikaans, Xitsonga.
 //
 // Actions:
 //   "enqueue"      { document_id }  → expand doc × 4 langs into queue rows
@@ -18,7 +18,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const TARGET_LANGUAGES = ["zu", "xh", "tn", "nso", "af"];
+const TARGET_LANGUAGES = ["zu", "xh", "tn", "nso", "af", "ts"];
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 const MUTATION_BATCH_SIZE = 500;
