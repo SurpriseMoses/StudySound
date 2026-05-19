@@ -143,16 +143,28 @@ type DocCacheEntry = { chunks: string[]; sourceLang: string; title: string; blue
 // deno-lint-ignore no-explicit-any
 async function processOne(admin: any, _unused: string, cache: Map<string, DocCacheEntry>) {
   const nowIso = new Date().toISOString();
-  // Pick one pending row to determine (document_id, chunk_index) batch
+
+  // Step 1: pick the document with the oldest pending row. This pins the worker
+  // to one book at a time, so it fully drains book A before touching book B
+  // (instead of round-robining chunk 0 across every queued book).
+  const { data: docPick, error: docPickErr } = await admin
+    .from("translation_seed_queue")
+    .select("document_id, created_at")
+    .eq("status", "pending")
+    .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (docPickErr) throw docPickErr;
+  if (!docPick) return { result: "empty" as const, count: 0 };
+
+  // Step 2: within that document, pick the lowest chunk_index / language.
   const { data: row, error: pickErr } = await admin
     .from("translation_seed_queue")
     .select("id, document_id, chunk_index, target_language, attempts")
     .eq("status", "pending")
+    .eq("document_id", docPick.document_id)
     .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
-    // Fair ordering: oldest chunk first, then rotate languages alphabetically,
-    // then created_at as a final tiebreaker. This guarantees af/ts can never be
-    // starved behind languages that were queued earlier — every chunk is
-    // processed across all target languages before moving on.
     .order("chunk_index", { ascending: true })
     .order("target_language", { ascending: true })
     .order("created_at", { ascending: true })
