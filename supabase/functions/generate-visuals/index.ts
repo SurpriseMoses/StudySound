@@ -8,8 +8,16 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SCENE_COUNT = 4;
+const MIN_SCENES = 10;
+const MAX_SCENES = 12;
 const HUMANITIES_TYPES = new Set(["novel", "history"]);
+
+// Scale scene count to book length: ~10 for shorter books, up to 12 for long ones.
+function targetSceneCount(charCount: number): number {
+  if (charCount >= 400_000) return 12;
+  if (charCount >= 200_000) return 11;
+  return MIN_SCENES;
+}
 
 interface ScenePlan {
   scene_index: number;
@@ -34,11 +42,12 @@ async function planScenes(
   title: string,
   subjectType: string,
   excerpts: string[],
+  sceneCount: number,
 ): Promise<ScenePlan[]> {
   const sys = `You write vivid, concrete image prompts for an illustrator. Subject type: ${subjectType}. Style: warm, cinematic, painterly digital illustration suitable for African high-school students. No text in image, no watermarks. Keep characters consistent across scenes (describe them the same way each time).`;
   const user = `Book/Lesson: "${title}"
 
-For each numbered excerpt below, write ONE image prompt (1-2 sentences, max 60 words) that captures the most striking visual moment. Also include the exact short paragraph (max 220 chars) that the image illustrates.
+Produce exactly ${sceneCount} image scenes covering the work in chronological order. For each numbered excerpt below, write ONE image prompt (1-2 sentences, max 60 words) that captures the most striking visual moment. Also include the exact short paragraph (max 220 chars) that the image illustrates.
 
 ${excerpts.map((e, i) => `EXCERPT ${i + 1}:\n${e.slice(0, 1200)}`).join("\n\n")}`;
 
@@ -90,7 +99,7 @@ ${excerpts.map((e, i) => `EXCERPT ${i + 1}:\n${e.slice(0, 1200)}`).join("\n\n")}
   const args = data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
   if (!args) throw new Error("No scene plan returned");
   const parsed = JSON.parse(args);
-  return (parsed.scenes as ScenePlan[]).slice(0, SCENE_COUNT);
+  return (parsed.scenes as ScenePlan[]);
 }
 
 async function generateImage(apiKey: string, prompt: string): Promise<Uint8Array> {
@@ -166,18 +175,22 @@ Deno.serve(async (req) => {
       .eq("document_id", doc.id)
       .order("scene_index", { ascending: true });
 
-    if (existing && existing.length >= SCENE_COUNT) {
+    const sourceText: string = doc.clean_text || lesson.content_text || "";
+    const sceneCount = targetSceneCount((sourceText || "").length);
+
+    if (existing && existing.length >= sceneCount) {
       return new Response(JSON.stringify({ success: true, reused: true, scenes: existing }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Plan scenes
-    const sourceText: string = doc.clean_text || lesson.content_text || "";
-    const excerpts = chunkText(sourceText, SCENE_COUNT);
+    // Plan scenes for the FULL target (so chronology stays coherent), then skip already-generated indices.
+    const excerpts = chunkText(sourceText, sceneCount);
     if (excerpts.length === 0) throw new Error("No text to illustrate");
 
-    const plans = await planScenes(LOVABLE_API_KEY, lesson.title, subjectType, excerpts);
+    const allPlans = await planScenes(LOVABLE_API_KEY, lesson.title, subjectType, excerpts, sceneCount);
+    const existingIdx = new Set((existing ?? []).map((r: any) => r.scene_index));
+    const plans = allPlans.filter((p) => !existingIdx.has(p.scene_index)).slice(0, sceneCount);
 
     // Generate + upload each scene (sequentially, verify upload before DB insert)
     const created: any[] = [];
@@ -225,11 +238,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (created.length === 0) {
+    if (created.length === 0 && (!existing || existing.length === 0)) {
       throw new Error("All scenes failed to generate. Check function logs.");
     }
 
-    return new Response(JSON.stringify({ success: true, reused: false, scenes: created }), {
+    const allScenes = [...(existing ?? []), ...created].sort(
+      (a: any, b: any) => a.scene_index - b.scene_index,
+    );
+    return new Response(JSON.stringify({ success: true, reused: false, scenes: allScenes }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
