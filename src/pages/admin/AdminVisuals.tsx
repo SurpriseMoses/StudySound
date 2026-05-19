@@ -519,7 +519,7 @@ function GeneratePromptsPanel({ docs }: { docs: DocOpt[] }) {
         .select("visual_prompts")
         .eq("document_id", docId)
         .maybeSingle();
-      setExisting((data?.visual_prompts as VisualPrompt[] | null) ?? null);
+      setExisting((data?.visual_prompts as unknown as VisualPrompt[] | null) ?? null);
     })();
   }, [docId]);
 
