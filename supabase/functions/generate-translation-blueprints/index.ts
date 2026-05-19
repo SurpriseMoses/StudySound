@@ -20,7 +20,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const BLUEPRINT_MODEL = "gemini-2.5-flash";
+const BLUEPRINT_MODEL = "gemini-2.5-pro";
 const MAX_SOURCE_CHARS = 60_000; // sample size sent to Gemini for analysis
 
 function estimateTokens(text: string): number {
