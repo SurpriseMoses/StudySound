@@ -243,11 +243,15 @@ Deno.serve(async (req) => {
     }
 
     if (action === "enqueue_all") {
+      // Note: we intentionally do NOT filter out `translation_status = 'done'` docs.
+      // When new target languages (e.g. af, ts) are added later, previously-completed
+      // docs need to be re-scanned so the missing-language rows can be enqueued.
+      // `enqueueDocument` dedupes against existing translation_assets + queue rows,
+      // so this is a safe no-op for already fully-translated (chunk, language) pairs.
       const { data: docs, error } = await admin
         .from("documents")
         .select("id, title")
-        .eq("seed_translation", true)
-        .neq("translation_status", "done");
+        .eq("seed_translation", true);
       if (error) throw error;
       const results: Array<Record<string, unknown>> = [];
       for (const d of docs ?? []) {
