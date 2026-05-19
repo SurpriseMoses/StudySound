@@ -181,6 +181,7 @@ Deno.serve(async (req) => {
         await admin.from("gemini_context_caches").delete().eq("document_id", doc.id);
 
         results.push({ id: doc.id, title: doc.title, status: "generated", chars: blueprint.length });
+        generated++;
         console.log(`[blueprints] ✓ ${doc.title} (${blueprint.length} chars, ~${tokens} tokens)`);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
