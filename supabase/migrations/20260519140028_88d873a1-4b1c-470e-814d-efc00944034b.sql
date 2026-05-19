@@ -1,0 +1,1 @@
+UPDATE public.translation_seed_queue SET priority = 0 WHERE status = 'pending' AND priority > 0;
