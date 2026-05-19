@@ -8,8 +8,16 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SCENE_COUNT = 4;
+const MIN_SCENES = 10;
+const MAX_SCENES = 12;
 const HUMANITIES_TYPES = new Set(["novel", "history"]);
+
+// Scale scene count to book length: ~10 for shorter books, up to 12 for long ones.
+function targetSceneCount(charCount: number): number {
+  if (charCount >= 400_000) return 12;
+  if (charCount >= 200_000) return 11;
+  return MIN_SCENES;
+}
 
 interface ScenePlan {
   scene_index: number;
