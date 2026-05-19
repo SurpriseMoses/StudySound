@@ -114,9 +114,19 @@ function normalizeAllCaps(text: string): string {
 // Translate one source text into N target languages via Lovable AI (Gemini).
 // Re-uses the shared geminiTranslateMulti helper. Maps its 429 rate-limit
 // error onto the worker's back-off path via the existing pending-row delay.
-async function translateMulti(text: string, sourceLang: string, targetLangs: string[]): Promise<Record<string, string>> {
+async function translateMulti(
+  text: string,
+  sourceLang: string,
+  targetLangs: string[],
+  // deno-lint-ignore no-explicit-any
+  admin?: any,
+  documentId?: string,
+  blueprintText?: string,
+): Promise<Record<string, string>> {
   try {
-    return await geminiTranslateMulti(text, sourceLang, targetLangs);
+    return await geminiTranslateMulti(text, sourceLang, targetLangs, {
+      admin, documentId, blueprintText,
+    });
   } catch (e) {
     if (e instanceof TranslationRateLimitError) {
       // Re-throw as plain Error so existing catch path treats as transient/retry.
