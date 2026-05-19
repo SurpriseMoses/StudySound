@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
 
     if (!document_id) throw new Error("document_id required");
     if (mode === "scene" && (typeof scene_index !== "number" || scene_index < 1 || scene_index >= TOTAL_SCENES)) {
-      throw new Error("Invalid scene_index (scene 0 is free; payable scenes are 1..3)");
+      throw new Error("Invalid scene_index (scene 0 is free; payable scenes are 1..11)");
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
