@@ -1,0 +1,1 @@
+ALTER TABLE public.translation_blueprints ADD COLUMN IF NOT EXISTS visual_prompts jsonb;

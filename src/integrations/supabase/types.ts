@@ -839,6 +839,7 @@ export type Database = {
           model: string
           token_estimate: number
           updated_at: string
+          visual_prompts: Json | null
         }
         Insert: {
           blueprint_text: string
@@ -848,6 +849,7 @@ export type Database = {
           model?: string
           token_estimate?: number
           updated_at?: string
+          visual_prompts?: Json | null
         }
         Update: {
           blueprint_text?: string
@@ -857,6 +859,7 @@ export type Database = {
           model?: string
           token_estimate?: number
           updated_at?: string
+          visual_prompts?: Json | null
         }
         Relationships: []
       }
