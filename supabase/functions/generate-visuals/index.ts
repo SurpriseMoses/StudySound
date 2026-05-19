@@ -175,18 +175,22 @@ Deno.serve(async (req) => {
       .eq("document_id", doc.id)
       .order("scene_index", { ascending: true });
 
-    if (existing && existing.length >= SCENE_COUNT) {
+    const sourceText: string = doc.clean_text || lesson.content_text || "";
+    const sceneCount = targetSceneCount((sourceText || "").length);
+
+    if (existing && existing.length >= sceneCount) {
       return new Response(JSON.stringify({ success: true, reused: true, scenes: existing }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Plan scenes
-    const sourceText: string = doc.clean_text || lesson.content_text || "";
-    const excerpts = chunkText(sourceText, SCENE_COUNT);
+    // Plan scenes for the FULL target (so chronology stays coherent), then skip already-generated indices.
+    const excerpts = chunkText(sourceText, sceneCount);
     if (excerpts.length === 0) throw new Error("No text to illustrate");
 
-    const plans = await planScenes(LOVABLE_API_KEY, lesson.title, subjectType, excerpts);
+    const allPlans = await planScenes(LOVABLE_API_KEY, lesson.title, subjectType, excerpts, sceneCount);
+    const existingIdx = new Set((existing ?? []).map((r: any) => r.scene_index));
+    const plans = allPlans.filter((p) => !existingIdx.has(p.scene_index)).slice(0, sceneCount);
 
     // Generate + upload each scene (sequentially, verify upload before DB insert)
     const created: any[] = [];
