@@ -9,7 +9,8 @@ import { Loader2, Upload, Trash2, ImageIcon, FileStack, X, CheckCircle2, AlertCi
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 
-const TOTAL_SCENES = 4; // scene_index 0..3 (0 is free preview, 1..3 paid)
+const TOTAL_SCENES = 12; // scene_index 0..11 (0 is free preview, 1..11 paid)
+const MAX_SCENE_INDEX = TOTAL_SCENES - 1;
 
 interface DocOpt { id: string; title: string; subject_type: string; }
 interface SceneRow {
