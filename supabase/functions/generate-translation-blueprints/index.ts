@@ -132,7 +132,12 @@ Deno.serve(async (req) => {
     const existing = new Set((existingBp ?? []).map((r) => r.document_id));
 
     const results: Array<{ id: string; title: string; status: string; chars?: number; error?: string }> = [];
+    let generated = 0;
     for (const doc of docs ?? []) {
+      if (generated >= limit) {
+        results.push({ id: doc.id, title: doc.title, status: "deferred (limit reached)" });
+        continue;
+      }
       if (!force && existing.has(doc.id)) {
         results.push({ id: doc.id, title: doc.title, status: "skipped (exists)" });
         continue;
