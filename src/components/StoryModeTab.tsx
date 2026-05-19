@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
 
 const HUMANITIES = new Set(["novel", "history"]);
-const SCENE_COST = 6;
+const SCENE_COST = 2;
 const BUNDLE_COST = 15;
 const BUNDLE_INDEX = -1;
 const FREE_SCENE = 0;
