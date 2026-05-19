@@ -102,15 +102,8 @@ export async function geminiTranslate(
   const targetLabel = LANGUAGE_LABELS[targetLang] ?? targetLang;
 
   const system = buildBaseSystemPrompt(sourceLabel, targetLabel);
-    `Translate the user's text from ${sourceLabel} to ${targetLabel}. ` +
-    `Rules:\n` +
-    `1. Output ONLY the translated text. No preface, no quotes, no notes, no source.\n` +
-    `2. Preserve line breaks and paragraph structure exactly.\n` +
-    `3. Translate ALL words — do NOT leave English words, headings, or ALL-CAPS phrases untranslated, unless they are proper names (e.g. people, places).\n` +
-    `4. Keep numbers, dates, and proper nouns as-is.\n` +
-    `5. Use natural, clear ${targetLabel} suitable for a teenage learner.`;
 
-  const out = await callBestAvailableTranslator(system, text, sourceLang, targetLang);
+  const out = await callBestAvailableTranslator(system, text, sourceLang, targetLang, ctx);
 
   // Strip accidental wrapping quotes/code fences the model sometimes adds.
   return out
