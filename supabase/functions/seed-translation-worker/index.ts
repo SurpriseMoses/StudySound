@@ -149,7 +149,12 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
     .select("id, document_id, chunk_index, target_language, attempts")
     .eq("status", "pending")
     .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
-    .order("priority", { ascending: false })
+    // Fair ordering: oldest chunk first, then rotate languages alphabetically,
+    // then created_at as a final tiebreaker. This guarantees af/ts can never be
+    // starved behind languages that were queued earlier — every chunk is
+    // processed across all target languages before moving on.
+    .order("chunk_index", { ascending: true })
+    .order("target_language", { ascending: true })
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
