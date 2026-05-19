@@ -117,12 +117,13 @@ async function callBestAvailableTranslator(
   text: string,
   sourceLang: string,
   targetLang: string,
+  ctx?: TranslateContext,
 ): Promise<string> {
   const errors: string[] = [];
   const googleKey = Deno.env.get("Gemini_Secret_Key");
   if (googleKey) {
     try {
-      return await callGoogleGemini(system, text, googleKey);
+      return await callGoogleGemini(system, text, googleKey, sourceLang, targetLang, ctx);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(msg);
@@ -158,15 +159,113 @@ async function callBestAvailableTranslator(
   throw new Error(errors.length ? `No translation provider succeeded: ${errors.join(" | ")}` : "No translation API key configured");
 }
 
-async function callGoogleGemini(system: string, text: string, apiKey: string): Promise<string> {
+// ---- Gemini Context Caching ----
+//
+// Strategy: for each (document_id, target_language) pair, cache the combined
+// system instruction + book blueprint as a Gemini Context Cache resource.
+// Subsequent chunk-level generateContent calls reference that cache via the
+// `cachedContent` field — reusing the (large) blueprint without re-sending its
+// tokens, which is what produces the ~90% cost reduction on input tokens.
+//
+// Caches live for 1h; the resource name is persisted in gemini_context_caches
+// so workers across invocations share the same cache.
+
+async function getOrCreateGeminiCache(
+  apiKey: string,
+  ctx: TranslateContext,
+  system: string,
+  targetLang: string,
+): Promise<string | null> {
+  if (!ctx.admin || !ctx.documentId || !ctx.blueprintText) return null;
+
+  // 1) Look up an existing non-expired cache row.
+  const nowIso = new Date(Date.now() + CACHE_REFRESH_BUFFER_MS).toISOString();
+  const { data: rows } = await ctx.admin
+    .from("gemini_context_caches")
+    .select("cache_name, expires_at")
+    .eq("document_id", ctx.documentId)
+    .eq("target_language", targetLang)
+    .eq("model", GOOGLE_GEMINI_MODEL)
+    .gt("expires_at", nowIso)
+    .limit(1);
+  if (rows && rows.length > 0) return rows[0].cache_name as string;
+
+  // 2) Create a fresh cache. NOTE: Gemini requires a minimum number of cached
+  // tokens (1,024 for 2.5-flash). If the create call fails we just fall back
+  // to non-cached calls — the blueprint still helps quality, just not cost.
+  const cachedPayload =
+    `${system}\n\n` +
+    `=== PER-BOOK TRANSLATION BLUEPRINT ===\n` +
+    `Apply every detail below as ground truth when translating chunks of this book. ` +
+    `Use the character glossary for consistent naming, the idiom guide for archaic ` +
+    `phrases, and the plot summary for register/tone.\n\n` +
+    ctx.blueprintText;
+
+  try {
+    const res = await fetch(GOOGLE_CACHED_CONTENTS_URL(apiKey), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: `models/${GOOGLE_GEMINI_MODEL}`,
+        contents: [{ role: "user", parts: [{ text: cachedPayload }] }],
+        ttl: `${CACHE_TTL_SECONDS}s`,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.warn(`[translate] cache create failed (${res.status}): ${body.slice(0, 200)} — falling back to non-cached`);
+      return null;
+    }
+    const json = await res.json();
+    const cacheName = json?.name as string | undefined;
+    if (!cacheName) return null;
+
+    const expiresAt = new Date(Date.now() + CACHE_TTL_SECONDS * 1000).toISOString();
+    await ctx.admin.from("gemini_context_caches").upsert({
+      document_id: ctx.documentId,
+      target_language: targetLang,
+      cache_name: cacheName,
+      model: GOOGLE_GEMINI_MODEL,
+      expires_at: expiresAt,
+    }, { onConflict: "document_id,target_language,model" });
+
+    console.log(`[translate] ✓ created context cache ${cacheName} for doc=${ctx.documentId} lang=${targetLang}`);
+    return cacheName;
+  } catch (e) {
+    console.warn(`[translate] cache create error: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
+}
+
+async function callGoogleGemini(
+  system: string,
+  text: string,
+  apiKey: string,
+  _sourceLang: string,
+  targetLang: string,
+  ctx?: TranslateContext,
+): Promise<string> {
+  // Try to use a per-book context cache. If available we omit systemInstruction
+  // (it's already inside the cache) and reference the cache via cachedContent.
+  let cacheName: string | null = null;
+  if (ctx) {
+    cacheName = await getOrCreateGeminiCache(apiKey, ctx, system, targetLang);
+  }
+
+  const body: Record<string, unknown> = {
+    contents: [{ role: "user", parts: [{ text }] }],
+    generationConfig: { temperature: 0.2 },
+  };
+  if (cacheName) {
+    body.cachedContent = cacheName;
+  } else {
+    body.systemInstruction = { parts: [{ text: system }] };
+  }
+
   const res = await fetch(GOOGLE_GEMINI_URL(GOOGLE_GEMINI_MODEL, apiKey), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text }] }],
-      generationConfig: { temperature: 0.2 },
-    }),
+    body: JSON.stringify(body),
   });
 
   if (res.status === 429) {
@@ -176,9 +275,40 @@ async function callGoogleGemini(system: string, text: string, apiKey: string): P
       Number.isFinite(ra) && ra > 0 ? ra * 1000 : 30_000,
     );
   }
+  // If a stale cache reference 404s, invalidate row + retry without cache.
+  if (cacheName && (res.status === 404 || res.status === 400)) {
+    const errBody = await res.text();
+    console.warn(`[translate] cached call failed (${res.status}): ${errBody.slice(0, 200)} — invalidating cache row`);
+    if (ctx?.admin) {
+      await ctx.admin
+        .from("gemini_context_caches")
+        .delete()
+        .eq("document_id", ctx.documentId)
+        .eq("target_language", targetLang)
+        .eq("model", GOOGLE_GEMINI_MODEL);
+    }
+    // One retry without cache
+    const retry = await fetch(GOOGLE_GEMINI_URL(GOOGLE_GEMINI_MODEL, apiKey), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text }] }],
+        generationConfig: { temperature: 0.2 },
+      }),
+    });
+    if (!retry.ok) {
+      const b = await retry.text();
+      throw new Error(`Google Gemini ${retry.status}: ${b.slice(0, 300)}`);
+    }
+    const j = await retry.json();
+    const o = j?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
+    if (!o.trim()) throw new Error("Empty Google Gemini translation response");
+    return o;
+  }
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Google Gemini ${res.status}: ${body.slice(0, 300)}`);
+    const errBody = await res.text();
+    throw new Error(`Google Gemini ${res.status}: ${errBody.slice(0, 300)}`);
   }
   const json = await res.json();
   const out = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
