@@ -1,0 +1,1 @@
+UPDATE public.translation_seed_queue SET priority = 10 WHERE status = 'pending' AND target_language IN ('af','ts');
