@@ -1,4 +1,4 @@
-// Unlock a single visual scene (6 credits) or the full-story bundle (15 credits).
+// Unlock a single visual scene (2 credits) or the full-story bundle (15 credits).
 // Idempotent: if already unlocked, returns success without charging.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
@@ -8,10 +8,10 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SCENE_COST = 6;
+const SCENE_COST = 2;
 const BUNDLE_COST = 15;
 const BUNDLE_INDEX = -1;
-const TOTAL_SCENES = 4;
+const TOTAL_SCENES = 12;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
 
     if (!document_id) throw new Error("document_id required");
     if (mode === "scene" && (typeof scene_index !== "number" || scene_index < 1 || scene_index >= TOTAL_SCENES)) {
-      throw new Error("Invalid scene_index (scene 0 is free; payable scenes are 1..3)");
+      throw new Error("Invalid scene_index (scene 0 is free; payable scenes are 1..11)");
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
