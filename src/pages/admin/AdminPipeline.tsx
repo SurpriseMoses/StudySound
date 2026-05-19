@@ -17,7 +17,7 @@ import {
 type Lang = "zu" | "xh" | "tn" | "nso";
 const ALL_LANGS: Lang[] = ["zu", "xh", "tn", "nso"];
 const LANG_LABEL: Record<string, string> = {
-  zu: "isiZulu", xh: "isiXhosa", tn: "Setswana", nso: "Sepedi (Northern Sotho)", st: "Sesotho", af: "Afrikaans",
+  zu: "isiZulu", xh: "isiXhosa", tn: "Setswana", nso: "Sepedi (Northern Sotho)", st: "Sesotho", af: "Afrikaans", ts: "Xitsonga",
 };
 
 function timeAgo(iso: string): string {
