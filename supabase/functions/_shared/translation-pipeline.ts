@@ -404,12 +404,13 @@ export async function geminiTranslateMulti(
   text: string,
   sourceLang: string,
   targetLangs: string[],
+  ctx?: TranslateContext,
 ): Promise<Record<string, string>> {
   const results: Array<readonly [string, string]> = [];
   for (let i = 0; i < targetLangs.length; i++) {
     const lang = targetLangs[i];
     if (i > 0) await sleep(GEMINI_LANGUAGE_DELAY_MS);
-    results.push([lang, await geminiTranslate(text, sourceLang, lang)] as const);
+    results.push([lang, await geminiTranslate(text, sourceLang, lang, ctx)] as const);
   }
   return Object.fromEntries(results);
 }
