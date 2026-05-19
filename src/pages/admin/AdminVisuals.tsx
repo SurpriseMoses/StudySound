@@ -150,7 +150,13 @@ export default function AdminVisuals() {
         <TabsList>
           <TabsTrigger value="single">Single book</TabsTrigger>
           <TabsTrigger value="batch"><FileStack className="w-4 h-4 mr-1.5" /> Batch upload</TabsTrigger>
+          <TabsTrigger value="prompts">Generate prompts</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="prompts" className="mt-4">
+          <GeneratePromptsPanel docs={docs} />
+        </TabsContent>
+
 
         <TabsContent value="single" className="space-y-4 mt-4">
           <Card className="p-4 space-y-3">
