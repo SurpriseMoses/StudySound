@@ -113,6 +113,7 @@ Deno.serve(async (req) => {
 
     const url = new URL(req.url);
     const force = url.searchParams.get("force") === "true";
+    const limit = Math.max(1, Math.min(20, Number(url.searchParams.get("limit") ?? "2")));
     const singleDocId = url.searchParams.get("document_id");
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
