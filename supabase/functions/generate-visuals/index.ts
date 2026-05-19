@@ -238,11 +238,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (created.length === 0) {
+    if (created.length === 0 && (!existing || existing.length === 0)) {
       throw new Error("All scenes failed to generate. Check function logs.");
     }
 
-    return new Response(JSON.stringify({ success: true, reused: false, scenes: created }), {
+    const allScenes = [...(existing ?? []), ...created].sort(
+      (a: any, b: any) => a.scene_index - b.scene_index,
+    );
+    return new Response(JSON.stringify({ success: true, reused: false, scenes: allScenes }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
