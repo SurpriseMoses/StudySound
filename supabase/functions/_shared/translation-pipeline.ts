@@ -46,17 +46,45 @@ export class TranslationCreditsExhaustedError extends Error {
 
 const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const LOVABLE_AI_MODEL = "google/gemini-3-flash-preview";
-const GOOGLE_GEMINI_MODEL = "gemini-2.0-flash";
+// gemini-2.5-flash supports Context Caching (min 1024 tokens) — required for
+// per-book blueprint caching that delivers ~90% cost reduction on chunk calls.
+const GOOGLE_GEMINI_MODEL = "gemini-2.5-flash";
 const GOOGLE_GEMINI_URL = (model: string, key: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+const GOOGLE_CACHED_CONTENTS_URL = (key: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/cachedContents?key=${key}`;
 const AZURE_TRANSLATOR_ENDPOINT = "https://api.cognitive.microsofttranslator.com/translate";
 const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "southafricanorth";
 const AZURE_TRANSLATOR_LANG: Record<string, string> = {
   en: "en", af: "af", zu: "zu", xh: "xh", nso: "nso", tn: "tn", fr: "fr",
 };
 const GEMINI_LANGUAGE_DELAY_MS = 250;
+const CACHE_TTL_SECONDS = 3600;            // 1 hour
+const CACHE_REFRESH_BUFFER_MS = 5 * 60_000; // refresh if <5min left
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export interface TranslateContext {
+  /** Optional Supabase admin client (any client w/ access to gemini_context_caches + translation_blueprints). */
+  admin?: any;
+  /** Document being translated — needed to fetch/persist a context cache. */
+  documentId?: string;
+  /** Pre-fetched blueprint text (avoids per-chunk DB hit when caller already has it). */
+  blueprintText?: string;
+}
+
+function buildBaseSystemPrompt(sourceLabel: string, targetLabel: string): string {
+  return (
+    `You are a professional translator for South African high-school study material. ` +
+    `Translate the user's text from ${sourceLabel} to ${targetLabel}. ` +
+    `Rules:\n` +
+    `1. Output ONLY the translated text. No preface, no quotes, no notes, no source.\n` +
+    `2. Preserve line breaks and paragraph structure exactly.\n` +
+    `3. Translate ALL words — do NOT leave English words, headings, or ALL-CAPS phrases untranslated, unless they are proper names (e.g. people, places).\n` +
+    `4. Keep numbers, dates, and proper nouns as-is.\n` +
+    `5. Use natural, clear ${targetLabel} suitable for a teenage learner.`
+  );
+}
 
 // Translate a single text into ONE target language using Gemini.
 // Prefers direct Google Gemini API (Gemini_Secret_Key) when available,
@@ -65,6 +93,7 @@ export async function geminiTranslate(
   text: string,
   sourceLang: string,
   targetLang: string,
+  ctx?: TranslateContext,
 ): Promise<string> {
   if (!text.trim()) return text;
   if (sourceLang === targetLang) return text;
@@ -72,8 +101,7 @@ export async function geminiTranslate(
   const sourceLabel = LANGUAGE_LABELS[sourceLang] ?? sourceLang;
   const targetLabel = LANGUAGE_LABELS[targetLang] ?? targetLang;
 
-  const system =
-    `You are a professional translator for South African high-school study material. ` +
+  const system = buildBaseSystemPrompt(sourceLabel, targetLabel);
     `Translate the user's text from ${sourceLabel} to ${targetLabel}. ` +
     `Rules:\n` +
     `1. Output ONLY the translated text. No preface, no quotes, no notes, no source.\n` +
