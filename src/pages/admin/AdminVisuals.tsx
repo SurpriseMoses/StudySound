@@ -150,7 +150,13 @@ export default function AdminVisuals() {
         <TabsList>
           <TabsTrigger value="single">Single book</TabsTrigger>
           <TabsTrigger value="batch"><FileStack className="w-4 h-4 mr-1.5" /> Batch upload</TabsTrigger>
+          <TabsTrigger value="prompts">Generate prompts</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="prompts" className="mt-4">
+          <GeneratePromptsPanel docs={docs} />
+        </TabsContent>
+
 
         <TabsContent value="single" className="space-y-4 mt-4">
           <Card className="p-4 space-y-3">
@@ -469,4 +475,164 @@ function StatusIcon({ status }: { status: BatchStatus }) {
   if (status === "ready") return <ImageIcon className="w-4 h-4 text-muted-foreground shrink-0" />;
   return <AlertCircle className="w-4 h-4 text-destructive shrink-0" />;
 }
+
+// ---------- Generate Prompts ----------
+
+interface VisualPrompt {
+  chapter_reference: string;
+  scene_description: string;
+  leonardo_prompt: string;
+}
+interface PromptResult {
+  document_id: string;
+  title: string;
+  status: string;
+  count?: number;
+  error?: string;
+  prompts?: VisualPrompt[];
+}
+
+const DEFAULT_STYLE =
+  "painterly digital illustration, warm cinematic color palette, soft brushwork, classic storybook composition, period-accurate costuming and architecture";
+
+function GeneratePromptsPanel({ docs }: { docs: DocOpt[] }) {
+  const [docId, setDocId] = useState("");
+  const [search, setSearch] = useState("");
+  const [style, setStyle] = useState(DEFAULT_STYLE);
+  const [limit, setLimit] = useState(2);
+  const [force, setForce] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState<PromptResult[]>([]);
+  const [existing, setExisting] = useState<VisualPrompt[] | null>(null);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter((d) => d.title.toLowerCase().includes(q));
+  }, [docs, search]);
+
+  useEffect(() => {
+    if (!docId) { setExisting(null); return; }
+    (async () => {
+      const { data } = await supabase
+        .from("translation_blueprints")
+        .select("visual_prompts")
+        .eq("document_id", docId)
+        .maybeSingle();
+      setExisting((data?.visual_prompts as unknown as VisualPrompt[] | null) ?? null);
+    })();
+  }, [docId]);
+
+  const run = async () => {
+    setRunning(true);
+    setResults([]);
+    try {
+      const qp = new URLSearchParams();
+      if (docId) qp.set("document_id", docId);
+      else qp.set("limit", String(limit));
+      if (force) qp.set("force", "true");
+      const { data, error } = await supabase.functions.invoke(
+        `generate-visual-prompts?${qp.toString()}`,
+        { body: { style } },
+      );
+      if (error) throw new Error(error.message);
+      if ((data as any)?.ok === false) throw new Error((data as any).error);
+      setResults((data as any)?.results ?? []);
+      toast({ title: "Done", description: `${(data as any)?.results?.length ?? 0} book(s) processed.` });
+    } catch (e: any) {
+      toast({ title: "Failed", description: e.message, variant: "destructive" });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-4 space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Uses Gemini to generate 10–12 chronological Leonardo.ai prompts per seeded book, grounded on each book's translation blueprint.
+        </p>
+        <Input
+          placeholder="Search book title (leave blank for batch)…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          value={docId}
+          onChange={(e) => setDocId(e.target.value)}
+        >
+          <option value="">— Batch (all seeded books) —</option>
+          {filtered.map((d) => (
+            <option key={d.id} value={d.id}>[{d.subject_type}] {d.title}</option>
+          ))}
+        </select>
+        <Textarea
+          rows={3}
+          value={style}
+          onChange={(e) => setStyle(e.target.value)}
+          placeholder="Leonardo style keywords appended to every prompt"
+        />
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          {!docId && (
+            <label className="flex items-center gap-2">
+              Batch limit:
+              <Input
+                type="number"
+                min={1}
+                max={20}
+                className="w-20"
+                value={limit}
+                onChange={(e) => setLimit(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+              />
+            </label>
+          )}
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+            Force regenerate
+          </label>
+          <Button disabled={running} onClick={run} className="ml-auto">
+            {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+            Generate prompts
+          </Button>
+        </div>
+      </Card>
+
+      {docId && existing && existing.length > 0 && !results.length && (
+        <Card className="p-4 space-y-2">
+          <div className="font-semibold text-sm">Existing prompts ({existing.length})</div>
+          <PromptList prompts={existing} />
+        </Card>
+      )}
+
+      {results.map((r) => (
+        <Card key={r.document_id} className="p-4 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-semibold text-sm truncate">{r.title}</div>
+            <Badge variant={r.status === "generated" ? "default" : r.status === "error" ? "destructive" : "secondary"}>
+              {r.status}{r.count ? ` · ${r.count}` : ""}
+            </Badge>
+          </div>
+          {r.error && <div className="text-xs text-destructive">{r.error}</div>}
+          {r.prompts && <PromptList prompts={r.prompts} />}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function PromptList({ prompts }: { prompts: VisualPrompt[] }) {
+  return (
+    <div className="space-y-2">
+      {prompts.map((p, i) => (
+        <div key={i} className="rounded border p-3 text-xs space-y-1">
+          <div className="font-semibold">{i + 1}. {p.chapter_reference}</div>
+          <div className="text-muted-foreground italic">{p.scene_description}</div>
+          <div className="whitespace-pre-wrap">{p.leonardo_prompt}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 
