@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 
 export default function UnlockSection() {
   const benefits = [
-    "4 cinematic visual scenes",
+    "10–12 cinematic visual scenes",
     "Full AI narration (premium voice)",
     "Interactive quiz included",
     "Translations in your language",
