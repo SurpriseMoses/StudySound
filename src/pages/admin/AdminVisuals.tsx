@@ -295,17 +295,17 @@ function BatchUpload({ docs }: { docs: DocOpt[] }) {
         continue;
       }
       const base = file.name.replace(/\.[^.]+$/, "");
-      // Patterns: "{slug-or-id}__scene{N}" or "{slug-or-id}__{N}" or "{slug-or-id}-scene-{N}"
-      const m = base.match(/^(.+?)(?:__|--|-+)(?:scene[-_]?)?(\d)$/i);
+      // Patterns: "{slug-or-id}__scene{N}" or "{slug-or-id}__{N}" or "{slug-or-id}-scene-{N}" (N may be 1 or 2 digits)
+      const m = base.match(/^(.+?)(?:__|--|-+)(?:scene[-_]?)?(\d{1,2})$/i);
       if (!m) {
         out.push({ file, scene_index: null, doc_id: null, doc_title: null, candidates: [], status: "bad-name",
-          message: 'Use "{book-slug}__sceneN.png" (N = 0-3)' });
+          message: `Use "{book-slug}__sceneN.png" (N = 0-${MAX_SCENE_INDEX})` });
         continue;
       }
       const key = m[1].toLowerCase();
       const sceneIdx = Number(m[2]);
-      if (sceneIdx < 0 || sceneIdx > 3) {
-        out.push({ file, scene_index: null, doc_id: null, doc_title: null, candidates: [], status: "bad-name", message: "Scene must be 0-3" });
+      if (sceneIdx < 0 || sceneIdx > MAX_SCENE_INDEX) {
+        out.push({ file, scene_index: null, doc_id: null, doc_title: null, candidates: [], status: "bad-name", message: `Scene must be 0-${MAX_SCENE_INDEX}` });
         continue;
       }
       // Try exact slug, then docId prefix, then contains
