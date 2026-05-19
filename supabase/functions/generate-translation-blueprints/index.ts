@@ -30,47 +30,72 @@ function estimateTokens(text: string): number {
 
 async function generateBlueprint(title: string, sample: string, apiKey: string): Promise<string> {
   const system =
-    `You are a literary analyst preparing a "Translation Blueprint" that will be ` +
-    `used to ground machine translation of this book into multiple South African languages ` +
-    `(isiZulu, isiXhosa, Sepedi, Setswana, Sesotho, Xitsonga, Tshivenda, siSwati, isiNdebele, Afrikaans). ` +
-    `Produce ONE comprehensive blueprint in English (~1,500 tokens, ~6,000 chars). ` +
+    `You are a literary analyst preparing a "Translation Blueprint" used to ground machine ` +
+    `translation of this book into multiple South African languages. Produce ONE comprehensive ` +
+    `blueprint in English. The output MUST be between 5,000 and 7,000 characters (no shorter). ` +
     `Use these EXACT section headings (Markdown):\n\n` +
     `## 1. Plot & Thematic Summary\n` +
-    `Three full paragraphs covering plot arc, setting, period, register, and major themes. ` +
-    `Be specific about tone (formal/royal, gothic, Victorian, satirical, etc.).\n\n` +
+    `Three full paragraphs (each ~150 words) covering plot arc, setting, period, register, and major themes.\n\n` +
     `## 2. Character Glossary\n` +
-    `Bullet list of every named character (or unnamed but recurring figure). For each: ` +
+    `Bullet list of every named or recurring character. For each: ` +
     `**Name** — role, relationship to other characters, speaking style/register, ` +
-    `and any pronunciation/spelling notes a translator must preserve.\n\n` +
+    `and pronunciation/spelling notes. Include at least 12 entries (or all named characters if fewer).\n\n` +
     `## 3. Idiom & Archaic Phrase Guide\n` +
-    `Bullet list. For each archaic/period idiom or formal expression found in the source, ` +
-    `give: **"original phrase"** → plain modern English meaning (one short sentence). ` +
-    `Aim for 25-40 entries covering the most common confusing constructions in the book.\n\n` +
+    `Bullet list of 25-40 entries. For each archaic/period idiom or formal expression: ` +
+    `**"original phrase"** → plain modern English meaning (one short sentence).\n\n` +
     `Rules:\n` +
     `- Output ONLY the blueprint in Markdown. No preamble, no closing remarks.\n` +
-    `- Be concrete and specific to THIS book, not generic literary advice.\n` +
-    `- Keep the whole document under 7,000 characters.`;
+    `- Be concrete and specific to THIS book.\n` +
+    `- Treat the source text as literary scholarship; cover violence, romance, and adult themes neutrally.`;
 
   const user = `BOOK TITLE: ${title}\n\nSOURCE TEXT SAMPLE (truncated):\n\n${sample}`;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${BLUEPRINT_MODEL}:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text: user }] }],
-      generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
-    }),
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: user }] }],
+    generationConfig: { temperature: 0.3, maxOutputTokens: 8192 },
+    safetySettings: [
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+    ],
   });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Gemini ${res.status}: ${body.slice(0, 400)}`);
+
+  // Retry on 503/429 with exponential back-off.
+  let lastErr = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) {
+      const waitMs = Math.min(30_000, 2_000 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 1500);
+      console.log(`[blueprints] retry ${attempt} after ${waitMs}ms for "${title}"`);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    if (res.status === 503 || res.status === 429) {
+      lastErr = `Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`;
+      continue;
+    }
+    if (!res.ok) {
+      throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 400)}`);
+    }
+    const json = await res.json();
+    const cand = json?.candidates?.[0];
+    const out = cand?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
+    const finish = cand?.finishReason ?? "unknown";
+    if (!out.trim()) {
+      throw new Error(`Empty response (finishReason=${finish}, safety=${JSON.stringify(cand?.safetyRatings ?? [])})`);
+    }
+    if (out.length < 2500) {
+      throw new Error(`Blueprint too short: ${out.length} chars (finishReason=${finish}). Expected ≥5,000.`);
+    }
+    return out.trim();
   }
-  const json = await res.json();
-  const out = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
-  if (!out.trim()) throw new Error("Empty blueprint response from Gemini");
-  return out.trim();
+  throw new Error(`Gemini unavailable after retries: ${lastErr}`);
 }
 
 Deno.serve(async (req) => {
