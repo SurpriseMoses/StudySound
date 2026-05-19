@@ -262,9 +262,9 @@ Deno.serve(async (req) => {
       JSON.stringify({ ok: true, count: results.length, style, results }, null, 2),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[visual-prompts] fatal:", msg);
+  } catch (e: any) {
+    const msg = e?.message ?? e?.error_description ?? e?.hint ?? JSON.stringify(e);
+    console.error("[visual-prompts] fatal:", msg, e);
     return new Response(JSON.stringify({ ok: false, error: msg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
