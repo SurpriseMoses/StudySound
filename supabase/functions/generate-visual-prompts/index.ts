@@ -169,20 +169,34 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-    // Pull blueprints joined to docs.
+    // Pull blueprints, then fetch docs separately (no FK in schema cache).
     let bpQuery = admin
       .from("translation_blueprints")
-      .select("document_id, blueprint_text, visual_prompts, documents!inner(id, title, seed_translation)");
+      .select("document_id, blueprint_text, visual_prompts");
     if (singleDocId) {
       bpQuery = bpQuery.eq("document_id", singleDocId);
     }
     const { data: bps, error: bpErr } = await bpQuery;
     if (bpErr) throw bpErr;
 
-    const candidates = (bps ?? []).filter((row: any) => {
-      if (singleDocId) return true;
-      return row.documents?.seed_translation === true;
-    });
+    const docIds = (bps ?? []).map((r: any) => r.document_id);
+    let docMap = new Map<string, { id: string; title: string; seed_translation: boolean }>();
+    if (docIds.length > 0) {
+      const { data: docs, error: docErr } = await admin
+        .from("documents")
+        .select("id, title, seed_translation")
+        .in("id", docIds);
+      if (docErr) throw docErr;
+      docMap = new Map((docs ?? []).map((d: any) => [d.id, d]));
+    }
+
+    const candidates = (bps ?? [])
+      .map((row: any) => ({ ...row, documents: docMap.get(row.document_id) }))
+      .filter((row: any) => {
+        if (!row.documents) return false;
+        if (singleDocId) return true;
+        return row.documents.seed_translation === true;
+      });
 
     const results: Array<{
       document_id: string;
