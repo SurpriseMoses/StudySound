@@ -605,25 +605,40 @@ function GeneratePromptsPanel({ docs }: { docs: DocOpt[] }) {
         </div>
       </Card>
 
-      {docId && existing && existing.length > 0 && !results.length && (
+      {docId && existing && existing.length > 0 && (
         <Card className="p-4 space-y-2">
-          <div className="font-semibold text-sm">Existing prompts ({existing.length})</div>
-          <PromptList prompts={existing} />
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-semibold text-sm">Cached prompts ({existing.length})</div>
+            <Button size="sm" variant="ghost" onClick={() => setShowExisting((v) => !v)}>
+              {showExisting ? "Hide prompts" : "Show prompts"}
+            </Button>
+          </div>
+          {showExisting && <PromptList prompts={existing} />}
         </Card>
       )}
 
-      {results.map((r) => (
-        <Card key={r.document_id} className="p-4 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="font-semibold text-sm truncate">{r.title}</div>
-            <Badge variant={r.status === "generated" ? "default" : r.status === "error" ? "destructive" : "secondary"}>
-              {r.status}{r.count ? ` · ${r.count}` : ""}
-            </Badge>
-          </div>
-          {r.error && <div className="text-xs text-destructive">{r.error}</div>}
-          {r.prompts && <PromptList prompts={r.prompts} />}
-        </Card>
-      ))}
+      {results.map((r) => {
+        const hidden = hiddenResults[r.document_id];
+        return (
+          <Card key={r.document_id} className="p-4 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-semibold text-sm truncate">{r.title}</div>
+              <div className="flex items-center gap-2">
+                <Badge variant={r.status === "generated" ? "default" : r.status === "error" ? "destructive" : "secondary"}>
+                  {r.status}{r.count ? ` · ${r.count}` : ""}
+                </Badge>
+                {r.prompts && r.prompts.length > 0 && (
+                  <Button size="sm" variant="ghost" onClick={() => setHiddenResults((h) => ({ ...h, [r.document_id]: !hidden }))}>
+                    {hidden ? "Show prompts" : "Hide prompts"}
+                  </Button>
+                )}
+              </div>
+            </div>
+            {r.error && <div className="text-xs text-destructive">{r.error}</div>}
+            {r.prompts && !hidden && <PromptList prompts={r.prompts} />}
+          </Card>
+        );
+      })}
     </div>
   );
 }
