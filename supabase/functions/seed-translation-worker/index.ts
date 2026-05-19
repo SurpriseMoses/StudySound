@@ -276,7 +276,14 @@ async function processOne(admin: any, _unused: string, cache: Map<string, DocCac
 
   try {
     const targetLangs = todoRows.map((c) => c.target_language);
-    const translations = await translateMulti(preparedSource, entry.sourceLang, targetLangs);
+    const translations = await translateMulti(
+      preparedSource,
+      entry.sourceLang,
+      targetLangs,
+      admin,
+      row.document_id,
+      entry.blueprint,
+    );
 
     const inserts = todoRows
       .map((c) => {
