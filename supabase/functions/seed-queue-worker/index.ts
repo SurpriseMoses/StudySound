@@ -1,20 +1,10 @@
 // seed-queue-worker — single global worker that processes seed_queue.
 //
-// Concurrency model:
-//   * seed_worker_state has exactly one row (id=1).
-//   * On invoke: if is_running=false → exit (paused).
-//   * Acquire lock by atomic update where last_heartbeat IS NULL OR is older
-//     than LOCK_TIMEOUT_MS. If we don't get the row, another worker is alive — exit.
-//   * Process one chunk at a time, sleep INTER_CHUNK_DELAY_MS between calls,
-//     longer pause every BATCH_SIZE chunks. Exit before edge timeout (~140s).
-//
-// Throttling:
-//   * 5s between requests (INTER_CHUNK_DELAY_MS)
-//   * After every 10 chunks, extra 30s pause (LONG_PAUSE_MS)
-//   * On 429: 10s → 20s → 40s exponential, max 3 retries
-//
-// To run continuously: client polls / calls every ~30s while is_running=true,
-// or set up a pg_cron job that pings this endpoint.
+// Routes per document title:
+//   * Titles in GEMINI_VOICE_BY_TITLE → Gemini TTS (free under Lovable AI key)
+//   * Everything else → Azure TTS
+// Storage paths and audio_assets columns match generate-audio so cache hits
+// align when the player requests the same chunk later.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
@@ -23,28 +13,43 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// ---------- Azure config (fallback for non-Gemini titles) ----------
 const STUDY_VOICE_NAME = "en-GB-LibbyNeural";
 const STORY_VOICE_NAME = "en-GB-RyanNeural";
 const VOICE_LOCALE = "en-GB";
 const STUDY_SPEAKING_STYLE = "general";
 const STORY_SPEAKING_STYLE = "narration-professional";
 const LANGUAGE = "en";
-const VOICE_PROVIDER = "azure";
 const AZURE_REGION = "southafricanorth";
 
-// Tuned for Azure Standard (S0) tier — 200 TPS quota in southafricanorth.
-// Single global worker, dedicated resource → push hard.
-const INTER_CHUNK_DELAY_MS = 300;        // 300ms between successful chunks (was 1.5s)
-const POST_RATELIMIT_COOLDOWN_MS = 1500;  // brief pause after a 429 (was 4s)
+// ---------- Gemini per-book voice mapping (matches generate-audio) ----------
+const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
+const GEMINI_VOICE_BY_TITLE: Record<string, string> = {
+  "frankenstein": "Enceladus",
+  "the strange case of dr jekyll and mr hyde": "Enceladus",
+  "macbeth": "Charon",
+  "othello": "Charon",
+  "a tale of two cities": "Charon",
+  "romeo and juliet": "Sulafat",
+  "great expectations": "Sulafat",
+  "treasure island": "Algieba",
+  "the adventures of sherlock holmes": "Algieba",
+};
+function geminiVoiceForDoc(title: string | null | undefined): string | null {
+  if (!title) return null;
+  return GEMINI_VOICE_BY_TITLE[title.trim().toLowerCase()] ?? null;
+}
+
+// Worker pacing
+const INTER_CHUNK_DELAY_MS = 800;
+const POST_RATELIMIT_COOLDOWN_MS = 3_000;
 const MAX_ATTEMPTS = 5;
-const RATE_LIMIT_DELAY_MIN_MS = 5_000;   // defer 5s (was 15s)
-const RATE_LIMIT_DELAY_MAX_MS = 15_000;  // up to 15s (was 30s)
-const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000; // hard cap 30s (was 60s)
+const RATE_LIMIT_DELAY_MIN_MS = 5_000;
+const RATE_LIMIT_DELAY_MAX_MS = 15_000;
+const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000;
 const LOCK_TIMEOUT_MS = 90_000;
-const HARD_DEADLINE_MS = 50_000;         // stay well below runtime budget
-const MAX_CHUNKS_PER_INVOCATION = 12;    // smaller batches avoid cumulative CPU exhaustion
-// Match generate-audio (player) chunking exactly so seeded audio aligns
-// with what users see on screen.
+const HARD_DEADLINE_MS = 50_000;
+const MAX_CHUNKS_PER_INVOCATION = 12;
 const TARGET_CHUNK_SIZE = 1800;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -133,20 +138,88 @@ async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", v
   throw new Error(errMsg);
 }
 
+// ---------- Gemini TTS (PCM 24kHz mono → wrapped as WAV) ----------
+function wrapPcm16ToWav(pcm: Uint8Array, sampleRate = 24000): Uint8Array {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  const writeStr = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + pcm.length, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeStr(36, "data");
+  view.setUint32(40, pcm.length, true);
+  const out = new Uint8Array(44 + pcm.length);
+  out.set(new Uint8Array(header), 0);
+  out.set(pcm, 44);
+  return out;
+}
+
+async function ttsGemini(text: string, voiceName: string, apiKey: string): Promise<ArrayBuffer> {
+  const cleaned = addNaturalPauses(text);
+  const prompt = `Narrate the following passage in a calm, expressive storytelling tone:\n\n${cleaned}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+      },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    const errMsg = `Gemini ${res.status}: ${body.slice(0, 200)}`;
+    if (res.status === 429 || res.status >= 500) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const retryAfterMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : undefined;
+      throw new RateLimitedError(errMsg, retryAfterMs);
+    }
+    throw new Error(errMsg);
+  }
+  const json = await res.json();
+  const part = json?.candidates?.[0]?.content?.parts?.[0];
+  const b64 = part?.inlineData?.data ?? part?.inline_data?.data;
+  if (!b64) throw new Error(`Gemini TTS: no audio payload`);
+  const bin = atob(b64);
+  const pcm = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
+  const wav = wrapPcm16ToWav(pcm, 24000);
+  return wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength) as ArrayBuffer;
+}
+
 type ChunkCacheEntry = {
   title: string;
   chunks: string[];
   mode: "story" | "study";
+  provider: "azure" | "gemini";
+  voiceName: string;
+  speakingStyle: string;
 };
 
 // deno-lint-ignore no-explicit-any
 async function processOneChunk(
   admin: any,
-  azureKey: string,
+  azureKey: string | undefined,
+  geminiKey: string | undefined,
   chunkCache: Map<string, ChunkCacheEntry>,
 ): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string; queue_id?: string }> {
-  // Pick the next pending row globally that is NOT delayed.
-  // delayed_until IS NULL OR delayed_until <= now()
   const nowIso = new Date().toISOString();
   const { data: queueRow, error: pickErr } = await admin
     .from("seed_queue")
@@ -160,7 +233,6 @@ async function processOneChunk(
   if (pickErr) throw pickErr;
   if (!queueRow) return { result: "empty" };
 
-  // Atomically claim it (only if still pending — avoids races even though we're "single worker").
   const { data: claimed, error: claimErr } = await admin
     .from("seed_queue")
     .update({ status: "processing", started_at: new Date().toISOString() })
@@ -169,7 +241,7 @@ async function processOneChunk(
     .select("id")
     .maybeSingle();
   if (claimErr) throw claimErr;
-  if (!claimed) return { result: "empty" }; // someone else grabbed it
+  if (!claimed) return { result: "empty" };
 
   await admin.from("seed_worker_state").update({
     current_queue_id: queueRow.id,
@@ -179,20 +251,17 @@ async function processOneChunk(
 
   const retryCount = queueRow.attempts ?? 0;
 
-  // Log: started
   await admin.from("seed_logs").insert({
     document_id: queueRow.document_id,
     chunk_index: queueRow.chunk_index,
     status: "started",
     retry_count: retryCount,
   });
-  // Live debug fields on documents
   await admin.from("documents").update({
     current_chunk_index: queueRow.chunk_index,
     last_error: null,
   }).eq("id", queueRow.document_id);
 
-  // Load doc + clean_text + chunk text
   let docEntry = chunkCache.get(queueRow.document_id);
   if (!docEntry) {
     const { data: doc, error: docErr } = await admin
@@ -209,16 +278,34 @@ async function processOneChunk(
       return { result: "error", detail: "missing clean_text" };
     }
 
+    const mode: "story" | "study" = doc.subject_type === "novel" ? "story" : "study";
+    const gv = geminiVoiceForDoc(doc.title);
+    let provider: "azure" | "gemini";
+    let voiceName: string;
+    let speakingStyle: string;
+    if (gv && geminiKey) {
+      provider = "gemini";
+      voiceName = gv;
+      speakingStyle = "narration-professional";
+    } else {
+      provider = "azure";
+      voiceName = mode === "story" ? STORY_VOICE_NAME : STUDY_VOICE_NAME;
+      speakingStyle = mode === "story" ? STORY_SPEAKING_STYLE : STUDY_SPEAKING_STYLE;
+    }
+
     docEntry = {
       title: doc.title,
       chunks: chunkText(doc.clean_text),
-      mode: doc.subject_type === "novel" ? "story" : "study",
+      mode,
+      provider,
+      voiceName,
+      speakingStyle,
     };
     chunkCache.set(queueRow.document_id, docEntry);
+    console.log(`[worker] doc=${doc.title} → provider=${provider} voice=${voiceName} chunks=${docEntry.chunks.length}`);
   }
-  const mode = docEntry.mode;
-  const voiceName = mode === "story" ? STORY_VOICE_NAME : STUDY_VOICE_NAME;
-  const speakingStyle = mode === "story" ? STORY_SPEAKING_STYLE : STUDY_SPEAKING_STYLE;
+
+  const { provider, voiceName, speakingStyle, mode } = docEntry;
 
   if (queueRow.chunk_index >= docEntry.chunks.length) {
     await admin.from("seed_queue").update({
@@ -232,22 +319,17 @@ async function processOneChunk(
 
   const expectedHash = await sha256Hex(text);
 
-  // Idempotency: skip if already cached AND the stored text hash matches the
-  // current chunk text. If hash differs, the document was re-cleaned/re-chunked
-  // since this row was created — overwrite it (regenerate + update in place).
   const { data: existing } = await admin
     .from("audio_assets")
     .select("id, clean_text_hash, storage_path")
     .eq("document_id", doc.id)
     .eq("chunk_index", queueRow.chunk_index)
     .eq("language", LANGUAGE)
-    .eq("voice_provider", VOICE_PROVIDER)
+    .eq("voice_provider", provider)
     .eq("voice_name", voiceName)
     .eq("speaking_style", speakingStyle)
     .maybeSingle();
-  const existingHashMatches =
-    !!existing && (existing as { clean_text_hash?: string }).clean_text_hash === expectedHash;
-  if (existing && existingHashMatches) {
+  if (existing && existing.clean_text_hash === expectedHash) {
     await admin.from("seed_queue").update({
       status: "done", completed_at: new Date().toISOString(),
       attempts: (queueRow.attempts ?? 0) + 1,
@@ -259,21 +341,28 @@ async function processOneChunk(
       error_message: "cached",
       retry_count: retryCount,
     });
-    console.log(`[worker] skip (cached) doc=${doc.id} chunk=${queueRow.chunk_index}`);
     return { result: "done", detail: "cached" };
   }
 
-  const path = `audio/${doc.id}/${LANGUAGE}/${VOICE_PROVIDER}/${queueRow.chunk_index}.mp3`;
+  const ext = provider === "gemini" ? "wav" : "mp3";
+  const contentType = provider === "gemini" ? "audio/wav" : "audio/mpeg";
+  const path = `audio/${doc.id}/${LANGUAGE}/${provider}/${voiceName}/${speakingStyle}/${queueRow.chunk_index}.${ext}`;
 
   try {
-    const audio = await ttsAzure(text, azureKey, mode, voiceName);
+    let audio: ArrayBuffer;
+    if (provider === "gemini") {
+      if (!geminiKey) throw new Error("Gemini key not configured");
+      audio = await ttsGemini(text, voiceName, geminiKey);
+    } else {
+      if (!azureKey) throw new Error("Azure key not configured");
+      audio = await ttsAzure(text, azureKey, mode, voiceName);
+    }
 
-    // Storage upload with 3 retries for transient gateway errors.
     let upErr: { message: string } | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const r = await admin.storage.from("assets").upload(path, new Uint8Array(audio), {
-          contentType: "audio/mpeg", upsert: true,
+          contentType, upsert: true,
         });
         upErr = r.error;
       } catch (ex) {
@@ -286,7 +375,6 @@ async function processOneChunk(
     if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
 
     if (existing?.id) {
-      // Stale row exists for this voice combo — refresh it in place.
       const { error: updErr } = await admin.from("audio_assets").update({
         storage_path: path,
         char_count: text.length,
@@ -299,7 +387,7 @@ async function processOneChunk(
         document_id: doc.id,
         chunk_index: queueRow.chunk_index,
         language: LANGUAGE,
-        voice_provider: VOICE_PROVIDER,
+        voice_provider: provider,
         voice_name: voiceName,
         speaking_style: speakingStyle,
         storage_path: path,
@@ -324,12 +412,10 @@ async function processOneChunk(
       retry_count: retryCount,
     });
 
-    // Update document progress
     await admin.from("documents").update({
       seed_audio_progress: queueRow.chunk_index,
     }).eq("id", doc.id).lt("seed_audio_progress", queueRow.chunk_index);
 
-    // If this was the last chunk for this doc, mark done.
     const { count: pendingForDoc } = await admin.from("seed_queue")
       .select("id", { count: "exact", head: true })
       .eq("document_id", doc.id)
@@ -341,7 +427,7 @@ async function processOneChunk(
       console.log(`[worker] 🎉 doc complete: ${doc.title}`);
     }
 
-    console.log(`[worker] ✓ doc=${doc.id} chunk=${queueRow.chunk_index} (${text.length} chars)`);
+    console.log(`[worker] ✓ ${provider} doc=${doc.title} chunk=${queueRow.chunk_index} (${text.length} chars)`);
     return { result: "done" };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -350,7 +436,6 @@ async function processOneChunk(
     const chunkIdx = queueRow.chunk_index;
 
     if (e instanceof RateLimitedError) {
-      // DEFER: schedule a retry 60-120s in the future and move on.
       const exhausted = attempts >= MAX_ATTEMPTS;
       const baseDelay = e.retryAfterMs ?? RATE_LIMIT_DELAY_MIN_MS;
       const jitter = Math.floor(Math.random() * (RATE_LIMIT_DELAY_MAX_MS - RATE_LIMIT_DELAY_MIN_MS));
@@ -376,15 +461,9 @@ async function processOneChunk(
         last_error: `rate-limited: ${msg}`,
       }).eq("id", docId);
 
-      console.warn(
-        `[worker] current_chunk_id=${queueRow.id} doc=${docId} chunk=${chunkIdx} ` +
-        `retry_count=${attempts}/${MAX_ATTEMPTS} last_error="rate-limited" ` +
-        (exhausted ? "→ MARKED FAILED (queue continues)" : `→ deferred ${Math.round(delayMs / 1000)}s`)
-      );
       return { result: "rate_limited", detail: msg, queue_id: queueRow.id };
     }
 
-    // Hard failure (non-rate-limit). After MAX_ATTEMPTS mark failed.
     const exhausted = attempts >= MAX_ATTEMPTS;
     await admin.from("seed_queue").update({
       status: exhausted ? "failed" : "pending",
@@ -405,11 +484,7 @@ async function processOneChunk(
       last_error: msg,
     }).eq("id", docId);
 
-    console.error(
-      `[worker] current_chunk_id=${queueRow.id} doc=${docId} chunk=${chunkIdx} ` +
-      `retry_count=${attempts}/${MAX_ATTEMPTS} last_error="${msg}" ` +
-      (exhausted ? "→ MARKED FAILED (queue continues)" : "→ will retry in 30s")
-    );
+    console.error(`[worker] ✗ doc=${docId} chunk=${chunkIdx} attempts=${attempts}: ${msg}`);
     return { result: "error", detail: msg, queue_id: queueRow.id };
   }
 }
@@ -423,7 +498,8 @@ Deno.serve(async (req) => {
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const ANON_KEY = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
     const AZURE_KEY = Deno.env.get("Azure_Secret_Key_SpeechServices");
-    if (!AZURE_KEY) throw new Error("Azure TTS key not configured");
+    const GEMINI_KEY = Deno.env.get("Gemini_Secret_Key");
+    if (!AZURE_KEY && !GEMINI_KEY) throw new Error("Neither Azure nor Gemini TTS key configured");
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -449,7 +525,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check is_running flag
     const { data: state } = await admin.from("seed_worker_state").select("*").eq("id", 1).maybeSingle();
     if (!state?.is_running) {
       return new Response(JSON.stringify({ ok: true, status: "paused", processed: 0 }), {
@@ -457,7 +532,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Lock acquisition: refuse if another worker heartbeated within LOCK_TIMEOUT_MS.
     const now = Date.now();
     if (state.last_heartbeat) {
       const last = new Date(state.last_heartbeat).getTime();
@@ -468,7 +542,6 @@ Deno.serve(async (req) => {
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
     }
-    // Claim the lock by stamping our heartbeat.
     await admin.from("seed_worker_state").update({
       last_heartbeat: new Date().toISOString(),
     }).eq("id", 1);
@@ -480,11 +553,10 @@ Deno.serve(async (req) => {
     const chunkCache = new Map<string, ChunkCacheEntry>();
 
     while (Date.now() - startedAt < HARD_DEADLINE_MS && processed < MAX_CHUNKS_PER_INVOCATION) {
-      // Re-check is_running so pause takes effect mid-run.
       const { data: liveState } = await admin.from("seed_worker_state").select("is_running").eq("id", 1).maybeSingle();
       if (!liveState?.is_running) break;
 
-      const res = await processOneChunk(admin, AZURE_KEY, chunkCache);
+      const res = await processOneChunk(admin, AZURE_KEY, GEMINI_KEY, chunkCache);
       lastResult = res;
 
       if (res.result === "empty") break;
@@ -496,26 +568,21 @@ Deno.serve(async (req) => {
           total_processed: (state.total_processed ?? 0) + processed,
         }).eq("id", 1);
         if (processed >= MAX_CHUNKS_PER_INVOCATION) break;
-        // Only sleep if we have time for it + another chunk (~10s budget).
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
         if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
         await sleep(INTER_CHUNK_DELAY_MS);
       } else if (res.result === "rate_limited") {
-        // Chunk was deferred. Track it but DO NOT stop — pick the next available chunk.
         rateLimited = true;
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
         if (remaining < POST_RATELIMIT_COOLDOWN_MS + 5_000) break;
-        // Brief cooldown before next chunk so we don't immediately re-trigger 429.
         await sleep(POST_RATELIMIT_COOLDOWN_MS);
       } else {
-        // error: small pause then continue if time allows
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
         if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
         await sleep(INTER_CHUNK_DELAY_MS);
       }
     }
 
-    // Release lock so next invocation is allowed sooner.
     await admin.from("seed_worker_state").update({
       current_queue_id: null,
       current_document_id: null,
@@ -533,7 +600,6 @@ Deno.serve(async (req) => {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[seed-queue-worker]", msg);
-    // Best-effort lock release.
     try {
       const admin = createClient(
         Deno.env.get("SUPABASE_URL")!,
