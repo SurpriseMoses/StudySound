@@ -532,34 +532,77 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      // Admin-aware: admins testing features never trigger upstream API calls.
+      // They reuse ANY cached row for (doc, chunk, lang), ignore hash drift,
+      // and get a clear NO_CACHE response on miss instead of generating.
+      let isAdminPreview = false;
+      if (user) {
+        const { data: roleOk } = await admin.rpc("has_role", { _user_id: user.id, _role: "admin" });
+        isAdminPreview = !!roleOk;
+      }
+
       let pStoragePath: string | null = null;
       let pSource: "cached" | "generated" = "cached";
       const previewText = chunks[chunk_index];
       const previewHash = await sha256Hex(previewText);
-      const { data: cachedRow } = await admin
-        .from("audio_assets")
-        .select("id, storage_path, clean_text_hash")
-        .eq("document_id", doc.id)
-        .eq("chunk_index", chunk_index)
-        .eq("language", lang)
-        .eq("voice_provider", provider)
-        .eq("voice_name", voiceName)
-        .eq("speaking_style", speakingStyle)
-        .maybeSingle();
 
-      // Dirty-detection: if the cached audio was generated from a different
-      // version of the cleaned text (hash mismatch), drop it and regenerate.
-      const previewCacheUsable =
-        cachedRow && cachedRow.clean_text_hash && cachedRow.clean_text_hash === previewHash;
+      let cachedRow: any = null;
+      if (isAdminPreview) {
+        const { data } = await admin
+          .from("audio_assets")
+          .select("id, storage_path, clean_text_hash, voice_provider, voice_name, speaking_style")
+          .eq("document_id", doc.id)
+          .eq("chunk_index", chunk_index)
+          .eq("language", lang)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        cachedRow = data;
+        if (cachedRow) {
+          provider = cachedRow.voice_provider;
+          voiceName = cachedRow.voice_name;
+        }
+      } else {
+        const { data } = await admin
+          .from("audio_assets")
+          .select("id, storage_path, clean_text_hash")
+          .eq("document_id", doc.id)
+          .eq("chunk_index", chunk_index)
+          .eq("language", lang)
+          .eq("voice_provider", provider)
+          .eq("voice_name", voiceName)
+          .eq("speaking_style", speakingStyle)
+          .maybeSingle();
+        cachedRow = data;
+      }
 
-      if (cachedRow && !previewCacheUsable) {
+      // Dirty-detection: skipped for admins (they're reviewing existing cache).
+      const previewCacheUsable = isAdminPreview
+        ? !!cachedRow
+        : (cachedRow && cachedRow.clean_text_hash && cachedRow.clean_text_hash === previewHash);
+
+      if (!isAdminPreview && cachedRow && !previewCacheUsable) {
         console.log("Preview audio: stale cache, deleting", { id: cachedRow.id, doc: doc.id, chunk: chunk_index, lang });
         await admin.from("audio_assets").delete().eq("id", cachedRow.id);
       }
 
       if (previewCacheUsable) {
-        console.log("Preview audio: cache hit", { doc: doc.id, chunk: chunk_index, lang });
+        console.log("Preview audio: cache hit", { doc: doc.id, chunk: chunk_index, lang, admin: isAdminPreview });
         pStoragePath = cachedRow!.storage_path;
+      } else if (isAdminPreview) {
+        // Admin testing: do not call upstream API. Tell client there's nothing cached.
+        return new Response(
+          JSON.stringify({
+            success: false,
+            preview: true,
+            error: "No cached audio for this chunk. Admin test mode does not call upstream APIs.",
+            code: "NO_CACHE",
+            chunk_index,
+            total_chunks: totalChunks,
+            language: lang,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
       } else {
         console.log("Preview audio: generating via Azure", { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
         const text = previewText;
@@ -762,9 +805,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { data: cached } = await admin
+    let { data: cached } = await admin
       .from("audio_assets")
-      .select("id, storage_path, clean_text_hash")
+      .select("id, storage_path, clean_text_hash, voice_provider, voice_name, speaking_style")
       .eq("document_id", doc.id)
       .eq("chunk_index", chunk_index)
       .eq("language", lang)
@@ -864,6 +907,30 @@ Deno.serve(async (req) => {
       chargedCredits = creditsToCharge;
     }
 
+    // Admin test mode: never hit upstream APIs. Reuse ANY cached row for
+    // (doc, chunk, lang) regardless of voice/provider/style; skip hash drift.
+    const { data: isAdminMain } = await admin.rpc("has_role", {
+      _user_id: authedUserId, _role: "admin",
+    });
+    if (isAdminMain && !cached) {
+      const { data: anyCached } = await admin
+        .from("audio_assets")
+        .select("id, storage_path, clean_text_hash, voice_provider, voice_name, speaking_style")
+        .eq("document_id", doc.id)
+        .eq("chunk_index", chunk_index)
+        .eq("language", lang)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (anyCached) {
+        cached = anyCached;
+        provider = anyCached.voice_provider;
+        voiceName = anyCached.voice_name;
+      }
+    }
+
+
+
     let storagePath: string;
     let reused = false;
     // Resolve translated text up-front so we can return it for display in ALL cases
@@ -888,7 +955,10 @@ Deno.serve(async (req) => {
     // seed worker) regenerates from the current cleaned text.
     let cacheUsable = false;
     if (cached) {
-      if (cached.clean_text_hash && cached.clean_text_hash === expectedHash) {
+      if (isAdminMain) {
+        // Admin testing: trust any cached row, never delete or regenerate.
+        cacheUsable = true;
+      } else if (cached.clean_text_hash && cached.clean_text_hash === expectedHash) {
         cacheUsable = true;
       } else {
         console.log("[audio] stale cache, deleting", {
@@ -906,6 +976,19 @@ Deno.serve(async (req) => {
     if (cacheUsable) {
       storagePath = cached!.storage_path;
       reused = true;
+    } else if (isAdminMain) {
+      // Admin test mode: do NOT call upstream APIs on a cache miss.
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "No cached audio for this chunk. Admin test mode does not call upstream APIs.",
+          code: "NO_CACHE",
+          chunk_index,
+          total_chunks: totalChunks,
+          language: lang,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     } else {
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
       if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
