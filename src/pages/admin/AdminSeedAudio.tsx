@@ -363,8 +363,13 @@ export default function AdminSeedAudio() {
           ) : (
             <div className="space-y-3">
               {docs.map((d) => {
-                const totalEst = Math.max(1, Math.ceil((d.char_count || 0) / 700));
-                const pct = Math.min(100, Math.round((d.cached_chunks / totalEst) * 100));
+                // Prefer the real queue total (matches worker's 1800-char chunking).
+                // Fall back to char_count/1800 if the doc was never enqueued.
+                const totalEst = d.queue_total > 0
+                  ? d.queue_total
+                  : Math.max(1, Math.ceil((d.char_count || 0) / 1800));
+                const completed = d.queue_done > 0 ? d.queue_done : d.cached_chunks;
+                const pct = Math.min(100, Math.round((completed / totalEst) * 100));
                 const isCurrent = queueStatus?.worker?.current_document_id === d.id;
                 return (
                   <div key={d.id} className={`border rounded-lg p-4 space-y-2 ${isCurrent ? "border-primary/50 bg-primary/5" : ""}`}>
@@ -375,7 +380,7 @@ export default function AdminSeedAudio() {
                           {isCurrent && <Badge variant="secondary" className="bg-primary/10 text-primary">processing now</Badge>}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {d.char_count.toLocaleString()} chars · ~{totalEst} chunks · {d.cached_chunks} cached
+                          {d.char_count.toLocaleString()} chars · {totalEst} chunks · {d.cached_chunks} cached
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -401,8 +406,11 @@ export default function AdminSeedAudio() {
                     </div>
                     <Progress value={pct} className="h-1.5" />
                     <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
-                      <span>Current chunk: <span className="font-mono text-foreground">{d.current_chunk_index ?? "—"}</span></span>
-                      <span>Progress: <span className="font-mono text-foreground">{d.cached_chunks}/{totalEst}</span></span>
+                      <span>Done: <span className="font-mono text-foreground">{completed}/{totalEst}</span></span>
+                      <span>Pending: <span className="font-mono text-foreground">{d.queue_pending}</span></span>
+                      {d.queue_processing > 0 && <span>Processing: <span className="font-mono text-primary">{d.queue_processing}</span></span>}
+                      {d.queue_failed > 0 && <span>Failed: <span className="font-mono text-destructive">{d.queue_failed}</span></span>}
+                      <span>Current: <span className="font-mono text-foreground">{d.current_chunk_index ?? "—"}</span></span>
                       {isCurrent && <span className="text-primary">● live</span>}
                     </div>
                     {d.last_error && (
