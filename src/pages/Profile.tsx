@@ -61,7 +61,7 @@ export default function Profile() {
                         <SelectItem value="xh">isiXhosa</SelectItem>
                         <SelectItem value="nso">Sepedi</SelectItem>
                         <SelectItem value="tn">Setswana</SelectItem>
-                        <SelectItem value="ts">Xitsonga</SelectItem>
+                        
                         <SelectItem value="fr">French</SelectItem>
                       </SelectContent>
                     </Select>
