@@ -81,24 +81,45 @@ export default function AdminSeedAudio() {
     if (error) { toast.error(error.message); return; }
     const ids = (docRows ?? []).map((d) => d.id);
     const cachedCounts = new Map<string, number>();
+    const queueCounts = new Map<string, { pending: number; processing: number; done: number; failed: number }>();
     if (ids.length > 0) {
+      // Count any cached audio (Gemini or Azure) per doc.
       const { data: assets } = await supabase
         .from("audio_assets")
         .select("document_id")
         .in("document_id", ids)
-        .eq("language", "en")
-        .eq("voice_name", "en-GB-LibbyNeural")
-        .eq("speaking_style", "general");
+        .eq("language", "en");
       (assets ?? []).forEach((a) => {
         cachedCounts.set(a.document_id, (cachedCounts.get(a.document_id) ?? 0) + 1);
       });
+      // True queue totals per doc — the source of truth for "how many chunks".
+      const { data: qrows } = await supabase
+        .from("seed_queue")
+        .select("document_id, status")
+        .in("document_id", ids);
+      (qrows ?? []).forEach((r) => {
+        const cur = queueCounts.get(r.document_id) ?? { pending: 0, processing: 0, done: 0, failed: 0 };
+        if (r.status === "pending") cur.pending++;
+        else if (r.status === "processing") cur.processing++;
+        else if (r.status === "done") cur.done++;
+        else if (r.status === "failed") cur.failed++;
+        queueCounts.set(r.document_id, cur);
+      });
     }
     setDocs(
-      (docRows ?? []).map((d) => ({
-        ...d,
-        seed_audio_status: d.seed_audio_status as SeedDoc["seed_audio_status"],
-        cached_chunks: cachedCounts.get(d.id) ?? 0,
-      })),
+      (docRows ?? []).map((d) => {
+        const q = queueCounts.get(d.id) ?? { pending: 0, processing: 0, done: 0, failed: 0 };
+        return {
+          ...d,
+          seed_audio_status: d.seed_audio_status as SeedDoc["seed_audio_status"],
+          cached_chunks: cachedCounts.get(d.id) ?? 0,
+          queue_pending: q.pending,
+          queue_processing: q.processing,
+          queue_done: q.done,
+          queue_failed: q.failed,
+          queue_total: q.pending + q.processing + q.done + q.failed,
+        };
+      }),
     );
   }
 
