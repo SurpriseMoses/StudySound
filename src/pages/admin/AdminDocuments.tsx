@@ -3,8 +3,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, RefreshCw, Search, Sparkles } from "lucide-react";
+
+const RECLEAN_LANGUAGES = [
+  { code: "zu", label: "isiZulu" },
+  { code: "xh", label: "isiXhosa" },
+  { code: "tn", label: "Setswana" },
+  { code: "nso", label: "Sepedi" },
+  { code: "af", label: "Afrikaans" },
+  { code: "fr", label: "French" },
+];
 
 type Doc = {
   id: string;
@@ -79,50 +92,61 @@ export default function AdminDocuments() {
     load();
   };
 
-  const reclean = async (document_id: string, title: string) => {
-    const choice = window.prompt(
-      `Re-clean "${title}"?\n\nChoose scope:\n  1 = Section 1 only (chunk 0)\n  2 = Sections 1 & 2 (chunks 0,1)\n  a = All chunks (whole document)\n\nNote: clean_text is always re-derived from raw_text, but only the chosen chunks have their cached audio deleted (so they regenerate on next play with current SSML). Other chunks keep cached audio if their text didn't change. No user is re-charged.\n\nYou can also enter a comma-separated chunk list, e.g. "0,3,7".`,
-      "1",
-    );
-    if (choice == null) return;
-    const trimmed = choice.trim().toLowerCase();
-    let body: Record<string, unknown> = { action: "reclean_document", document_id };
+  // Dialog state for Re-clean
+  const [recleanDoc, setRecleanDoc] = useState<Doc | null>(null);
+  const [recleanScope, setRecleanScope] = useState<"all" | "s1" | "s12" | "custom">("s1");
+  const [recleanChunks, setRecleanChunks] = useState<string>("");
+  const [recleanLangs, setRecleanLangs] = useState<string[]>([]);
+
+  const openReclean = (doc: Doc) => {
+    setRecleanDoc(doc);
+    setRecleanScope("s1");
+    setRecleanChunks("");
+    setRecleanLangs([]);
+  };
+
+  const submitReclean = async () => {
+    if (!recleanDoc) return;
+    const document_id = recleanDoc.id;
+    let chunk_indices: number[] | null = null;
     let label = "";
-    if (trimmed === "a" || trimmed === "all") {
-      body = { ...body, scope: "all" };
-      label = "all chunks";
-    } else if (trimmed === "1") {
-      body = { ...body, scope: "chunks", chunk_indices: [0] };
-      label = "section 1 (chunk 0)";
-    } else if (trimmed === "2") {
-      body = { ...body, scope: "chunks", chunk_indices: [0, 1] };
-      label = "sections 1 & 2 (chunks 0,1)";
-    } else {
-      const parsed = trimmed
-        .split(",")
-        .map((s) => Number(s.trim()))
-        .filter((n) => Number.isInteger(n) && n >= 0);
+    if (recleanScope === "all") { label = "all chunks"; }
+    else if (recleanScope === "s1") { chunk_indices = [0]; label = "section 1"; }
+    else if (recleanScope === "s12") { chunk_indices = [0, 1]; label = "sections 1 & 2"; }
+    else {
+      const parsed = recleanChunks.split(",").map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n >= 0);
       if (parsed.length === 0) {
-        toast({ title: "Cancelled", description: "Invalid scope choice." });
+        toast({ title: "Invalid chunks", description: 'Enter chunk indices like "0,3,7".', variant: "destructive" });
         return;
       }
-      body = { ...body, scope: "chunks", chunk_indices: parsed };
+      chunk_indices = parsed;
       label = `chunks ${parsed.join(",")}`;
     }
-
+    const body: Record<string, unknown> = {
+      action: "reclean_document",
+      document_id,
+      scope: recleanScope === "all" ? "all" : "chunks",
+      ...(chunk_indices ? { chunk_indices } : {}),
+      languages: recleanLangs,
+    };
     setBusy(document_id);
+    setRecleanDoc(null);
     const { data, error } = await supabase.functions.invoke("admin-api", { body });
     setBusy(null);
     if (error || !data?.success) {
       toast({ title: "Re-clean failed", description: error?.message ?? data?.error, variant: "destructive" });
       return;
     }
+    const langPart = recleanLangs.length > 0
+      ? ` · ${data.queued_translation_rows ?? 0} translation jobs queued (${recleanLangs.join(", ")}) · ${data.deleted_translation_rows ?? 0} translation rows cleared`
+      : " · translations untouched";
     toast({
-      title: `Re-clean queued · ${data.queued_chunks ?? 0} chunks`,
-      description: `${label} · ${data.chunks} chunks total · ${data.queued_chunks ?? 0} queued for reprocessing · ${data.deleted_audio_rows ?? 0} audio rows cleared · ${data.invalid_chunks?.length ?? 0} skipped (${data.kind}). Watch Pipeline for progress.`,
+      title: `Re-clean queued · ${data.queued_chunks ?? 0} audio chunks`,
+      description: `${label} · ${data.chunks} chunks total · ${data.deleted_audio_rows ?? 0} audio rows cleared${langPart}.`,
     });
     load();
   };
+
   const filtered = docs.filter((d) => d.title.toLowerCase().includes(search.toLowerCase()));
 
   return (
@@ -185,7 +209,7 @@ export default function AdminDocuments() {
                             size="sm"
                             variant="outline"
                             disabled={busy === d.id}
-                            onClick={() => reclean(d.id, d.title)}
+                            onClick={() => openReclean(d)}
                             title="Re-run the text cleaner against raw_text"
                           >
                             {busy === d.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
@@ -213,6 +237,69 @@ export default function AdminDocuments() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={!!recleanDoc} onOpenChange={(o) => !o && setRecleanDoc(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Re-clean “{recleanDoc?.title}”</DialogTitle>
+            <DialogDescription>
+              clean_text is always re-derived from raw_text. Cached audio for the chosen chunks is cleared so it regenerates on next play. Translations are only touched for the languages you tick. No user is re-charged.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs uppercase text-muted-foreground">Scope</Label>
+              <RadioGroup value={recleanScope} onValueChange={(v) => setRecleanScope(v as typeof recleanScope)} className="mt-2 space-y-1">
+                <div className="flex items-center gap-2"><RadioGroupItem value="s1" id="sc-s1" /><Label htmlFor="sc-s1" className="font-normal">Section 1 only (chunk 0)</Label></div>
+                <div className="flex items-center gap-2"><RadioGroupItem value="s12" id="sc-s12" /><Label htmlFor="sc-s12" className="font-normal">Sections 1 &amp; 2 (chunks 0,1)</Label></div>
+                <div className="flex items-center gap-2"><RadioGroupItem value="all" id="sc-all" /><Label htmlFor="sc-all" className="font-normal">All chunks (whole document)</Label></div>
+                <div className="flex items-center gap-2"><RadioGroupItem value="custom" id="sc-custom" /><Label htmlFor="sc-custom" className="font-normal">Custom chunks…</Label></div>
+              </RadioGroup>
+              {recleanScope === "custom" && (
+                <Input
+                  className="mt-2"
+                  placeholder="e.g. 0,3,7"
+                  value={recleanChunks}
+                  onChange={(e) => setRecleanChunks(e.target.value)}
+                />
+              )}
+            </div>
+
+            <div>
+              <Label className="text-xs uppercase text-muted-foreground">Also re-translate (optional)</Label>
+              <p className="text-xs text-muted-foreground mt-1">Tick languages whose cached translations should be deleted and re-generated from the new clean_text. Leave empty to skip translations.</p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {RECLEAN_LANGUAGES.map((l) => {
+                  const checked = recleanLangs.includes(l.code);
+                  return (
+                    <label key={l.code} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(c) => {
+                          setRecleanLangs((prev) => c ? [...prev, l.code] : prev.filter((x) => x !== l.code));
+                        }}
+                      />
+                      <span>{l.label} <span className="text-muted-foreground">({l.code})</span></span>
+                    </label>
+                  );
+                })}
+              </div>
+              {recleanLangs.length > 0 && (
+                <div className="mt-2 flex gap-2">
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setRecleanLangs(RECLEAN_LANGUAGES.map((l) => l.code))}>Select all</Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setRecleanLangs([])}>Clear</Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRecleanDoc(null)}>Cancel</Button>
+            <Button onClick={submitReclean}>Re-clean</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
