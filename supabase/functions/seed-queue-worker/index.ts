@@ -230,10 +230,14 @@ async function processOneChunk(
   const doc = { id: queueRow.document_id, title: docEntry.title };
   const text = docEntry.chunks[queueRow.chunk_index];
 
-  // Idempotency: skip if already cached.
+  const expectedHash = await sha256Hex(text);
+
+  // Idempotency: skip if already cached AND the stored text hash matches the
+  // current chunk text. If hash differs, the document was re-cleaned/re-chunked
+  // since this row was created — overwrite it (regenerate + update in place).
   const { data: existing } = await admin
     .from("audio_assets")
-    .select("id")
+    .select("id, clean_text_hash, storage_path")
     .eq("document_id", doc.id)
     .eq("chunk_index", queueRow.chunk_index)
     .eq("language", LANGUAGE)
@@ -241,7 +245,9 @@ async function processOneChunk(
     .eq("voice_name", voiceName)
     .eq("speaking_style", speakingStyle)
     .maybeSingle();
-  if (existing) {
+  const existingHashMatches =
+    !!existing && (existing as { clean_text_hash?: string }).clean_text_hash === expectedHash;
+  if (existing && existingHashMatches) {
     await admin.from("seed_queue").update({
       status: "done", completed_at: new Date().toISOString(),
       attempts: (queueRow.attempts ?? 0) + 1,
@@ -279,18 +285,31 @@ async function processOneChunk(
     }
     if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
 
-    const { error: insErr } = await admin.from("audio_assets").insert({
-      document_id: doc.id,
-      chunk_index: queueRow.chunk_index,
-      language: LANGUAGE,
-      voice_provider: VOICE_PROVIDER,
-      voice_name: voiceName,
-      speaking_style: speakingStyle,
-      storage_path: path,
-      char_count: text.length,
-    });
-    if (insErr && insErr.code !== "23505") {
-      throw new Error(`Insert audio_asset: ${insErr.message}`);
+    if (existing?.id) {
+      // Stale row exists for this voice combo — refresh it in place.
+      const { error: updErr } = await admin.from("audio_assets").update({
+        storage_path: path,
+        char_count: text.length,
+        clean_text_hash: expectedHash,
+        cleaning_version: 2,
+      }).eq("id", existing.id);
+      if (updErr) throw new Error(`Update audio_asset: ${updErr.message}`);
+    } else {
+      const { error: insErr } = await admin.from("audio_assets").insert({
+        document_id: doc.id,
+        chunk_index: queueRow.chunk_index,
+        language: LANGUAGE,
+        voice_provider: VOICE_PROVIDER,
+        voice_name: voiceName,
+        speaking_style: speakingStyle,
+        storage_path: path,
+        char_count: text.length,
+        clean_text_hash: expectedHash,
+        cleaning_version: 2,
+      });
+      if (insErr && insErr.code !== "23505") {
+        throw new Error(`Insert audio_asset: ${insErr.message}`);
+      }
     }
 
     await admin.from("seed_queue").update({
