@@ -1038,6 +1038,17 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (/ElevenLabs 429/i.test(msg) || /concurrent_limit_exceeded/i.test(msg)) {
+      return new Response(
+        JSON.stringify({
+          error: "RATE_LIMITED",
+          message: "Audio service is busy. Please try again in a moment.",
+          retry_after_seconds: Number(e?.retryAfter) || 15,
+          fallback: true,
+        }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     if (/Insufficient credits/i.test(msg)) {
       return new Response(
         JSON.stringify({
