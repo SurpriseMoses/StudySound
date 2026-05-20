@@ -19,28 +19,24 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const TARGET_CHUNK_SIZE = 700;
-const HARD_MIN = 400;
+// Must match generate-audio (player) chunking exactly so seeded audio aligns
+// with what users see on screen.
+const TARGET_CHUNK_SIZE = 1800;
 
-function chunkText(text: string): string[] {
+function chunkText(text: string, size = TARGET_CHUNK_SIZE): string[] {
   const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) return [];
   const sentences = clean.match(/[^.!?]+[.!?]+|\S+$/g) ?? [clean];
   const chunks: string[] = [];
   let buf = "";
   for (const s of sentences) {
-    const sentence = s.trim();
-    if (!sentence) continue;
-    if (buf.length === 0) { buf = sentence; continue; }
-    const candidate = `${buf} ${sentence}`;
-    if (candidate.length >= TARGET_CHUNK_SIZE && buf.length >= HARD_MIN) {
-      chunks.push(buf);
-      buf = sentence;
+    if ((buf + " " + s).length > size && buf.length > 0) {
+      chunks.push(buf.trim());
+      buf = s;
     } else {
-      buf = candidate;
+      buf = buf ? buf + " " + s : s;
     }
   }
-  if (buf) chunks.push(buf);
+  if (buf.trim()) chunks.push(buf.trim());
   return chunks;
 }
 
