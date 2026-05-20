@@ -700,9 +700,12 @@ Deno.serve(async (req) => {
         console.log("Preview audio: cache hit", { doc: doc.id, chunk: chunk_index, lang, admin: isAdminPreview });
         pStoragePath = cachedRow!.storage_path;
       } else {
-        console.log("Preview audio: generating via Azure", { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
+        console.log(`Preview audio: generating via ${provider}`, { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
         const text = previewText;
-        const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
+        const apiKey =
+          provider === "azure" ? AZURE_KEY :
+          provider === "gemini" ? GEMINI_KEY :
+          ELEVEN_KEY;
         if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
           return new Response(
             JSON.stringify({ success: false, preview: true, error: `${provider} API key not configured`, code: "TTS_NOT_CONFIGURED" }),
@@ -712,14 +715,18 @@ Deno.serve(async (req) => {
         const ttsResult =
           provider === "azure"
             ? await ttsAzureWithFallback(text, lang, voiceName, apiKey, mode, ELEVEN_KEY)
-            : { audio: await ttsElevenLabs(text, apiKey!), voiceUsed: voiceName, providerUsed: "elevenlabs" as const };
+            : provider === "gemini"
+              ? { audio: await ttsGemini(text, voiceName, apiKey!), voiceUsed: voiceName, providerUsed: "gemini" as const }
+              : { audio: await ttsElevenLabs(text, apiKey!), voiceUsed: voiceName, providerUsed: "elevenlabs" as const };
         voiceName = ttsResult.voiceUsed;
         if ((ttsResult as any).providerUsed) provider = (ttsResult as any).providerUsed;
         const audio = ttsResult.audio;
-        const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
+        const ext = provider === "gemini" ? "wav" : "mp3";
+        const contentType = provider === "gemini" ? "audio/wav" : "audio/mpeg";
+        const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.${ext}`;
         const { error: upErr } = await admin.storage
           .from("assets")
-          .upload(path, new Uint8Array(audio), { contentType: "audio/mpeg", upsert: true });
+          .upload(path, new Uint8Array(audio), { contentType, upsert: true });
         if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
         await admin.from("audio_assets").insert({
           document_id: doc.id,
