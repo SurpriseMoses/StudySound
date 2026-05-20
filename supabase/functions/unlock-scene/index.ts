@@ -137,8 +137,8 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       mode,
-      charged: cost,
-      new_balance: (profile.credits_balance ?? 0) - cost,
+      charged: effectiveCost,
+      new_balance: (profile.credits_balance ?? 0) - effectiveCost,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
