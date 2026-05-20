@@ -907,6 +907,27 @@ Deno.serve(async (req) => {
       chargedCredits = creditsToCharge;
     }
 
+    // Admin test mode: never hit upstream APIs. Reuse ANY cached row for
+    // (doc, chunk, lang) regardless of voice/provider/style; skip hash drift.
+    const { data: isAdminMain } = await admin.rpc("has_role", {
+      _user_id: authedUserId, _role: "admin",
+    });
+    if (isAdminMain && !cached) {
+      const { data: anyCached } = await admin
+        .from("audio_assets")
+        .select("id, storage_path, clean_text_hash, voice_provider, voice_name, speaking_style")
+        .eq("document_id", doc.id)
+        .eq("chunk_index", chunk_index)
+        .eq("language", lang)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (anyCached) {
+        cached = anyCached;
+        provider = anyCached.voice_provider;
+        voiceName = anyCached.voice_name;
+      }
+
     let storagePath: string;
     let reused = false;
     // Resolve translated text up-front so we can return it for display in ALL cases
