@@ -436,6 +436,82 @@ async function ttsAzureWithFallback(
   }
 }
 
+// =========================================================================
+// GEMINI TTS — returns WAV bytes (PCM L16 mono 24kHz wrapped with header).
+// Gemini's TTS responds with raw base64 PCM; we wrap it as a RIFF/WAV file
+// so the browser <audio> element can decode it without a custom player.
+// =========================================================================
+function wrapPcm16ToWav(pcm: Uint8Array, sampleRate = 24000): Uint8Array {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  const writeStr = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + pcm.length, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true); // PCM chunk size
+  view.setUint16(20, 1, true);  // PCM format
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeStr(36, "data");
+  view.setUint32(40, pcm.length, true);
+  const out = new Uint8Array(44 + pcm.length);
+  out.set(new Uint8Array(header), 0);
+  out.set(pcm, 44);
+  return out;
+}
+
+async function ttsGemini(text: string, voiceName: string, apiKey: string): Promise<ArrayBuffer> {
+  const cleaned = addNaturalPauses(text);
+  // A storytelling prompt prefix nudges Gemini to narrate, not read flatly.
+  const prompt = `Narrate the following passage in a calm, expressive storytelling tone:\n\n${cleaned}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent`;
+  const delays = [0, 1500, 4000];
+  let lastBody = "";
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < delays.length; attempt++) {
+    if (delays[attempt]) await new Promise((r) => setTimeout(r, delays[attempt]));
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+        },
+      }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const part = json?.candidates?.[0]?.content?.parts?.[0];
+      const b64 = part?.inlineData?.data ?? part?.inline_data?.data;
+      if (!b64) throw new Error(`Gemini TTS: no audio payload (${JSON.stringify(json).slice(0, 200)})`);
+      const bin = atob(b64);
+      const pcm = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
+      const wav = wrapPcm16ToWav(pcm, 24000);
+      return wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength) as ArrayBuffer;
+    }
+    lastStatus = res.status;
+    lastBody = await res.text();
+    if (res.status !== 429 && res.status < 500) break;
+  }
+  const err: any = new Error(`Gemini TTS ${lastStatus}: ${lastBody.slice(0, 300)}`);
+  if (lastStatus === 429) { err.code = "RATE_LIMITED"; err.retryAfter = 20; }
+  err.status = lastStatus;
+  throw err;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
