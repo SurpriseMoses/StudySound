@@ -1012,6 +1012,17 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (/Insufficient credits/i.test(msg)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          insufficient_credits: true,
+          error: "Insufficient credits",
+          fallback: false,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     return new Response(JSON.stringify({ error: msg, fallback: false }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
