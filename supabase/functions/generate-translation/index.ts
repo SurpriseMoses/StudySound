@@ -589,13 +589,11 @@ Deno.serve(async (req) => {
     }
 
     // 3) Charge credits if user hasn't unlocked this chunk yet.
-    // Cache-first free access: if the translation was already cached (served
-    // from translation_assets without regenerating), grant access without
-    // charging credits. Brand-new generations still cost CREDITS_PER_CHUNK.
+    // Per-feature cost is charged on EVERY unlock (cache hit or fresh generation).
+    // Admins are exempt.
     let creditsCharged = 0;
-    const servedFromCache = !!cached;
     if (!alreadyPaid) {
-      const requireCredits = !servedFromCache && !isAdmin;
+      const requireCredits = !isAdmin;
       if (requireCredits && balance < CREDITS_PER_CHUNK) {
         return new Response(JSON.stringify({
           error: "Insufficient credits", credits_balance: balance, credits_required: CREDITS_PER_CHUNK,
