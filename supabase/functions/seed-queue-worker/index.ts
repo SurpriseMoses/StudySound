@@ -43,8 +43,9 @@ const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000; // hard cap 30s (was 60s)
 const LOCK_TIMEOUT_MS = 90_000;
 const HARD_DEADLINE_MS = 50_000;         // stay well below runtime budget
 const MAX_CHUNKS_PER_INVOCATION = 12;    // smaller batches avoid cumulative CPU exhaustion
-const TARGET_CHUNK_SIZE = 700;
-const HARD_MIN = 400;
+// Match generate-audio (player) chunking exactly so seeded audio aligns
+// with what users see on screen.
+const TARGET_CHUNK_SIZE = 1800;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
