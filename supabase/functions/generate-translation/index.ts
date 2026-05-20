@@ -584,7 +584,7 @@ Deno.serve(async (req) => {
     let creditsCharged = 0;
     const servedFromCache = !!cached;
     if (!alreadyPaid) {
-      const requireCredits = !servedFromCache;
+      const requireCredits = !servedFromCache && !isAdmin;
       if (requireCredits && balance < CREDITS_PER_CHUNK) {
         return new Response(JSON.stringify({
           error: "Insufficient credits", credits_balance: balance, credits_required: CREDITS_PER_CHUNK,
