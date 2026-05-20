@@ -280,20 +280,43 @@ function chunkText(text: string, size = CHUNK_SIZE): string[] {
 }
 
 async function ttsElevenLabs(text: string, apiKey: string): Promise<ArrayBuffer> {
-  const res = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}?output_format=mp3_44100_128`,
-    {
-      method: "POST",
-      headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        model_id: ELEVEN_MODEL,
-        voice_settings: { stability: 0.55, similarity_boost: 0.75, style: 0.3, use_speaker_boost: true },
-      }),
-    },
-  );
-  if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${await res.text()}`);
-  return res.arrayBuffer();
+  const maxAttempts = 4;
+  let lastBody = "";
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}?output_format=mp3_44100_128`,
+      {
+        method: "POST",
+        headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          model_id: ELEVEN_MODEL,
+          voice_settings: { stability: 0.55, similarity_boost: 0.75, style: 0.3, use_speaker_boost: true },
+        }),
+      },
+    );
+    if (res.ok) return res.arrayBuffer();
+    lastBody = await res.text();
+    const isConcurrency = res.status === 429 && /concurrent_limit_exceeded|too_many_concurrent/i.test(lastBody);
+    if (isConcurrency && attempt < maxAttempts) {
+      const retryAfter = Number(res.headers.get("retry-after")) || 0;
+      const wait = retryAfter > 0 ? retryAfter * 1000 : Math.min(8000, 800 * Math.pow(2, attempt - 1)) + Math.random() * 500;
+      console.warn(`[audio] ElevenLabs concurrency limit, retry ${attempt}/${maxAttempts - 1} in ${Math.round(wait)}ms`);
+      await new Promise((r) => setTimeout(r, wait));
+      continue;
+    }
+    if (res.status === 429) {
+      const err: any = new Error(`ElevenLabs 429: ${lastBody}`);
+      err.code = "RATE_LIMITED";
+      err.retryAfter = Number(res.headers.get("retry-after")) || 15;
+      throw err;
+    }
+    throw new Error(`ElevenLabs ${res.status}: ${lastBody}`);
+  }
+  const err: any = new Error(`ElevenLabs 429: ${lastBody}`);
+  err.code = "RATE_LIMITED";
+  err.retryAfter = 15;
+  throw err;
 }
 
 async function ttsAzure(text: string, lang: string, voice: string, apiKey: string, mode: "story" | "study"): Promise<ArrayBuffer> {
@@ -1014,6 +1037,17 @@ Deno.serve(async (req) => {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+    if (/ElevenLabs 429/i.test(msg) || /concurrent_limit_exceeded/i.test(msg)) {
+      return new Response(
+        JSON.stringify({
+          error: "RATE_LIMITED",
+          message: "Audio service is busy. Please try again in a moment.",
+          retry_after_seconds: Number(e?.retryAfter) || 15,
+          fallback: true,
+        }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
     if (/Insufficient credits/i.test(msg)) {
       return new Response(
