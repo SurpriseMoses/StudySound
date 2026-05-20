@@ -394,6 +394,11 @@ Deno.serve(async (req) => {
       const chunkIndices: number[] = Array.isArray(body?.chunk_indices)
         ? (body.chunk_indices as unknown[]).map((n) => Number(n)).filter((n) => Number.isInteger(n) && n >= 0)
         : [];
+      // languages: optional list of target_language codes to also re-translate
+      // for the selected chunks. Empty/omitted = leave translations untouched.
+      const recleanLanguages: string[] = Array.isArray(body?.languages)
+        ? (body.languages as unknown[]).map((s) => String(s)).filter((s) => s.length > 0)
+        : [];
       const { data: doc, error: docErr } = await admin
         .from("documents")
         .select("id, title, raw_text, tags, subject_type")
