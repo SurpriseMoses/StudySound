@@ -557,16 +557,9 @@ Deno.serve(async (req) => {
         .eq("target_language", target_language);
     }
 
-    // Admin test mode: never call upstream AI on cache miss.
-    if (isAdmin && !translatedText) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "No cached translation for this chunk. Admin test mode does not call upstream APIs.",
-        code: "NO_CACHE",
-        chunk_index: idx,
-        target_language,
-      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
+    // Admins fall through to upstream when cache is missing — they still
+    // skip credit charges, but should be able to populate the cache by testing.
+
 
     // 2) Generate if missing
     let leakDetected = false;
