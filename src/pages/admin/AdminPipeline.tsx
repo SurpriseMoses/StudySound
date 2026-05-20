@@ -9,10 +9,23 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Loader2, RefreshCw, Search, Sparkles, Mic2, Languages,
   Play, Pause, AlertCircle, CheckCircle2, Clock, Filter,
 } from "lucide-react";
+
+const RECLEAN_LANGUAGES = [
+  { code: "zu", label: "isiZulu" },
+  { code: "xh", label: "isiXhosa" },
+  { code: "tn", label: "Setswana" },
+  { code: "nso", label: "Sepedi" },
+  { code: "af", label: "Afrikaans" },
+  { code: "fr", label: "French" },
+];
 
 type Lang = "zu" | "xh" | "tn" | "nso";
 const ALL_LANGS: Lang[] = ["zu", "xh", "tn", "nso"];
