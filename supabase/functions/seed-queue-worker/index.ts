@@ -221,13 +221,29 @@ async function processOneChunk(
   chunkCache: Map<string, ChunkCacheEntry>,
 ): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string; queue_id?: string }> {
   const nowIso = new Date().toISOString();
-  const { data: queueRow, error: pickErr } = await admin
+
+  // One-book-at-a-time: lock onto the document that already has the oldest
+  // ready row, then take that doc's lowest-index chunk. This finishes a book
+  // before starting another, instead of interleaving across the whole queue.
+  const { data: activeRow, error: activeErr } = await admin
     .from("seed_queue")
-    .select("id, document_id, chunk_index, attempts")
+    .select("document_id")
     .eq("status", "pending")
     .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
     .order("priority", { ascending: false })
     .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (activeErr) throw activeErr;
+  if (!activeRow) return { result: "empty" };
+
+  const { data: queueRow, error: pickErr } = await admin
+    .from("seed_queue")
+    .select("id, document_id, chunk_index, attempts")
+    .eq("status", "pending")
+    .eq("document_id", activeRow.document_id)
+    .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
+    .order("chunk_index", { ascending: true })
     .limit(1)
     .maybeSingle();
   if (pickErr) throw pickErr;
