@@ -952,7 +952,10 @@ Deno.serve(async (req) => {
     // seed worker) regenerates from the current cleaned text.
     let cacheUsable = false;
     if (cached) {
-      if (cached.clean_text_hash && cached.clean_text_hash === expectedHash) {
+      if (isAdminMain) {
+        // Admin testing: trust any cached row, never delete or regenerate.
+        cacheUsable = true;
+      } else if (cached.clean_text_hash && cached.clean_text_hash === expectedHash) {
         cacheUsable = true;
       } else {
         console.log("[audio] stale cache, deleting", {
@@ -970,6 +973,19 @@ Deno.serve(async (req) => {
     if (cacheUsable) {
       storagePath = cached!.storage_path;
       reused = true;
+    } else if (isAdminMain) {
+      // Admin test mode: do NOT call upstream APIs on a cache miss.
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "No cached audio for this chunk. Admin test mode does not call upstream APIs.",
+          code: "NO_CACHE",
+          chunk_index,
+          total_chunks: totalChunks,
+          language: lang,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     } else {
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
       if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
