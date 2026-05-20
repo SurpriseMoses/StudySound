@@ -231,13 +231,13 @@ export default function Listen({ lessonId: lessonIdProp, embedded = false }: Lis
                 onSeekChunk={goChunk}
               />
 
-              {chunkText && (
-                <TranslationSection
-                  lessonId={lessonId}
-                  chunkIndex={chunkIndex}
-                  language={language}
-                />
-              )}
+              {/* Translation is independent of audio — never gate it on audio metadata. */}
+              <TranslationSection
+                lessonId={lessonId}
+                chunkIndex={chunkIndex}
+                language={language}
+              />
+
             </CardContent>
           </Card>
         )}
