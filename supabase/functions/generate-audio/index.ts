@@ -582,7 +582,7 @@ Deno.serve(async (req) => {
 
     const { data: doc } = await admin
       .from("documents")
-      .select("id, clean_text, language, subject_type, cleaning_version")
+      .select("id, title, clean_text, language, subject_type, cleaning_version")
       .eq("id", docId)
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
@@ -590,7 +590,7 @@ Deno.serve(async (req) => {
     const mode: "story" | "study" = isLiterature ? "story" : "study";
 
     const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
-    let provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
+    let provider: "azure" | "elevenlabs" | "gemini" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
     // If the requested language has no native voice config, fall back to the
     // English narrator so audio still plays in an English accent rather than
     // erroring out. Text content is already translated upstream.
@@ -598,8 +598,18 @@ Deno.serve(async (req) => {
     let voiceName = provider === "azure"
       ? (hasNativeVoice ? pickVoice(lang, isLiterature) : pickVoice("en", isLiterature))
       : "elevenlabs-multilingual";
+
+    // English narration of seeded literature: prefer Gemini per-book voice.
+    if (lang === "en" && GEMINI_KEY) {
+      const gv = geminiVoiceForDoc((doc as any).title);
+      if (gv) {
+        provider = "gemini";
+        voiceName = gv;
+      }
+    }
+
     const speakingStyle = mode === "story" ? "narration-professional" : "general";
-    console.log(`[audio] route lang=${lang} subject=${doc.subject_type} literature=${isLiterature} voice=${voiceName} style=${speakingStyle}`);
+    console.log(`[audio] route lang=${lang} subject=${doc.subject_type} literature=${isLiterature} provider=${provider} voice=${voiceName} style=${speakingStyle}`);
 
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
