@@ -76,6 +76,9 @@ Deno.serve(async (req) => {
 
     const cost = mode === "scene" ? SCENE_COST : BUNDLE_COST;
 
+    // Admin bypass — admins use features for free (no balance check, no deduction)
+    const { data: isAdmin } = await admin.rpc("has_role", { _user_id: user.id, _role: "admin" });
+
     // Fetch profile, refill expired free credits if applicable
     await admin.rpc("expire_free_credits", { _user_id: user.id });
     const { data: profile, error: profErr } = await admin
@@ -85,7 +88,9 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (profErr || !profile) throw new Error("Profile not found");
 
-    if ((profile.credits_balance ?? 0) < cost) {
+    const effectiveCost = isAdmin ? 0 : cost;
+
+    if (!isAdmin && (profile.credits_balance ?? 0) < cost) {
       return new Response(JSON.stringify({
         error: "Insufficient credits",
         required: cost,
@@ -93,12 +98,14 @@ Deno.serve(async (req) => {
       }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Deduct
-    const { error: deductErr } = await admin
-      .from("profiles")
-      .update({ credits_balance: (profile.credits_balance ?? 0) - cost })
-      .eq("user_id", user.id);
-    if (deductErr) throw deductErr;
+    // Deduct (skipped for admin)
+    if (effectiveCost > 0) {
+      const { error: deductErr } = await admin
+        .from("profiles")
+        .update({ credits_balance: (profile.credits_balance ?? 0) - effectiveCost })
+        .eq("user_id", user.id);
+      if (deductErr) throw deductErr;
+    }
 
     // Insert unlock row
     const insertRow = {
