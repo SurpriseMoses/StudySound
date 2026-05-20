@@ -1141,10 +1141,12 @@ Deno.serve(async (req) => {
         }
         throw error;
       }
-      storagePath = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
+      const ext = provider === "gemini" ? "wav" : "mp3";
+      const contentType = provider === "gemini" ? "audio/wav" : "audio/mpeg";
+      storagePath = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.${ext}`;
       const { error: upErr } = await admin.storage
         .from("assets")
-        .upload(storagePath, new Uint8Array(audio), { contentType: "audio/mpeg", upsert: true });
+        .upload(storagePath, new Uint8Array(audio), { contentType, upsert: true });
       if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
       if (cached?.id) {
         // Refresh the existing stale row in place.
