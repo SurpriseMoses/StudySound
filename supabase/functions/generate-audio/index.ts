@@ -946,19 +946,6 @@ Deno.serve(async (req) => {
     if (cacheUsable) {
       storagePath = cached!.storage_path;
       reused = true;
-    } else if (isAdminMain) {
-      // Admin test mode: do NOT call upstream APIs on a cache miss.
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "No cached audio for this chunk. Admin test mode does not call upstream APIs.",
-          code: "NO_CACHE",
-          chunk_index,
-          total_chunks: totalChunks,
-          language: lang,
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
     } else {
       const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
       if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
