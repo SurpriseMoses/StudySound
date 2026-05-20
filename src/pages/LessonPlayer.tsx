@@ -438,6 +438,15 @@ function ListenTab(props: {
             onSeekChunk={goChunk}
           />
 
+          {/* Translation is independent of audio — render whenever a non-English language is picked. */}
+          <TranslationSection
+            lessonId={lessonId}
+            chunkIndex={chunkIndex}
+            language={language}
+          />
+
+
+
         </CardContent>
       </Card>
     </>
