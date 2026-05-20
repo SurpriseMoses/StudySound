@@ -57,11 +57,34 @@ const NATIVE_VOICE_LANGS = new Set(Object.keys(VOICE_CONFIG));
 
 const LITERATURE_SUBJECTS = new Set(["novel", "drama", "poetry"]);
 
+// =========================================================================
+// GEMINI TTS — per-book narrator voice mapping (English narration only).
+// When a seeded textbook's title matches, we route ENGLISH narration to
+// Gemini's prebuilt voice instead of Azure/ElevenLabs.
+// =========================================================================
+const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
+const GEMINI_VOICE_BY_TITLE: Record<string, string> = {
+  "frankenstein": "Enceladus",
+  "the strange case of dr jekyll and mr hyde": "Enceladus",
+  "macbeth": "Charon",
+  "othello": "Charon",
+  "a tale of two cities": "Charon",
+  "romeo and juliet": "Sulafat",
+  "great expectations": "Sulafat",
+  "treasure island": "Algieba",
+  "the adventures of sherlock holmes": "Algieba",
+};
+function geminiVoiceForDoc(title: string | null | undefined): string | null {
+  if (!title) return null;
+  return GEMINI_VOICE_BY_TITLE[title.trim().toLowerCase()] ?? null;
+}
+
 function isLiteratureContent(subjectType: string | null | undefined, subject?: string | null): boolean {
   if (subjectType && LITERATURE_SUBJECTS.has(subjectType.toLowerCase())) return true;
   if (subject && /english|literature|novel|drama|poetry/i.test(subject)) return true;
   return false;
 }
+
 
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
@@ -83,7 +106,7 @@ function buildTranslationFallbackPayload(args: {
   totalChunks: number;
   chunkIndex: number;
   language: string;
-  provider: "azure" | "elevenlabs";
+  provider: "azure" | "elevenlabs" | "gemini";
   voiceName: string;
   speakingStyle: string;
   reason: string;
@@ -113,7 +136,7 @@ function buildAudioUnavailablePayload(args: {
   totalChunks: number;
   chunkIndex: number;
   language: string;
-  provider: "azure" | "elevenlabs";
+  provider: "azure" | "elevenlabs" | "gemini";
   voiceName: string;
   speakingStyle: string;
   reason: string;
@@ -413,6 +436,82 @@ async function ttsAzureWithFallback(
   }
 }
 
+// =========================================================================
+// GEMINI TTS — returns WAV bytes (PCM L16 mono 24kHz wrapped with header).
+// Gemini's TTS responds with raw base64 PCM; we wrap it as a RIFF/WAV file
+// so the browser <audio> element can decode it without a custom player.
+// =========================================================================
+function wrapPcm16ToWav(pcm: Uint8Array, sampleRate = 24000): Uint8Array {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  const writeStr = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + pcm.length, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true); // PCM chunk size
+  view.setUint16(20, 1, true);  // PCM format
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeStr(36, "data");
+  view.setUint32(40, pcm.length, true);
+  const out = new Uint8Array(44 + pcm.length);
+  out.set(new Uint8Array(header), 0);
+  out.set(pcm, 44);
+  return out;
+}
+
+async function ttsGemini(text: string, voiceName: string, apiKey: string): Promise<ArrayBuffer> {
+  const cleaned = addNaturalPauses(text);
+  // A storytelling prompt prefix nudges Gemini to narrate, not read flatly.
+  const prompt = `Narrate the following passage in a calm, expressive storytelling tone:\n\n${cleaned}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent`;
+  const delays = [0, 1500, 4000];
+  let lastBody = "";
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < delays.length; attempt++) {
+    if (delays[attempt]) await new Promise((r) => setTimeout(r, delays[attempt]));
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+        },
+      }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const part = json?.candidates?.[0]?.content?.parts?.[0];
+      const b64 = part?.inlineData?.data ?? part?.inline_data?.data;
+      if (!b64) throw new Error(`Gemini TTS: no audio payload (${JSON.stringify(json).slice(0, 200)})`);
+      const bin = atob(b64);
+      const pcm = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
+      const wav = wrapPcm16ToWav(pcm, 24000);
+      return wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength) as ArrayBuffer;
+    }
+    lastStatus = res.status;
+    lastBody = await res.text();
+    if (res.status !== 429 && res.status < 500) break;
+  }
+  const err: any = new Error(`Gemini TTS ${lastStatus}: ${lastBody.slice(0, 300)}`);
+  if (lastStatus === 429) { err.code = "RATE_LIMITED"; err.retryAfter = 20; }
+  err.status = lastStatus;
+  throw err;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -421,6 +520,7 @@ Deno.serve(async (req) => {
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const ELEVEN_KEY = Deno.env.get("ElevenLabs_Secret_Key_TTS");
     const AZURE_KEY = Deno.env.get("Azure_Secret_Key_SpeechServices");
+    const GEMINI_KEY = Deno.env.get("Gemini_Secret_Key");
 
     const body = await req.json();
     const {
@@ -482,7 +582,7 @@ Deno.serve(async (req) => {
 
     const { data: doc } = await admin
       .from("documents")
-      .select("id, clean_text, language, subject_type, cleaning_version")
+      .select("id, title, clean_text, language, subject_type, cleaning_version")
       .eq("id", docId)
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
@@ -490,7 +590,7 @@ Deno.serve(async (req) => {
     const mode: "story" | "study" = isLiterature ? "story" : "study";
 
     const lang = (language ?? lessonLanguage ?? doc.language ?? "en").toLowerCase();
-    let provider: "azure" | "elevenlabs" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
+    let provider: "azure" | "elevenlabs" | "gemini" = AZURE_LANGS.has(lang) ? "azure" : "elevenlabs";
     // If the requested language has no native voice config, fall back to the
     // English narrator so audio still plays in an English accent rather than
     // erroring out. Text content is already translated upstream.
@@ -498,8 +598,18 @@ Deno.serve(async (req) => {
     let voiceName = provider === "azure"
       ? (hasNativeVoice ? pickVoice(lang, isLiterature) : pickVoice("en", isLiterature))
       : "elevenlabs-multilingual";
+
+    // English narration of seeded literature: prefer Gemini per-book voice.
+    if (lang === "en" && GEMINI_KEY) {
+      const gv = geminiVoiceForDoc((doc as any).title);
+      if (gv) {
+        provider = "gemini";
+        voiceName = gv;
+      }
+    }
+
     const speakingStyle = mode === "story" ? "narration-professional" : "general";
-    console.log(`[audio] route lang=${lang} subject=${doc.subject_type} literature=${isLiterature} voice=${voiceName} style=${speakingStyle}`);
+    console.log(`[audio] route lang=${lang} subject=${doc.subject_type} literature=${isLiterature} provider=${provider} voice=${voiceName} style=${speakingStyle}`);
 
     const chunks = chunkText(doc.clean_text);
     const totalChunks = chunks.length;
@@ -590,9 +700,12 @@ Deno.serve(async (req) => {
         console.log("Preview audio: cache hit", { doc: doc.id, chunk: chunk_index, lang, admin: isAdminPreview });
         pStoragePath = cachedRow!.storage_path;
       } else {
-        console.log("Preview audio: generating via Azure", { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
+        console.log(`Preview audio: generating via ${provider}`, { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
         const text = previewText;
-        const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
+        const apiKey =
+          provider === "azure" ? AZURE_KEY :
+          provider === "gemini" ? GEMINI_KEY :
+          ELEVEN_KEY;
         if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
           return new Response(
             JSON.stringify({ success: false, preview: true, error: `${provider} API key not configured`, code: "TTS_NOT_CONFIGURED" }),
@@ -602,14 +715,18 @@ Deno.serve(async (req) => {
         const ttsResult =
           provider === "azure"
             ? await ttsAzureWithFallback(text, lang, voiceName, apiKey, mode, ELEVEN_KEY)
-            : { audio: await ttsElevenLabs(text, apiKey!), voiceUsed: voiceName, providerUsed: "elevenlabs" as const };
+            : provider === "gemini"
+              ? { audio: await ttsGemini(text, voiceName, apiKey!), voiceUsed: voiceName, providerUsed: "gemini" as const }
+              : { audio: await ttsElevenLabs(text, apiKey!), voiceUsed: voiceName, providerUsed: "elevenlabs" as const };
         voiceName = ttsResult.voiceUsed;
         if ((ttsResult as any).providerUsed) provider = (ttsResult as any).providerUsed;
         const audio = ttsResult.audio;
-        const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
+        const ext = provider === "gemini" ? "wav" : "mp3";
+        const contentType = provider === "gemini" ? "audio/wav" : "audio/mpeg";
+        const path = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.${ext}`;
         const { error: upErr } = await admin.storage
           .from("assets")
-          .upload(path, new Uint8Array(audio), { contentType: "audio/mpeg", upsert: true });
+          .upload(path, new Uint8Array(audio), { contentType, upsert: true });
         if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
         await admin.from("audio_assets").insert({
           document_id: doc.id,
@@ -955,7 +1072,10 @@ Deno.serve(async (req) => {
       storagePath = cached!.storage_path;
       reused = true;
     } else {
-      const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
+      const apiKey =
+        provider === "azure" ? AZURE_KEY :
+        provider === "gemini" ? GEMINI_KEY :
+        ELEVEN_KEY;
       if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
         throw new Error(`${provider} API key not configured`);
       }
@@ -972,6 +1092,8 @@ Deno.serve(async (req) => {
             console.warn(`[audio] voice fallback ${voiceName} -> ${result.voiceUsed} for lang=${lang}`);
             voiceName = result.voiceUsed;
           }
+        } else if (provider === "gemini") {
+          audio = await ttsGemini(ttsText, voiceName, apiKey!);
         } else {
           audio = await ttsElevenLabs(ttsText, apiKey!);
         }
@@ -1019,10 +1141,12 @@ Deno.serve(async (req) => {
         }
         throw error;
       }
-      storagePath = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.mp3`;
+      const ext = provider === "gemini" ? "wav" : "mp3";
+      const contentType = provider === "gemini" ? "audio/wav" : "audio/mpeg";
+      storagePath = `audio/${doc.id}/${lang}/${provider}/${voiceName}/${speakingStyle}/${chunk_index}.${ext}`;
       const { error: upErr } = await admin.storage
         .from("assets")
-        .upload(storagePath, new Uint8Array(audio), { contentType: "audio/mpeg", upsert: true });
+        .upload(storagePath, new Uint8Array(audio), { contentType, upsert: true });
       if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
       if (cached?.id) {
         // Refresh the existing stale row in place.

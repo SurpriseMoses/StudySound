@@ -1501,7 +1501,7 @@ export type Database = {
       asset_type: "audio" | "image" | "quiz"
       subject_type: "novel" | "history" | "science" | "other"
       subscription_plan: "free" | "essential" | "premium"
-      voice_provider: "azure" | "elevenlabs"
+      voice_provider: "azure" | "elevenlabs" | "gemini"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1633,7 +1633,7 @@ export const Constants = {
       asset_type: ["audio", "image", "quiz"],
       subject_type: ["novel", "history", "science", "other"],
       subscription_plan: ["free", "essential", "premium"],
-      voice_provider: ["azure", "elevenlabs"],
+      voice_provider: ["azure", "elevenlabs", "gemini"],
     },
   },
 } as const

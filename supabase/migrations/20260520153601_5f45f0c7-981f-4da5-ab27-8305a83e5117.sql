@@ -1,0 +1,1 @@
+ALTER TYPE public.voice_provider ADD VALUE IF NOT EXISTS 'gemini';
