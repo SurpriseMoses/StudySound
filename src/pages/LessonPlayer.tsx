@@ -22,6 +22,7 @@ import QuizBonusCard from "@/components/QuizBonusCard";
 import { useLessonProgress } from "@/hooks/use-lesson-progress";
 import StoryModeTab from "@/components/StoryModeTab";
 import { AudioSection } from "@/components/AudioSection";
+import { TranslationSection } from "@/components/TranslationSection";
 
 const LANGS = [
   { code: "en", label: "English" },
