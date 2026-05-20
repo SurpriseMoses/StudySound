@@ -112,12 +112,6 @@ Deno.serve(async (req) => {
       user_id: user.id,
       document_id,
       scene_index: mode === "bundle" ? BUNDLE_INDEX : scene_index!,
-      credits_charged: cost,
-    };
-    const insertRow = {
-      user_id: user.id,
-      document_id,
-      scene_index: mode === "bundle" ? BUNDLE_INDEX : scene_index!,
       credits_charged: effectiveCost,
     };
     const { error: insErr } = await admin.from("scene_unlocks").insert(insertRow);
@@ -135,7 +129,7 @@ Deno.serve(async (req) => {
     await admin.from("user_usage").insert({
       user_id: user.id,
       action_type: "image",
-      credits_used: cost,
+      credits_used: effectiveCost,
       document_id,
       request_id: `unlock-${mode}-${Date.now()}`,
     });
