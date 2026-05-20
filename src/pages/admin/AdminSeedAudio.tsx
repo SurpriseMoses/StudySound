@@ -24,6 +24,11 @@ type SeedDoc = {
   current_chunk_index: number | null;
   last_error: string | null;
   cached_chunks: number;
+  queue_pending: number;
+  queue_processing: number;
+  queue_done: number;
+  queue_failed: number;
+  queue_total: number;
 };
 
 type SeedLog = {
