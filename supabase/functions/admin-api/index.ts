@@ -523,6 +523,53 @@ Deno.serve(async (req) => {
           .eq("id", document_id);
       }
 
+      // 4. Optional: re-translate selected chunks for the chosen languages.
+      // Deletes cached translation_assets and enqueues translation_seed_queue
+      // rows so the translation worker regenerates them from the new clean_text.
+      let deleted_translation_rows = 0;
+      let queued_translation_rows = 0;
+      if (recleanLanguages.length > 0 && targetIndices.length > 0) {
+        const { data: tRows } = await admin
+          .from("translation_assets")
+          .select("id")
+          .eq("document_id", document_id)
+          .in("chunk_index", targetIndices)
+          .in("target_language", recleanLanguages);
+        if (tRows && tRows.length > 0) {
+          await admin.from("translation_assets").delete().in("id", tRows.map((r) => r.id));
+          deleted_translation_rows = tRows.length;
+        }
+        // Clear any existing queue rows for these (chunk, lang) pairs
+        const { data: tqRows } = await admin
+          .from("translation_seed_queue")
+          .select("id")
+          .eq("document_id", document_id)
+          .in("chunk_index", targetIndices)
+          .in("target_language", recleanLanguages);
+        if (tqRows && tqRows.length > 0) {
+          await admin.from("translation_seed_queue").delete().in("id", tqRows.map((r) => r.id));
+        }
+        const enqueue: any[] = [];
+        for (const idx of targetIndices) {
+          for (const lang of recleanLanguages) {
+            enqueue.push({
+              document_id, chunk_index: idx, target_language: lang,
+              status: "pending", attempts: 0, last_error: null, priority: 10,
+            });
+          }
+        }
+        const BATCH = 500;
+        for (let i = 0; i < enqueue.length; i += BATCH) {
+          const slice = enqueue.slice(i, i + BATCH);
+          const { error: insErr } = await admin.from("translation_seed_queue").insert(slice);
+          if (insErr) throw insErr;
+          queued_translation_rows += slice.length;
+        }
+        await admin.from("documents")
+          .update({ translation_status: "processing" })
+          .eq("id", document_id);
+      }
+
       return json({
         success: true,
         document_id,
@@ -535,6 +582,9 @@ Deno.serve(async (req) => {
         deleted_audio_rows,
         deleted_queue_rows,
         queued_chunks,
+        languages: recleanLanguages,
+        deleted_translation_rows,
+        queued_translation_rows,
       });
     }
 
