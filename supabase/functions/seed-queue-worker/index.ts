@@ -78,23 +78,26 @@ function buildSSML(text: string, mode: "story" | "study", voiceName: string) {
   </voice>
 </speak>`;
 }
-function chunkText(text: string): string[] {
+function chunkText(text: string, size = TARGET_CHUNK_SIZE): string[] {
   const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) return [];
   const sentences = clean.match(/[^.!?]+[.!?]+|\S+$/g) ?? [clean];
   const chunks: string[] = [];
   let buf = "";
   for (const s of sentences) {
-    const sentence = s.trim();
-    if (!sentence) continue;
-    if (buf.length === 0) { buf = sentence; continue; }
-    const candidate = `${buf} ${sentence}`;
-    if (candidate.length >= TARGET_CHUNK_SIZE && buf.length >= HARD_MIN) {
-      chunks.push(buf); buf = sentence;
-    } else { buf = candidate; }
+    if ((buf + " " + s).length > size && buf.length > 0) {
+      chunks.push(buf.trim());
+      buf = s;
+    } else {
+      buf = buf ? buf + " " + s : s;
+    }
   }
-  if (buf) chunks.push(buf);
+  if (buf.trim()) chunks.push(buf.trim());
   return chunks;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 class RateLimitedError extends Error {
