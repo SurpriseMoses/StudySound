@@ -43,8 +43,9 @@ const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000; // hard cap 30s (was 60s)
 const LOCK_TIMEOUT_MS = 90_000;
 const HARD_DEADLINE_MS = 50_000;         // stay well below runtime budget
 const MAX_CHUNKS_PER_INVOCATION = 12;    // smaller batches avoid cumulative CPU exhaustion
-const TARGET_CHUNK_SIZE = 700;
-const HARD_MIN = 400;
+// Match generate-audio (player) chunking exactly so seeded audio aligns
+// with what users see on screen.
+const TARGET_CHUNK_SIZE = 1800;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -77,23 +78,26 @@ function buildSSML(text: string, mode: "story" | "study", voiceName: string) {
   </voice>
 </speak>`;
 }
-function chunkText(text: string): string[] {
+function chunkText(text: string, size = TARGET_CHUNK_SIZE): string[] {
   const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) return [];
   const sentences = clean.match(/[^.!?]+[.!?]+|\S+$/g) ?? [clean];
   const chunks: string[] = [];
   let buf = "";
   for (const s of sentences) {
-    const sentence = s.trim();
-    if (!sentence) continue;
-    if (buf.length === 0) { buf = sentence; continue; }
-    const candidate = `${buf} ${sentence}`;
-    if (candidate.length >= TARGET_CHUNK_SIZE && buf.length >= HARD_MIN) {
-      chunks.push(buf); buf = sentence;
-    } else { buf = candidate; }
+    if ((buf + " " + s).length > size && buf.length > 0) {
+      chunks.push(buf.trim());
+      buf = s;
+    } else {
+      buf = buf ? buf + " " + s : s;
+    }
   }
-  if (buf) chunks.push(buf);
+  if (buf.trim()) chunks.push(buf.trim());
   return chunks;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 class RateLimitedError extends Error {
@@ -226,10 +230,14 @@ async function processOneChunk(
   const doc = { id: queueRow.document_id, title: docEntry.title };
   const text = docEntry.chunks[queueRow.chunk_index];
 
-  // Idempotency: skip if already cached.
+  const expectedHash = await sha256Hex(text);
+
+  // Idempotency: skip if already cached AND the stored text hash matches the
+  // current chunk text. If hash differs, the document was re-cleaned/re-chunked
+  // since this row was created — overwrite it (regenerate + update in place).
   const { data: existing } = await admin
     .from("audio_assets")
-    .select("id")
+    .select("id, clean_text_hash, storage_path")
     .eq("document_id", doc.id)
     .eq("chunk_index", queueRow.chunk_index)
     .eq("language", LANGUAGE)
@@ -237,7 +245,9 @@ async function processOneChunk(
     .eq("voice_name", voiceName)
     .eq("speaking_style", speakingStyle)
     .maybeSingle();
-  if (existing) {
+  const existingHashMatches =
+    !!existing && (existing as { clean_text_hash?: string }).clean_text_hash === expectedHash;
+  if (existing && existingHashMatches) {
     await admin.from("seed_queue").update({
       status: "done", completed_at: new Date().toISOString(),
       attempts: (queueRow.attempts ?? 0) + 1,
@@ -275,18 +285,31 @@ async function processOneChunk(
     }
     if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
 
-    const { error: insErr } = await admin.from("audio_assets").insert({
-      document_id: doc.id,
-      chunk_index: queueRow.chunk_index,
-      language: LANGUAGE,
-      voice_provider: VOICE_PROVIDER,
-      voice_name: voiceName,
-      speaking_style: speakingStyle,
-      storage_path: path,
-      char_count: text.length,
-    });
-    if (insErr && insErr.code !== "23505") {
-      throw new Error(`Insert audio_asset: ${insErr.message}`);
+    if (existing?.id) {
+      // Stale row exists for this voice combo — refresh it in place.
+      const { error: updErr } = await admin.from("audio_assets").update({
+        storage_path: path,
+        char_count: text.length,
+        clean_text_hash: expectedHash,
+        cleaning_version: 2,
+      }).eq("id", existing.id);
+      if (updErr) throw new Error(`Update audio_asset: ${updErr.message}`);
+    } else {
+      const { error: insErr } = await admin.from("audio_assets").insert({
+        document_id: doc.id,
+        chunk_index: queueRow.chunk_index,
+        language: LANGUAGE,
+        voice_provider: VOICE_PROVIDER,
+        voice_name: voiceName,
+        speaking_style: speakingStyle,
+        storage_path: path,
+        char_count: text.length,
+        clean_text_hash: expectedHash,
+        cleaning_version: 2,
+      });
+      if (insErr && insErr.code !== "23505") {
+        throw new Error(`Insert audio_asset: ${insErr.message}`);
+      }
     }
 
     await admin.from("seed_queue").update({
