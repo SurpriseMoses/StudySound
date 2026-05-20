@@ -24,7 +24,7 @@ const RECLEAN_LANGUAGES = [
   { code: "tn", label: "Setswana" },
   { code: "nso", label: "Sepedi" },
   { code: "af", label: "Afrikaans" },
-  { code: "fr", label: "French" },
+  { code: "ts", label: "Xitsonga" },
 ];
 
 type Lang = "zu" | "xh" | "tn" | "nso";
