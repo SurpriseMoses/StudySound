@@ -121,6 +121,19 @@ export function AudioSection({
         body: { lesson_id: lessonId, chunk_index: chunkIndex, language },
       });
       if (error) throw new Error(error.message);
+      if (data?.insufficient_credits) {
+        setCheck((prev) => ({
+          cache_exists: prev?.cache_exists ?? false,
+          already_paid: false,
+          credits_balance: data.credits_balance ?? 0,
+        }));
+        toast({
+          title: "Out of credits",
+          description: "Top up to keep listening.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (!data?.success) throw new Error(data?.error ?? "Failed");
       if (data.audio_unavailable || !data.audio_url) {
         setAudioUrl(null);
