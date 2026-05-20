@@ -1072,7 +1072,10 @@ Deno.serve(async (req) => {
       storagePath = cached!.storage_path;
       reused = true;
     } else {
-      const apiKey = provider === "azure" ? AZURE_KEY : ELEVEN_KEY;
+      const apiKey =
+        provider === "azure" ? AZURE_KEY :
+        provider === "gemini" ? GEMINI_KEY :
+        ELEVEN_KEY;
       if (!apiKey && !(provider === "azure" && ELEVEN_KEY)) {
         throw new Error(`${provider} API key not configured`);
       }
@@ -1089,6 +1092,8 @@ Deno.serve(async (req) => {
             console.warn(`[audio] voice fallback ${voiceName} -> ${result.voiceUsed} for lang=${lang}`);
             voiceName = result.voiceUsed;
           }
+        } else if (provider === "gemini") {
+          audio = await ttsGemini(ttsText, voiceName, apiKey!);
         } else {
           audio = await ttsElevenLabs(ttsText, apiKey!);
         }
