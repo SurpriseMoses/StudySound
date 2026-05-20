@@ -589,20 +589,6 @@ Deno.serve(async (req) => {
       if (previewCacheUsable) {
         console.log("Preview audio: cache hit", { doc: doc.id, chunk: chunk_index, lang, admin: isAdminPreview });
         pStoragePath = cachedRow!.storage_path;
-      } else if (isAdminPreview) {
-        // Admin testing: do not call upstream API. Tell client there's nothing cached.
-        return new Response(
-          JSON.stringify({
-            success: false,
-            preview: true,
-            error: "No cached audio for this chunk. Admin test mode does not call upstream APIs.",
-            code: "NO_CACHE",
-            chunk_index,
-            total_chunks: totalChunks,
-            language: lang,
-          }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
       } else {
         console.log("Preview audio: generating via Azure", { doc: doc.id, chunk: chunk_index, lang, voice: voiceName });
         const text = previewText;
