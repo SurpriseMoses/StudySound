@@ -420,6 +420,11 @@ Deno.serve(async (req) => {
     const plan = profile?.plan ?? "free";
     const dailyCap = plan === "free" ? DAILY_CAP_FREE : DAILY_CAP_PAID;
 
+    // Admin bypass — admins use features for free (no charges, no caps)
+    const { data: isAdmin } = await admin.rpc("has_role", {
+      _user_id: userId, _role: "admin",
+    });
+
     // Admin enforcement: flagged users / active cooldown blocked from generation
     // (cache replays via already_paid still work — see below)
     const { data: enforce } = await admin
