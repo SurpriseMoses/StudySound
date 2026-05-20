@@ -937,11 +937,20 @@ Deno.serve(async (req) => {
         : chunks[chunk_index];
     const expectedHash = await sha256Hex(ttsText);
 
-    // Cache is trusted whenever it exists — seeded/background-generated audio
-    // must never trigger a second upstream API call for user listening.
-    // Hash drift is ignored here; the seed worker regenerates stale rows
-    // out-of-band.
-    const cacheUsable = !!cached;
+    // Cache is usable only when its stored text hash matches the text we'd
+    // narrate today. Otherwise the document was re-cleaned/re-translated and
+    // the cached MP3 no longer matches the displayed text — regenerate inline
+    // so audio stays in sync with the screen. Admin test mode keeps the old
+    // "trust any cached row" behavior to avoid surprise upstream calls.
+    const cachedHash = (cached as any)?.clean_text_hash ?? null;
+    const hashMatches = !!cachedHash && cachedHash === expectedHash;
+    const cacheUsable = !!cached && (isAdminMain || hashMatches);
+    if (cached && !cacheUsable) {
+      console.warn("[audio] stale cache detected — regenerating", {
+        doc: doc.id, chunk: chunk_index, lang, voice: voiceName,
+        cachedHash, expectedHash,
+      });
+    }
 
     if (cacheUsable) {
       storagePath = cached!.storage_path;
@@ -1016,19 +1025,33 @@ Deno.serve(async (req) => {
         .from("assets")
         .upload(storagePath, new Uint8Array(audio), { contentType: "audio/mpeg", upsert: true });
       if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
-      await admin.from("audio_assets").insert({
-        document_id: doc.id,
-        chunk_index,
-        language: lang,
-        voice_provider: provider,
-        voice_name: voiceName,
-        speaking_style: speakingStyle,
-        storage_path: storagePath,
-        char_count: ttsText.length,
-        clean_text_hash: expectedHash,
-        cleaning_version: (doc as any).cleaning_version ?? 1,
-      });
+      if (cached?.id) {
+        // Refresh the existing stale row in place.
+        await admin.from("audio_assets").update({
+          voice_provider: provider,
+          voice_name: voiceName,
+          speaking_style: speakingStyle,
+          storage_path: storagePath,
+          char_count: ttsText.length,
+          clean_text_hash: expectedHash,
+          cleaning_version: (doc as any).cleaning_version ?? 1,
+        }).eq("id", cached.id);
+      } else {
+        await admin.from("audio_assets").insert({
+          document_id: doc.id,
+          chunk_index,
+          language: lang,
+          voice_provider: provider,
+          voice_name: voiceName,
+          speaking_style: speakingStyle,
+          storage_path: storagePath,
+          char_count: ttsText.length,
+          clean_text_hash: expectedHash,
+          cleaning_version: (doc as any).cleaning_version ?? 1,
+        });
+      }
     }
+
 
     const { data: signed, error: signErr } = await admin.storage
       .from("assets")
