@@ -944,7 +944,10 @@ Deno.serve(async (req) => {
     // "trust any cached row" behavior to avoid surprise upstream calls.
     const cachedHash = (cached as any)?.clean_text_hash ?? null;
     const hashMatches = !!cachedHash && cachedHash === expectedHash;
-    const cacheUsable = !!cached && (isAdminMain || hashMatches);
+    // Admins do NOT get to bypass the hash check — otherwise stale audio
+    // would keep playing for admins during testing. The earlier admin
+    // fallback only widened *which* row we picked, not its freshness.
+    const cacheUsable = !!cached && hashMatches;
     if (cached && !cacheUsable) {
       console.warn("[audio] stale cache detected — regenerating", {
         doc: doc.id, chunk: chunk_index, lang, voice: voiceName,
