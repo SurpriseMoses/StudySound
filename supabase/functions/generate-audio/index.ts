@@ -927,6 +927,9 @@ Deno.serve(async (req) => {
         provider = anyCached.voice_provider;
         voiceName = anyCached.voice_name;
       }
+    }
+
+
 
     let storagePath: string;
     let reused = false;
