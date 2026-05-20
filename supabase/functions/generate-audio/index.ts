@@ -937,17 +937,13 @@ Deno.serve(async (req) => {
         : chunks[chunk_index];
     const expectedHash = await sha256Hex(ttsText);
 
-    // Cache is usable only when its stored text hash matches the text we'd
-    // narrate today. Otherwise the document was re-cleaned/re-translated and
-    // the cached MP3 no longer matches the displayed text — regenerate inline
-    // so audio stays in sync with the screen. Admin test mode keeps the old
-    // "trust any cached row" behavior to avoid surprise upstream calls.
+    // Cache is usable when its stored text hash matches the text we'd narrate
+    // today. Otherwise regenerate inline so audio stays in sync with the
+    // screen. EXCEPTION: admins always reuse any cached audio (even if stale)
+    // so they can preview/QA for free without burning upstream TTS quota.
     const cachedHash = (cached as any)?.clean_text_hash ?? null;
     const hashMatches = !!cachedHash && cachedHash === expectedHash;
-    // Admins do NOT get to bypass the hash check — otherwise stale audio
-    // would keep playing for admins during testing. The earlier admin
-    // fallback only widened *which* row we picked, not its freshness.
-    const cacheUsable = !!cached && hashMatches;
+    const cacheUsable = !!cached && (isAdminMain || hashMatches);
     if (cached && !cacheUsable) {
       console.warn("[audio] stale cache detected — regenerating", {
         doc: doc.id, chunk: chunk_index, lang, voice: voiceName,
