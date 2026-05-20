@@ -487,7 +487,7 @@ Deno.serve(async (req) => {
     const alreadyPaid = (paidRows ?? []).some((r) => r.chunk_index === idx);
 
     // ---- ANTI-ABUSE: rate limiting (only for NEW chunks; replays are free & uncounted) ----
-    if (!alreadyPaid) {
+    if (!alreadyPaid && !isAdmin) {
       if (isFlagged) {
         return new Response(JSON.stringify({
           error: enforce?.flagged_reason ?? "Your account is under review. Please contact support.",
