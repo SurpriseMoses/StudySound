@@ -68,13 +68,13 @@ function injectWatermark(text: string, mark: string): string {
   return text + mark;
 }
 
-// Map our internal language codes to Azure Translator codes.
-// Azure Translator supports: af, zu, xh, nso, tn (Setswana), fr.
-// NOT supported by Azure Translator: ts (Xitsonga), ve (Tshivenda).
-// (Azure returns error 400036 "target language is not valid" for ve.)
+// Supported target languages. Live translation now routes through Gemini
+// (see translateWithAzure → geminiTranslate), which handles Xitsonga (ts)
+// and other languages Azure Translator does not. Keep this list aligned
+// with the languages we actually offer in the UI.
 const AZURE_TRANSLATOR_LANG: Record<string, string> = {
   en: "en", af: "af", zu: "zu", xh: "xh",
-  nso: "nso", tn: "tn", fr: "fr",
+  nso: "nso", tn: "tn", ts: "ts",
 };
 
 function toSentenceCaseHeading(line: string): string {
