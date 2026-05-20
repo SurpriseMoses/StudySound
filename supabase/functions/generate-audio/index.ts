@@ -716,13 +716,17 @@ Deno.serve(async (req) => {
         .eq("user_id", authedUserId)
         .maybeSingle();
 
+      const { data: isAdmin } = await admin.rpc("has_role", {
+        _user_id: authedUserId, _role: "admin",
+      });
+
       return new Response(
         JSON.stringify({
           success: true,
           check: true,
           cache_exists: !!cachedRow,
-          already_paid: !!paidRow,
-          credits_balance: profile?.credits_balance ?? 0,
+          already_paid: isAdmin ? true : !!paidRow,
+          credits_balance: isAdmin ? 9999 : (profile?.credits_balance ?? 0),
           total_chunks: totalChunks,
           text: displayText,
           chunk_index,
