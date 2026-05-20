@@ -78,14 +78,12 @@ async function enqueueDocument(admin: any, documentId: string): Promise<{ added:
   if (total === 0) throw new Error("Cleaned text produced 0 chunks");
 
   // Existing audio_assets => already done; skip those.
+  // (Any provider/voice counts as "done" — worker picks the right voice per doc.)
   const { data: existingAudio } = await admin
     .from("audio_assets")
     .select("chunk_index")
     .eq("document_id", doc.id)
-    .eq("language", "en")
-    .eq("voice_provider", "azure")
-    .eq("voice_name", "en-GB-LibbyNeural")
-    .eq("speaking_style", "general");
+    .eq("language", "en");
   const cachedSet = new Set((existingAudio ?? []).map((r: { chunk_index: number }) => r.chunk_index));
 
   // Existing queue rows => skip duplicates.
