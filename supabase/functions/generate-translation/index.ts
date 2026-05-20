@@ -539,7 +539,7 @@ Deno.serve(async (req) => {
 
     let translatedText = cached?.translated_text ?? null;
 
-    const cacheStale = !!cached && (
+    const cacheStale = !!cached && !isAdmin && (
       cached.english_leak_detected === true ||
       (cached.translation_version ?? 1) < CURRENT_TRANSLATION_VERSION ||
       (cached.source_text_hash && cached.source_text_hash !== currentHash) ||
@@ -554,6 +554,17 @@ Deno.serve(async (req) => {
         .eq("document_id", documentId)
         .eq("chunk_index", idx)
         .eq("target_language", target_language);
+    }
+
+    // Admin test mode: never call upstream AI on cache miss.
+    if (isAdmin && !translatedText) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "No cached translation for this chunk. Admin test mode does not call upstream APIs.",
+        code: "NO_CACHE",
+        chunk_index: idx,
+        target_language,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // 2) Generate if missing
