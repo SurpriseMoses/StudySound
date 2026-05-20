@@ -868,7 +868,7 @@ Deno.serve(async (req) => {
 
       const cacheHit = !!cached;
 
-      if (!isAdmin && !cacheHit && balance < 1) {
+      if (!isAdmin && balance < 1) {
         return new Response(
           JSON.stringify({
             success: false,
@@ -880,7 +880,9 @@ Deno.serve(async (req) => {
         );
       }
 
-      const creditsToCharge = isAdmin || cacheHit ? 0 : 1;
+      // Charge per-feature cost on every unlock — cache hits still cost 1 credit.
+      // Admins are exempt.
+      const creditsToCharge = isAdmin ? 0 : 1;
       if (creditsToCharge > 0) {
         await admin
           .from("profiles")
