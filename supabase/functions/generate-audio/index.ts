@@ -868,7 +868,7 @@ Deno.serve(async (req) => {
 
       const cacheHit = !!cached;
 
-      if (!isAdmin && !cacheHit && balance < 1) {
+      if (!isAdmin && balance < 1) {
         return new Response(
           JSON.stringify({
             success: false,
@@ -880,7 +880,9 @@ Deno.serve(async (req) => {
         );
       }
 
-      const creditsToCharge = isAdmin || cacheHit ? 0 : 1;
+      // Charge per-feature cost on every unlock — cache hits still cost 1 credit.
+      // Admins are exempt.
+      const creditsToCharge = isAdmin ? 0 : 1;
       if (creditsToCharge > 0) {
         await admin
           .from("profiles")
@@ -949,29 +951,11 @@ Deno.serve(async (req) => {
         : chunks[chunk_index];
     const expectedHash = await sha256Hex(ttsText);
 
-    // Dirty-detection: cached audio is only reusable when the hash of the
-    // text we *would* speak today matches the hash recorded when the audio
-    // was generated. Mismatched rows are deleted so the next request (or the
-    // seed worker) regenerates from the current cleaned text.
-    let cacheUsable = false;
-    if (cached) {
-      if (isAdminMain) {
-        // Admin testing: trust any cached row, never delete or regenerate.
-        cacheUsable = true;
-      } else if (cached.clean_text_hash && cached.clean_text_hash === expectedHash) {
-        cacheUsable = true;
-      } else {
-        console.log("[audio] stale cache, deleting", {
-          id: cached.id,
-          doc: doc.id,
-          chunk: chunk_index,
-          lang,
-          oldHash: cached.clean_text_hash,
-          newHash: expectedHash,
-        });
-        await admin.from("audio_assets").delete().eq("id", cached.id);
-      }
-    }
+    // Cache is trusted whenever it exists — seeded/background-generated audio
+    // must never trigger a second upstream API call for user listening.
+    // Hash drift is ignored here; the seed worker regenerates stale rows
+    // out-of-band.
+    const cacheUsable = !!cached;
 
     if (cacheUsable) {
       storagePath = cached!.storage_path;

@@ -539,11 +539,12 @@ Deno.serve(async (req) => {
 
     let translatedText = cached?.translated_text ?? null;
 
+    // Cache is trusted whenever it exists — seeded/background translations
+    // must never trigger a second upstream AI call for user reading.
+    // Only obvious failures (no text, English leak flag) force a regen.
     const cacheStale = !!cached && !isAdmin && (
-      cached.english_leak_detected === true ||
-      (cached.translation_version ?? 1) < CURRENT_TRANSLATION_VERSION ||
-      (cached.source_text_hash && cached.source_text_hash !== currentHash) ||
-      (translatedText && detectEnglishLeak(translatedText, target_language).leaked)
+      !translatedText ||
+      cached.english_leak_detected === true
     );
 
     if (cacheStale) {
@@ -589,13 +590,11 @@ Deno.serve(async (req) => {
     }
 
     // 3) Charge credits if user hasn't unlocked this chunk yet.
-    // Cache-first free access: if the translation was already cached (served
-    // from translation_assets without regenerating), grant access without
-    // charging credits. Brand-new generations still cost CREDITS_PER_CHUNK.
+    // Per-feature cost is charged on EVERY unlock (cache hit or fresh generation).
+    // Admins are exempt.
     let creditsCharged = 0;
-    const servedFromCache = !!cached;
     if (!alreadyPaid) {
-      const requireCredits = !servedFromCache && !isAdmin;
+      const requireCredits = !isAdmin;
       if (requireCredits && balance < CREDITS_PER_CHUNK) {
         return new Response(JSON.stringify({
           error: "Insufficient credits", credits_balance: balance, credits_required: CREDITS_PER_CHUNK,
