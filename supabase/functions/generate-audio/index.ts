@@ -798,10 +798,17 @@ Deno.serve(async (req) => {
       const cacheHit = !!cached;
 
       if (!cacheHit && balance < 1) {
-        return new Response(JSON.stringify({ error: "Insufficient credits", credits_balance: balance }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        // Return 200 so supabase.functions.invoke doesn't throw — the client
+        // checks `success` + `insufficient_credits` and shows a top-up prompt.
+        return new Response(
+          JSON.stringify({
+            success: false,
+            insufficient_credits: true,
+            error: "Insufficient credits",
+            credits_balance: balance,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
       }
 
       const creditsToCharge = cacheHit ? 0 : 1;
