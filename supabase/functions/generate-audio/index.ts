@@ -716,13 +716,17 @@ Deno.serve(async (req) => {
         .eq("user_id", authedUserId)
         .maybeSingle();
 
+      const { data: isAdmin } = await admin.rpc("has_role", {
+        _user_id: authedUserId, _role: "admin",
+      });
+
       return new Response(
         JSON.stringify({
           success: true,
           check: true,
           cache_exists: !!cachedRow,
-          already_paid: !!paidRow,
-          credits_balance: profile?.credits_balance ?? 0,
+          already_paid: isAdmin ? true : !!paidRow,
+          credits_balance: isAdmin ? 9999 : (profile?.credits_balance ?? 0),
           total_chunks: totalChunks,
           text: displayText,
           chunk_index,
@@ -791,15 +795,14 @@ Deno.serve(async (req) => {
         .maybeSingle();
       const balance = profile?.credits_balance ?? 0;
 
-      // Cache-first free access: if the audio is already cached, serve it
-      // without charging credits. This guarantees that any pre-seeded chunk
-      // is playable for everyone (useful for testing and demos) and only
-      // brand-new generations consume credits.
+      // Admin bypass — admins use features for free
+      const { data: isAdmin } = await admin.rpc("has_role", {
+        _user_id: authedUserId, _role: "admin",
+      });
+
       const cacheHit = !!cached;
 
-      if (!cacheHit && balance < 1) {
-        // Return 200 so supabase.functions.invoke doesn't throw — the client
-        // checks `success` + `insufficient_credits` and shows a top-up prompt.
+      if (!isAdmin && !cacheHit && balance < 1) {
         return new Response(
           JSON.stringify({
             success: false,
@@ -811,7 +814,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      const creditsToCharge = cacheHit ? 0 : 1;
+      const creditsToCharge = isAdmin || cacheHit ? 0 : 1;
       if (creditsToCharge > 0) {
         await admin
           .from("profiles")

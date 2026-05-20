@@ -76,6 +76,9 @@ Deno.serve(async (req) => {
 
     const cost = mode === "scene" ? SCENE_COST : BUNDLE_COST;
 
+    // Admin bypass — admins use features for free (no balance check, no deduction)
+    const { data: isAdmin } = await admin.rpc("has_role", { _user_id: user.id, _role: "admin" });
+
     // Fetch profile, refill expired free credits if applicable
     await admin.rpc("expire_free_credits", { _user_id: user.id });
     const { data: profile, error: profErr } = await admin
@@ -85,7 +88,9 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (profErr || !profile) throw new Error("Profile not found");
 
-    if ((profile.credits_balance ?? 0) < cost) {
+    const effectiveCost = isAdmin ? 0 : cost;
+
+    if (!isAdmin && (profile.credits_balance ?? 0) < cost) {
       return new Response(JSON.stringify({
         error: "Insufficient credits",
         required: cost,
@@ -93,26 +98,30 @@ Deno.serve(async (req) => {
       }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Deduct
-    const { error: deductErr } = await admin
-      .from("profiles")
-      .update({ credits_balance: (profile.credits_balance ?? 0) - cost })
-      .eq("user_id", user.id);
-    if (deductErr) throw deductErr;
+    // Deduct (skipped for admin)
+    if (effectiveCost > 0) {
+      const { error: deductErr } = await admin
+        .from("profiles")
+        .update({ credits_balance: (profile.credits_balance ?? 0) - effectiveCost })
+        .eq("user_id", user.id);
+      if (deductErr) throw deductErr;
+    }
 
     // Insert unlock row
     const insertRow = {
       user_id: user.id,
       document_id,
       scene_index: mode === "bundle" ? BUNDLE_INDEX : scene_index!,
-      credits_charged: cost,
+      credits_charged: effectiveCost,
     };
     const { error: insErr } = await admin.from("scene_unlocks").insert(insertRow);
     if (insErr) {
       // Rollback credits if insert failed
-      await admin.from("profiles")
-        .update({ credits_balance: profile.credits_balance })
-        .eq("user_id", user.id);
+      if (effectiveCost > 0) {
+        await admin.from("profiles")
+          .update({ credits_balance: profile.credits_balance })
+          .eq("user_id", user.id);
+      }
       throw insErr;
     }
 
@@ -120,7 +129,7 @@ Deno.serve(async (req) => {
     await admin.from("user_usage").insert({
       user_id: user.id,
       action_type: "image",
-      credits_used: cost,
+      credits_used: effectiveCost,
       document_id,
       request_id: `unlock-${mode}-${Date.now()}`,
     });
@@ -128,8 +137,8 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       mode,
-      charged: cost,
-      new_balance: (profile.credits_balance ?? 0) - cost,
+      charged: effectiveCost,
+      new_balance: (profile.credits_balance ?? 0) - effectiveCost,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
