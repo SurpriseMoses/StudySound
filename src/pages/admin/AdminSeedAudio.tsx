@@ -304,6 +304,22 @@ export default function AdminSeedAudio() {
             <StatTile label="Failed" value={counts.failed} tone="destructive" />
           </div>
 
+          {(() => {
+            const activeId = queueStatus?.worker?.current_document_id;
+            const active = activeId ? docs.find((x) => x.id === activeId) : null;
+            if (!active) return null;
+            const remaining = active.queue_pending + active.queue_processing;
+            return (
+              <div className="text-xs text-muted-foreground">
+                Active book: <span className="font-medium text-foreground">{active.title}</span>
+                {" · "}
+                <span className="font-mono">{remaining}</span> chunks left
+                {" · "}
+                <span className="font-mono">{active.queue_done}/{active.queue_total}</span> done
+              </div>
+            );
+          })()}
+
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={enqueueAll} variant="outline" disabled={busyAction === "enqueue_all"}>
               {busyAction === "enqueue_all"
