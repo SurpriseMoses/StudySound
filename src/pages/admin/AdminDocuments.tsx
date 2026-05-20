@@ -3,8 +3,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, RefreshCw, Search, Sparkles } from "lucide-react";
+
+const RECLEAN_LANGUAGES = [
+  { code: "zu", label: "isiZulu" },
+  { code: "xh", label: "isiXhosa" },
+  { code: "tn", label: "Setswana" },
+  { code: "nso", label: "Sepedi" },
+  { code: "af", label: "Afrikaans" },
+  { code: "fr", label: "French" },
+];
 
 type Doc = {
   id: string;
