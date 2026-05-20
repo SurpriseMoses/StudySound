@@ -587,6 +587,69 @@ export default function AdminPipeline() {
           })}
         </div>
       )}
+
+      <Dialog open={!!recleanDoc} onOpenChange={(o) => !o && setRecleanDoc(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Re-clean “{recleanDoc?.title}”</DialogTitle>
+            <DialogDescription>
+              clean_text is always re-derived from raw_text. Cached audio for the chosen chunks is cleared so it regenerates on next play. Translations are only touched for the languages you tick. No user is re-charged.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs uppercase text-muted-foreground">Scope</Label>
+              <RadioGroup value={recleanScope} onValueChange={(v) => setRecleanScope(v as typeof recleanScope)} className="mt-2 space-y-1">
+                <div className="flex items-center gap-2"><RadioGroupItem value="s1" id="pl-sc-s1" /><Label htmlFor="pl-sc-s1" className="font-normal">Section 1 only (chunk 0)</Label></div>
+                <div className="flex items-center gap-2"><RadioGroupItem value="s12" id="pl-sc-s12" /><Label htmlFor="pl-sc-s12" className="font-normal">Sections 1 &amp; 2 (chunks 0,1)</Label></div>
+                <div className="flex items-center gap-2"><RadioGroupItem value="all" id="pl-sc-all" /><Label htmlFor="pl-sc-all" className="font-normal">All chunks (whole document)</Label></div>
+                <div className="flex items-center gap-2"><RadioGroupItem value="custom" id="pl-sc-custom" /><Label htmlFor="pl-sc-custom" className="font-normal">Custom chunks…</Label></div>
+              </RadioGroup>
+              {recleanScope === "custom" && (
+                <Input
+                  className="mt-2"
+                  placeholder="e.g. 0,3,7"
+                  value={recleanChunks}
+                  onChange={(e) => setRecleanChunks(e.target.value)}
+                />
+              )}
+            </div>
+
+            <div>
+              <Label className="text-xs uppercase text-muted-foreground">Also re-translate (optional)</Label>
+              <p className="text-xs text-muted-foreground mt-1">Tick languages whose cached translations should be deleted and re-generated from the new clean_text. Leave empty to skip translations.</p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {RECLEAN_LANGUAGES.map((l) => {
+                  const checked = recleanLangs.includes(l.code);
+                  return (
+                    <label key={l.code} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(c) => {
+                          setRecleanLangs((prev) => c ? [...prev, l.code] : prev.filter((x) => x !== l.code));
+                        }}
+                      />
+                      <span>{l.label} <span className="text-muted-foreground">({l.code})</span></span>
+                    </label>
+                  );
+                })}
+              </div>
+              {recleanLangs.length > 0 && (
+                <div className="mt-2 flex gap-2">
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setRecleanLangs(RECLEAN_LANGUAGES.map((l) => l.code))}>Select all</Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setRecleanLangs([])}>Clear</Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRecleanDoc(null)}>Cancel</Button>
+            <Button onClick={submitReclean}>Re-clean</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
