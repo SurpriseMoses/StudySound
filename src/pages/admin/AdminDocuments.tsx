@@ -209,7 +209,7 @@ export default function AdminDocuments() {
                             size="sm"
                             variant="outline"
                             disabled={busy === d.id}
-                            onClick={() => reclean(d.id, d.title)}
+                            onClick={() => openReclean(d)}
                             title="Re-run the text cleaner against raw_text"
                           >
                             {busy === d.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
