@@ -114,12 +114,20 @@ Deno.serve(async (req) => {
       scene_index: mode === "bundle" ? BUNDLE_INDEX : scene_index!,
       credits_charged: cost,
     };
+    const insertRow = {
+      user_id: user.id,
+      document_id,
+      scene_index: mode === "bundle" ? BUNDLE_INDEX : scene_index!,
+      credits_charged: effectiveCost,
+    };
     const { error: insErr } = await admin.from("scene_unlocks").insert(insertRow);
     if (insErr) {
       // Rollback credits if insert failed
-      await admin.from("profiles")
-        .update({ credits_balance: profile.credits_balance })
-        .eq("user_id", user.id);
+      if (effectiveCost > 0) {
+        await admin.from("profiles")
+          .update({ credits_balance: profile.credits_balance })
+          .eq("user_id", user.id);
+      }
       throw insErr;
     }
 
