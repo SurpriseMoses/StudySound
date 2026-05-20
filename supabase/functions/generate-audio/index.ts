@@ -106,7 +106,7 @@ function buildTranslationFallbackPayload(args: {
   totalChunks: number;
   chunkIndex: number;
   language: string;
-  provider: "azure" | "elevenlabs";
+  provider: "azure" | "elevenlabs" | "gemini";
   voiceName: string;
   speakingStyle: string;
   reason: string;
@@ -136,7 +136,7 @@ function buildAudioUnavailablePayload(args: {
   totalChunks: number;
   chunkIndex: number;
   language: string;
-  provider: "azure" | "elevenlabs";
+  provider: "azure" | "elevenlabs" | "gemini";
   voiceName: string;
   speakingStyle: string;
   reason: string;
