@@ -57,11 +57,34 @@ const NATIVE_VOICE_LANGS = new Set(Object.keys(VOICE_CONFIG));
 
 const LITERATURE_SUBJECTS = new Set(["novel", "drama", "poetry"]);
 
+// =========================================================================
+// GEMINI TTS — per-book narrator voice mapping (English narration only).
+// When a seeded textbook's title matches, we route ENGLISH narration to
+// Gemini's prebuilt voice instead of Azure/ElevenLabs.
+// =========================================================================
+const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
+const GEMINI_VOICE_BY_TITLE: Record<string, string> = {
+  "frankenstein": "Enceladus",
+  "the strange case of dr jekyll and mr hyde": "Enceladus",
+  "macbeth": "Charon",
+  "othello": "Charon",
+  "a tale of two cities": "Charon",
+  "romeo and juliet": "Sulafat",
+  "great expectations": "Sulafat",
+  "treasure island": "Algieba",
+  "the adventures of sherlock holmes": "Algieba",
+};
+function geminiVoiceForDoc(title: string | null | undefined): string | null {
+  if (!title) return null;
+  return GEMINI_VOICE_BY_TITLE[title.trim().toLowerCase()] ?? null;
+}
+
 function isLiteratureContent(subjectType: string | null | undefined, subject?: string | null): boolean {
   if (subjectType && LITERATURE_SUBJECTS.has(subjectType.toLowerCase())) return true;
   if (subject && /english|literature|novel|drama|poetry/i.test(subject)) return true;
   return false;
 }
+
 
 const AZURE_LANG_LOCALE: Record<string, string> = {
   zu: "zu-ZA",
