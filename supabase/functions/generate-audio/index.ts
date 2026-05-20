@@ -520,6 +520,7 @@ Deno.serve(async (req) => {
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const ELEVEN_KEY = Deno.env.get("ElevenLabs_Secret_Key_TTS");
     const AZURE_KEY = Deno.env.get("Azure_Secret_Key_SpeechServices");
+    const GEMINI_KEY = Deno.env.get("Gemini_Secret_Key");
 
     const body = await req.json();
     const {
