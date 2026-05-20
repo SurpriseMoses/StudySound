@@ -160,47 +160,56 @@ export default function AdminPipeline() {
   }, [worker.audio?.is_running, worker.trans?.is_running]);
 
   // Pipeline actions per document
-  async function reclean(doc: PipelineDoc) {
-    const choice = window.prompt(
-      `Re-clean "${doc.title}"?\n\nChoose scope:\n  1 = Section 1 only (chunk 0)\n  2 = Sections 1 & 2 (chunks 0,1)\n  a = All chunks (whole document)\n\nNote: clean_text is always re-derived from raw_text, but only the chosen chunks have their cached audio deleted (so they regenerate on next play with current SSML). Other chunks keep cached audio if their text didn't change. No user is re-charged.\n\nYou can also enter a comma-separated chunk list, e.g. "0,3,7".`,
-      "1",
-    );
-    if (choice == null) return;
-    const trimmed = choice.trim().toLowerCase();
-    let body: Record<string, unknown> = { action: "reclean_document", document_id: doc.id };
+  const [recleanDoc, setRecleanDoc] = useState<PipelineDoc | null>(null);
+  const [recleanScope, setRecleanScope] = useState<"all" | "s1" | "s12" | "custom">("s1");
+  const [recleanChunks, setRecleanChunks] = useState<string>("");
+  const [recleanLangs, setRecleanLangs] = useState<string[]>([]);
+
+  function reclean(doc: PipelineDoc) {
+    setRecleanDoc(doc);
+    setRecleanScope("s1");
+    setRecleanChunks("");
+    setRecleanLangs([]);
+  }
+
+  async function submitReclean() {
+    if (!recleanDoc) return;
+    const doc = recleanDoc;
+    let chunk_indices: number[] | null = null;
     let label = "";
-    if (trimmed === "a" || trimmed === "all") {
-      body = { ...body, scope: "all" };
-      label = "all chunks";
-    } else if (trimmed === "1") {
-      body = { ...body, scope: "chunks", chunk_indices: [0] };
-      label = "section 1";
-    } else if (trimmed === "2") {
-      body = { ...body, scope: "chunks", chunk_indices: [0, 1] };
-      label = "sections 1 & 2";
-    } else {
-      const parsed = trimmed
-        .split(",")
-        .map((s) => Number(s.trim()))
-        .filter((n) => Number.isInteger(n) && n >= 0);
+    if (recleanScope === "all") { label = "all chunks"; }
+    else if (recleanScope === "s1") { chunk_indices = [0]; label = "section 1"; }
+    else if (recleanScope === "s12") { chunk_indices = [0, 1]; label = "sections 1 & 2"; }
+    else {
+      const parsed = recleanChunks.split(",").map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n >= 0);
       if (parsed.length === 0) {
-        toast({ title: "Cancelled", description: "Invalid scope choice." });
+        toast({ title: "Invalid chunks", description: 'Enter chunk indices like "0,3,7".', variant: "destructive" });
         return;
       }
-      body = { ...body, scope: "chunks", chunk_indices: parsed };
+      chunk_indices = parsed;
       label = `chunks ${parsed.join(",")}`;
     }
-
+    const body: Record<string, unknown> = {
+      action: "reclean_document",
+      document_id: doc.id,
+      scope: recleanScope === "all" ? "all" : "chunks",
+      ...(chunk_indices ? { chunk_indices } : {}),
+      languages: recleanLangs,
+    };
     setBusy(`reclean:${doc.id}`);
+    setRecleanDoc(null);
     const { data, error } = await supabase.functions.invoke("admin-api", { body });
     setBusy(null);
     if (error || !data?.success) {
       toast({ title: "Re-clean failed", description: error?.message ?? data?.error, variant: "destructive" });
       return;
     }
+    const langPart = recleanLangs.length > 0
+      ? ` · ${data.queued_translation_rows ?? 0} translation jobs queued (${recleanLangs.join(", ")}) · ${data.deleted_translation_rows ?? 0} translation rows cleared`
+      : " · translations untouched";
     toast({
-      title: `Re-clean queued · ${data.queued_chunks ?? 0} chunks`,
-      description: `${label} · ${data.chunks} chunks total · ${data.queued_chunks ?? 0} queued for reprocessing · ${data.deleted_audio_rows ?? 0} audio rows cleared · ${data.invalid_chunks?.length ?? 0} skipped. Watch the pipeline for progress.`,
+      title: `Re-clean queued · ${data.queued_chunks ?? 0} audio chunks`,
+      description: `${label} · ${data.chunks} chunks total · ${data.deleted_audio_rows ?? 0} audio rows cleared${langPart}.`,
     });
     await loadPipeline();
   }
