@@ -471,18 +471,21 @@ async function processOneChunk(
     const chunkIdx = queueRow.chunk_index;
 
     if (e instanceof RateLimitedError) {
-      const exhausted = attempts >= MAX_ATTEMPTS;
+      // Upstream quota/timeout — NOT the chunk's fault. Do not count toward
+      // MAX_ATTEMPTS; keep as pending with a long backoff so it resumes
+      // automatically once the provider quota refreshes.
       const baseDelay = e.retryAfterMs ?? RATE_LIMIT_DELAY_MIN_MS;
       const jitter = Math.floor(Math.random() * (RATE_LIMIT_DELAY_MAX_MS - RATE_LIMIT_DELAY_MIN_MS));
       const delayMs = Math.min(Math.max(baseDelay, RATE_LIMIT_DELAY_MIN_MS) + jitter, RATE_LIMIT_DELAY_HARD_CAP_MS);
       const delayedUntil = new Date(Date.now() + delayMs).toISOString();
 
       await admin.from("seed_queue").update({
-        status: exhausted ? "failed" : "pending",
+        status: "pending",
         started_at: null,
-        attempts,
-        delayed_until: exhausted ? null : delayedUntil,
-        last_error: `rate-limited (attempt ${attempts}/${MAX_ATTEMPTS}): ${msg}`,
+        // Keep attempts where it was — rate-limits don't burn the retry budget.
+        attempts: queueRow.attempts ?? 0,
+        delayed_until: delayedUntil,
+        last_error: `rate-limited (quota/timeout, will auto-retry): ${msg.slice(0, 300)}`,
       }).eq("id", queueRow.id);
 
       await admin.from("seed_logs").insert({
@@ -490,10 +493,10 @@ async function processOneChunk(
         chunk_index: chunkIdx,
         status: "rate_limited",
         error_message: msg,
-        retry_count: attempts,
+        retry_count: queueRow.attempts ?? 0,
       });
       await admin.from("documents").update({
-        last_error: `rate-limited: ${msg}`,
+        last_error: `rate-limited: ${msg.slice(0, 300)}`,
       }).eq("id", docId);
 
       return { result: "rate_limited", detail: msg, queue_id: queueRow.id };
