@@ -113,9 +113,24 @@ class RateLimitedError extends Error {
   }
 }
 
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      throw new RateLimitedError(`Upstream timeout after ${timeoutMs}ms`, 5000);
+    }
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", voiceName: string): Promise<ArrayBuffer> {
   const ssml = buildSSML(text, mode, voiceName);
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
     {
       method: "POST",
@@ -127,6 +142,7 @@ async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", v
       },
       body: ssml,
     },
+    45_000,
   );
   if (res.ok) return res.arrayBuffer();
   const body = await res.text();
@@ -138,6 +154,7 @@ async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", v
   }
   throw new Error(errMsg);
 }
+
 
 // ---------- Gemini TTS (PCM 24kHz mono → wrapped as WAV) ----------
 function wrapPcm16ToWav(pcm: Uint8Array, sampleRate = 24000): Uint8Array {
@@ -173,7 +190,7 @@ async function ttsGemini(text: string, voiceName: string, apiKey: string): Promi
   const cleaned = addNaturalPauses(text);
   const prompt = `Narrate the following passage in a calm, expressive storytelling tone:\n\n${cleaned}`;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
@@ -183,7 +200,8 @@ async function ttsGemini(text: string, voiceName: string, apiKey: string): Promi
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
       },
     }),
-  });
+  }, 60_000);
+
   if (!res.ok) {
     const body = await res.text();
     const errMsg = `Gemini ${res.status}: ${body.slice(0, 200)}`;
