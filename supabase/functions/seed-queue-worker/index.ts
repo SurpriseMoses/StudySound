@@ -190,7 +190,7 @@ async function ttsGemini(text: string, voiceName: string, apiKey: string): Promi
   const cleaned = addNaturalPauses(text);
   const prompt = `Narrate the following passage in a calm, expressive storytelling tone:\n\n${cleaned}`;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
@@ -200,7 +200,8 @@ async function ttsGemini(text: string, voiceName: string, apiKey: string): Promi
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
       },
     }),
-  });
+  }, 60_000);
+
   if (!res.ok) {
     const body = await res.text();
     const errMsg = `Gemini ${res.status}: ${body.slice(0, 200)}`;
