@@ -113,9 +113,24 @@ class RateLimitedError extends Error {
   }
 }
 
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      throw new RateLimitedError(`Upstream timeout after ${timeoutMs}ms`, 5000);
+    }
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", voiceName: string): Promise<ArrayBuffer> {
   const ssml = buildSSML(text, mode, voiceName);
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
     {
       method: "POST",
@@ -127,6 +142,7 @@ async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", v
       },
       body: ssml,
     },
+    45_000,
   );
   if (res.ok) return res.arrayBuffer();
   const body = await res.text();
@@ -138,6 +154,7 @@ async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", v
   }
   throw new Error(errMsg);
 }
+
 
 // ---------- Gemini TTS (PCM 24kHz mono → wrapped as WAV) ----------
 function wrapPcm16ToWav(pcm: Uint8Array, sampleRate = 24000): Uint8Array {
