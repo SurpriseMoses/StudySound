@@ -235,18 +235,14 @@ type ChunkCacheEntry = {
   speakingStyle: string;
 };
 
+type QueueRow = { id: string; document_id: string; chunk_index: number; attempts: number };
+
+// Pick the active doc (oldest pending row's doc) and claim up to `limit`
+// of its lowest-index pending rows in one round-trip per claim.
 // deno-lint-ignore no-explicit-any
-async function processOneChunk(
-  admin: any,
-  azureKey: string | undefined,
-  geminiKey: string | undefined,
-  chunkCache: Map<string, ChunkCacheEntry>,
-): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string; queue_id?: string }> {
+async function claimNextChunks(admin: any, limit: number): Promise<QueueRow[]> {
   const nowIso = new Date().toISOString();
 
-  // One-book-at-a-time: lock onto the document that already has the oldest
-  // ready row, then take that doc's lowest-index chunk. This finishes a book
-  // before starting another, instead of interleaving across the whole queue.
   const { data: activeRow, error: activeErr } = await admin
     .from("seed_queue")
     .select("document_id")
@@ -257,30 +253,38 @@ async function processOneChunk(
     .limit(1)
     .maybeSingle();
   if (activeErr) throw activeErr;
-  if (!activeRow) return { result: "empty" };
+  if (!activeRow) return [];
 
-  const { data: queueRow, error: pickErr } = await admin
+  const { data: candidates, error: pickErr } = await admin
     .from("seed_queue")
     .select("id, document_id, chunk_index, attempts")
     .eq("status", "pending")
     .eq("document_id", activeRow.document_id)
     .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
     .order("chunk_index", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .limit(limit);
   if (pickErr) throw pickErr;
-  if (!queueRow) return { result: "empty" };
+  if (!candidates || candidates.length === 0) return [];
 
+  const ids = candidates.map((r: QueueRow) => r.id);
   const { data: claimed, error: claimErr } = await admin
     .from("seed_queue")
     .update({ status: "processing", started_at: new Date().toISOString() })
-    .eq("id", queueRow.id)
+    .in("id", ids)
     .eq("status", "pending")
-    .select("id")
-    .maybeSingle();
+    .select("id, document_id, chunk_index, attempts");
   if (claimErr) throw claimErr;
-  if (!claimed) return { result: "empty" };
+  return (claimed ?? []) as QueueRow[];
+}
 
+// deno-lint-ignore no-explicit-any
+async function processClaimedChunk(
+  admin: any,
+  azureKey: string | undefined,
+  geminiKey: string | undefined,
+  chunkCache: Map<string, ChunkCacheEntry>,
+  queueRow: QueueRow,
+): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string; queue_id?: string }> {
   await admin.from("seed_worker_state").update({
     current_queue_id: queueRow.id,
     current_document_id: queueRow.document_id,
