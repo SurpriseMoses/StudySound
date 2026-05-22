@@ -430,26 +430,22 @@ async function processOneChunk(
       attempts: (queueRow.attempts ?? 0) + 1, last_error: null,
     }).eq("id", queueRow.id);
 
-    await admin.from("seed_logs").insert({
-      document_id: doc.id,
-      chunk_index: queueRow.chunk_index,
-      status: "success",
-      retry_count: retryCount,
-    });
-
     await admin.from("documents").update({
       seed_audio_progress: queueRow.chunk_index,
     }).eq("id", doc.id).lt("seed_audio_progress", queueRow.chunk_index);
 
-    const { count: pendingForDoc } = await admin.from("seed_queue")
-      .select("id", { count: "exact", head: true })
-      .eq("document_id", doc.id)
-      .in("status", ["pending", "processing", "failed"]);
-    if (pendingForDoc === 0) {
-      await admin.from("documents").update({
-        seed_audio_status: "done", seed_audio_error: null,
-      }).eq("id", doc.id);
-      console.log(`[worker] 🎉 doc complete: ${doc.title}`);
+    // Only run the expensive "is this doc done?" check when we're near the end.
+    if (queueRow.chunk_index >= docEntry.chunks.length - 1) {
+      const { count: pendingForDoc } = await admin.from("seed_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("document_id", doc.id)
+        .in("status", ["pending", "processing", "failed"]);
+      if (pendingForDoc === 0) {
+        await admin.from("documents").update({
+          seed_audio_status: "done", seed_audio_error: null,
+        }).eq("id", doc.id);
+        console.log(`[worker] 🎉 doc complete: ${doc.title}`);
+      }
     }
 
     console.log(`[worker] ✓ ${provider} doc=${doc.title} chunk=${queueRow.chunk_index} (${text.length} chars)`);
