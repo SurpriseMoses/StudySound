@@ -40,9 +40,8 @@ function geminiVoiceForDoc(title: string | null | undefined): string | null {
   return GEMINI_VOICE_BY_TITLE[title.trim().toLowerCase()] ?? null;
 }
 
-// Worker pacing — tuned for faster sustained throughput. Rate-limit handler
-// below will automatically back off if a provider pushes back.
-const INTER_CHUNK_DELAY_MS = 200;
+// Worker pacing — tuned for faster sustained throughput via parallel TTS
+// calls. Rate-limit handler below auto-backs-off when providers push back.
 const POST_RATELIMIT_COOLDOWN_MS = 3_000;
 const MAX_ATTEMPTS = 5;
 const RATE_LIMIT_DELAY_MIN_MS = 5_000;
@@ -50,7 +49,11 @@ const RATE_LIMIT_DELAY_MAX_MS = 15_000;
 const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000;
 const LOCK_TIMEOUT_MS = 90_000;
 const HARD_DEADLINE_MS = 55_000;
-const MAX_CHUNKS_PER_INVOCATION = 30;
+const MAX_CHUNKS_PER_INVOCATION = 60;
+// Per-provider concurrency. Azure handles many parallel calls easily; Gemini
+// TTS is quota-constrained so we keep it sequential.
+const AZURE_CONCURRENCY = 4;
+const GEMINI_CONCURRENCY = 1;
 const TARGET_CHUNK_SIZE = 1800;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -232,18 +235,14 @@ type ChunkCacheEntry = {
   speakingStyle: string;
 };
 
+type QueueRow = { id: string; document_id: string; chunk_index: number; attempts: number };
+
+// Pick the active doc (oldest pending row's doc) and claim up to `limit`
+// of its lowest-index pending rows in one round-trip per claim.
 // deno-lint-ignore no-explicit-any
-async function processOneChunk(
-  admin: any,
-  azureKey: string | undefined,
-  geminiKey: string | undefined,
-  chunkCache: Map<string, ChunkCacheEntry>,
-): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string; queue_id?: string }> {
+async function claimNextChunks(admin: any, limit: number): Promise<QueueRow[]> {
   const nowIso = new Date().toISOString();
 
-  // One-book-at-a-time: lock onto the document that already has the oldest
-  // ready row, then take that doc's lowest-index chunk. This finishes a book
-  // before starting another, instead of interleaving across the whole queue.
   const { data: activeRow, error: activeErr } = await admin
     .from("seed_queue")
     .select("document_id")
@@ -254,44 +253,46 @@ async function processOneChunk(
     .limit(1)
     .maybeSingle();
   if (activeErr) throw activeErr;
-  if (!activeRow) return { result: "empty" };
+  if (!activeRow) return [];
 
-  const { data: queueRow, error: pickErr } = await admin
+  const { data: candidates, error: pickErr } = await admin
     .from("seed_queue")
     .select("id, document_id, chunk_index, attempts")
     .eq("status", "pending")
     .eq("document_id", activeRow.document_id)
     .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
     .order("chunk_index", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .limit(limit);
   if (pickErr) throw pickErr;
-  if (!queueRow) return { result: "empty" };
+  if (!candidates || candidates.length === 0) return [];
 
+  const ids = candidates.map((r: QueueRow) => r.id);
   const { data: claimed, error: claimErr } = await admin
     .from("seed_queue")
     .update({ status: "processing", started_at: new Date().toISOString() })
-    .eq("id", queueRow.id)
+    .in("id", ids)
     .eq("status", "pending")
-    .select("id")
-    .maybeSingle();
+    .select("id, document_id, chunk_index, attempts");
   if (claimErr) throw claimErr;
-  if (!claimed) return { result: "empty" };
+  return (claimed ?? []) as QueueRow[];
+}
 
+// deno-lint-ignore no-explicit-any
+async function processClaimedChunk(
+  admin: any,
+  azureKey: string | undefined,
+  geminiKey: string | undefined,
+  chunkCache: Map<string, ChunkCacheEntry>,
+  queueRow: QueueRow,
+): Promise<{ result: "done" | "empty" | "rate_limited" | "error"; detail?: string; queue_id?: string }> {
   await admin.from("seed_worker_state").update({
     current_queue_id: queueRow.id,
     current_document_id: queueRow.document_id,
     last_heartbeat: new Date().toISOString(),
   }).eq("id", 1);
 
-  const retryCount = queueRow.attempts ?? 0;
+  const _retryCount = queueRow.attempts ?? 0;
 
-  await admin.from("seed_logs").insert({
-    document_id: queueRow.document_id,
-    chunk_index: queueRow.chunk_index,
-    status: "started",
-    retry_count: retryCount,
-  });
   await admin.from("documents").update({
     current_chunk_index: queueRow.chunk_index,
     last_error: null,
@@ -369,13 +370,6 @@ async function processOneChunk(
       status: "done", completed_at: new Date().toISOString(),
       attempts: (queueRow.attempts ?? 0) + 1,
     }).eq("id", queueRow.id);
-    await admin.from("seed_logs").insert({
-      document_id: doc.id,
-      chunk_index: queueRow.chunk_index,
-      status: "success",
-      error_message: "cached",
-      retry_count: retryCount,
-    });
     return { result: "done", detail: "cached" };
   }
 
@@ -440,26 +434,22 @@ async function processOneChunk(
       attempts: (queueRow.attempts ?? 0) + 1, last_error: null,
     }).eq("id", queueRow.id);
 
-    await admin.from("seed_logs").insert({
-      document_id: doc.id,
-      chunk_index: queueRow.chunk_index,
-      status: "success",
-      retry_count: retryCount,
-    });
-
     await admin.from("documents").update({
       seed_audio_progress: queueRow.chunk_index,
     }).eq("id", doc.id).lt("seed_audio_progress", queueRow.chunk_index);
 
-    const { count: pendingForDoc } = await admin.from("seed_queue")
-      .select("id", { count: "exact", head: true })
-      .eq("document_id", doc.id)
-      .in("status", ["pending", "processing", "failed"]);
-    if (pendingForDoc === 0) {
-      await admin.from("documents").update({
-        seed_audio_status: "done", seed_audio_error: null,
-      }).eq("id", doc.id);
-      console.log(`[worker] 🎉 doc complete: ${doc.title}`);
+    // Only run the expensive "is this doc done?" check when we're near the end.
+    if (queueRow.chunk_index >= docEntry.chunks.length - 1) {
+      const { count: pendingForDoc } = await admin.from("seed_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("document_id", doc.id)
+        .in("status", ["pending", "processing", "failed"]);
+      if (pendingForDoc === 0) {
+        await admin.from("documents").update({
+          seed_audio_status: "done", seed_audio_error: null,
+        }).eq("id", doc.id);
+        console.log(`[worker] 🎉 doc complete: ${doc.title}`);
+      }
     }
 
     console.log(`[worker] ✓ ${provider} doc=${doc.title} chunk=${queueRow.chunk_index} (${text.length} chars)`);
@@ -594,30 +584,58 @@ Deno.serve(async (req) => {
       const { data: liveState } = await admin.from("seed_worker_state").select("is_running").eq("id", 1).maybeSingle();
       if (!liveState?.is_running) break;
 
-      const res = await processOneChunk(admin, AZURE_KEY, GEMINI_KEY, chunkCache);
-      lastResult = res;
+      // Decide concurrency based on the active doc's provider. Peek the next
+      // pending row's doc to determine which TTS provider it will use.
+      let concurrency = AZURE_CONCURRENCY;
+      {
+        const nowIso = new Date().toISOString();
+        const { data: peek } = await admin
+          .from("seed_queue").select("document_id")
+          .eq("status", "pending")
+          .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
+          .order("priority", { ascending: false })
+          .order("created_at", { ascending: true })
+          .limit(1).maybeSingle();
+        if (peek?.document_id) {
+          const cached = chunkCache.get(peek.document_id);
+          if (cached) {
+            concurrency = cached.provider === "gemini" ? GEMINI_CONCURRENCY : AZURE_CONCURRENCY;
+          } else {
+            const { data: doc } = await admin.from("documents")
+              .select("title").eq("id", peek.document_id).maybeSingle();
+            const gv = geminiVoiceForDoc(doc?.title);
+            concurrency = (gv && GEMINI_KEY) ? GEMINI_CONCURRENCY : AZURE_CONCURRENCY;
+          }
+        }
+      }
+      const batchSize = Math.min(concurrency, MAX_CHUNKS_PER_INVOCATION - processed);
 
-      if (res.result === "empty") break;
+      const claimedRows = await claimNextChunks(admin, batchSize);
+      if (claimedRows.length === 0) break;
 
-      if (res.result === "done") {
-        processed++;
-        await admin.from("seed_worker_state").update({
-          last_heartbeat: new Date().toISOString(),
-          total_processed: (state.total_processed ?? 0) + processed,
-        }).eq("id", 1);
-        if (processed >= MAX_CHUNKS_PER_INVOCATION) break;
-        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
-        if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
-        await sleep(INTER_CHUNK_DELAY_MS);
-      } else if (res.result === "rate_limited") {
+      const results = await Promise.all(
+        claimedRows.map((row) => processClaimedChunk(admin, AZURE_KEY, GEMINI_KEY, chunkCache, row)),
+      );
+      lastResult = results[results.length - 1];
+
+      let doneInBatch = 0;
+      let batchRateLimited = false;
+      for (const r of results) {
+        if (r.result === "done") doneInBatch++;
+        if (r.result === "rate_limited") batchRateLimited = true;
+      }
+      processed += doneInBatch;
+
+      await admin.from("seed_worker_state").update({
+        last_heartbeat: new Date().toISOString(),
+        total_processed: (state.total_processed ?? 0) + processed,
+      }).eq("id", 1);
+
+      if (batchRateLimited) {
         rateLimited = true;
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
         if (remaining < POST_RATELIMIT_COOLDOWN_MS + 5_000) break;
         await sleep(POST_RATELIMIT_COOLDOWN_MS);
-      } else {
-        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
-        if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
-        await sleep(INTER_CHUNK_DELAY_MS);
       }
     }
 
