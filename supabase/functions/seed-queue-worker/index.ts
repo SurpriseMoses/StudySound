@@ -289,12 +289,6 @@ async function processOneChunk(
 
   const retryCount = queueRow.attempts ?? 0;
 
-  await admin.from("seed_logs").insert({
-    document_id: queueRow.document_id,
-    chunk_index: queueRow.chunk_index,
-    status: "started",
-    retry_count: retryCount,
-  });
   await admin.from("documents").update({
     current_chunk_index: queueRow.chunk_index,
     last_error: null,
