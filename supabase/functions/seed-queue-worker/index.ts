@@ -366,13 +366,6 @@ async function processOneChunk(
       status: "done", completed_at: new Date().toISOString(),
       attempts: (queueRow.attempts ?? 0) + 1,
     }).eq("id", queueRow.id);
-    await admin.from("seed_logs").insert({
-      document_id: doc.id,
-      chunk_index: queueRow.chunk_index,
-      status: "success",
-      error_message: "cached",
-      retry_count: retryCount,
-    });
     return { result: "done", detail: "cached" };
   }
 
