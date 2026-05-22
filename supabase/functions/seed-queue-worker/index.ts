@@ -584,30 +584,58 @@ Deno.serve(async (req) => {
       const { data: liveState } = await admin.from("seed_worker_state").select("is_running").eq("id", 1).maybeSingle();
       if (!liveState?.is_running) break;
 
-      const res = await processOneChunk(admin, AZURE_KEY, GEMINI_KEY, chunkCache);
-      lastResult = res;
+      // Decide concurrency based on the active doc's provider. Peek the next
+      // pending row's doc to determine which TTS provider it will use.
+      let concurrency = AZURE_CONCURRENCY;
+      {
+        const nowIso = new Date().toISOString();
+        const { data: peek } = await admin
+          .from("seed_queue").select("document_id")
+          .eq("status", "pending")
+          .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
+          .order("priority", { ascending: false })
+          .order("created_at", { ascending: true })
+          .limit(1).maybeSingle();
+        if (peek?.document_id) {
+          const cached = chunkCache.get(peek.document_id);
+          if (cached) {
+            concurrency = cached.provider === "gemini" ? GEMINI_CONCURRENCY : AZURE_CONCURRENCY;
+          } else {
+            const { data: doc } = await admin.from("documents")
+              .select("title").eq("id", peek.document_id).maybeSingle();
+            const gv = geminiVoiceForDoc(doc?.title);
+            concurrency = (gv && GEMINI_KEY) ? GEMINI_CONCURRENCY : AZURE_CONCURRENCY;
+          }
+        }
+      }
+      const batchSize = Math.min(concurrency, MAX_CHUNKS_PER_INVOCATION - processed);
 
-      if (res.result === "empty") break;
+      const claimedRows = await claimNextChunks(admin, batchSize);
+      if (claimedRows.length === 0) break;
 
-      if (res.result === "done") {
-        processed++;
-        await admin.from("seed_worker_state").update({
-          last_heartbeat: new Date().toISOString(),
-          total_processed: (state.total_processed ?? 0) + processed,
-        }).eq("id", 1);
-        if (processed >= MAX_CHUNKS_PER_INVOCATION) break;
-        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
-        if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
-        await sleep(INTER_CHUNK_DELAY_MS);
-      } else if (res.result === "rate_limited") {
+      const results = await Promise.all(
+        claimedRows.map((row) => processClaimedChunk(admin, AZURE_KEY, GEMINI_KEY, chunkCache, row)),
+      );
+      lastResult = results[results.length - 1];
+
+      let doneInBatch = 0;
+      let batchRateLimited = false;
+      for (const r of results) {
+        if (r.result === "done") doneInBatch++;
+        if (r.result === "rate_limited") batchRateLimited = true;
+      }
+      processed += doneInBatch;
+
+      await admin.from("seed_worker_state").update({
+        last_heartbeat: new Date().toISOString(),
+        total_processed: (state.total_processed ?? 0) + processed,
+      }).eq("id", 1);
+
+      if (batchRateLimited) {
         rateLimited = true;
         const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
         if (remaining < POST_RATELIMIT_COOLDOWN_MS + 5_000) break;
         await sleep(POST_RATELIMIT_COOLDOWN_MS);
-      } else {
-        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
-        if (remaining < INTER_CHUNK_DELAY_MS + 10_000) break;
-        await sleep(INTER_CHUNK_DELAY_MS);
       }
     }
 
