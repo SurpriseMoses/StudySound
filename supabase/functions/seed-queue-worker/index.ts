@@ -291,7 +291,7 @@ async function processClaimedChunk(
     last_heartbeat: new Date().toISOString(),
   }).eq("id", 1);
 
-  const retryCount = queueRow.attempts ?? 0;
+  const _retryCount = queueRow.attempts ?? 0;
 
   await admin.from("documents").update({
     current_chunk_index: queueRow.chunk_index,
