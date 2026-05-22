@@ -40,9 +40,8 @@ function geminiVoiceForDoc(title: string | null | undefined): string | null {
   return GEMINI_VOICE_BY_TITLE[title.trim().toLowerCase()] ?? null;
 }
 
-// Worker pacing — tuned for faster sustained throughput. Rate-limit handler
-// below will automatically back off if a provider pushes back.
-const INTER_CHUNK_DELAY_MS = 200;
+// Worker pacing — tuned for faster sustained throughput via parallel TTS
+// calls. Rate-limit handler below auto-backs-off when providers push back.
 const POST_RATELIMIT_COOLDOWN_MS = 3_000;
 const MAX_ATTEMPTS = 5;
 const RATE_LIMIT_DELAY_MIN_MS = 5_000;
@@ -50,7 +49,11 @@ const RATE_LIMIT_DELAY_MAX_MS = 15_000;
 const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000;
 const LOCK_TIMEOUT_MS = 90_000;
 const HARD_DEADLINE_MS = 55_000;
-const MAX_CHUNKS_PER_INVOCATION = 30;
+const MAX_CHUNKS_PER_INVOCATION = 60;
+// Per-provider concurrency. Azure handles many parallel calls easily; Gemini
+// TTS is quota-constrained so we keep it sequential.
+const AZURE_CONCURRENCY = 4;
+const GEMINI_CONCURRENCY = 1;
 const TARGET_CHUNK_SIZE = 1800;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
