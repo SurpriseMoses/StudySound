@@ -209,7 +209,7 @@ async function ttsGemini(text: string, voiceName: string, apiKey: string): Promi
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
       },
     }),
-  }, 60_000);
+  }, GEMINI_TIMEOUT_MS);
 
   if (!res.ok) {
     const body = await res.text();
