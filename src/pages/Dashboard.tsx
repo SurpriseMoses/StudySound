@@ -207,25 +207,34 @@ export default function Dashboard() {
                       : `You have ${credits} free credits — start your first lesson and turn any text into audio in seconds.`}
                   </p>
 
-                  <div className="mt-5 flex flex-wrap items-center gap-2">
-                    {isReturning && resumePath ? (
-                      <Link to={resumePath}>
-                        <Button size="lg" className="gap-2 rounded-xl">
-                          <Play className="w-4 h-4 fill-current" /> Continue learning
-                        </Button>
-                      </Link>
+                  <div className="mt-5 flex flex-wrap items-center gap-2 min-h-[44px]">
+                    {loading ? (
+                      <>
+                        <div className="h-11 w-56 rounded-xl bg-muted animate-pulse" />
+                        <div className="h-11 w-44 rounded-xl bg-muted animate-pulse" />
+                      </>
                     ) : (
-                      <Link to="/upload">
-                        <Button size="lg" className="gap-2 rounded-xl">
-                          <Headphones className="w-4 h-4" /> Generate your first narration
-                        </Button>
-                      </Link>
+                      <>
+                        {isReturning && resumePath ? (
+                          <Link to={resumePath}>
+                            <Button size="lg" className="gap-2 rounded-xl">
+                              <Play className="w-4 h-4 fill-current" /> Continue learning
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Link to="/upload">
+                            <Button size="lg" className="gap-2 rounded-xl">
+                              <Headphones className="w-4 h-4" /> Generate your first narration
+                            </Button>
+                          </Link>
+                        )}
+                        <Link to="/subjects">
+                          <Button size="lg" variant="outline" className="gap-2 rounded-xl">
+                            <Compass className="w-4 h-4" /> Browse subjects
+                          </Button>
+                        </Link>
+                      </>
                     )}
-                    <Link to="/subjects">
-                      <Button size="lg" variant="outline" className="gap-2 rounded-xl">
-                        <Compass className="w-4 h-4" /> Browse subjects
-                      </Button>
-                    </Link>
                   </div>
                 </div>
 
