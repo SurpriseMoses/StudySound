@@ -40,20 +40,26 @@ function geminiVoiceForDoc(title: string | null | undefined): string | null {
   return GEMINI_VOICE_BY_TITLE[title.trim().toLowerCase()] ?? null;
 }
 
-// Worker pacing — tuned for faster sustained throughput via parallel TTS
-// calls. Rate-limit handler below auto-backs-off when providers push back.
+// Worker pacing — strict controls to prevent Gemini credit bleed.
+// Rate-limit / timeout retries are CAPPED and use exponential backoff so we
+// never spam the API. Gemini TTS runs strictly sequentially.
 const POST_RATELIMIT_COOLDOWN_MS = 3_000;
-const MAX_ATTEMPTS = 5;
-const RATE_LIMIT_DELAY_MIN_MS = 5_000;
-const RATE_LIMIT_DELAY_MAX_MS = 15_000;
+const MAX_ATTEMPTS = 3; // hard cap per chunk (covers errors AND rate-limits)
+// Exponential backoff schedule for 429 / 5xx / timeouts: 2s, 4s, 8s
+const RATE_LIMIT_BACKOFF_MS = [2_000, 4_000, 8_000];
 const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000;
-const LOCK_TIMEOUT_MS = 90_000;
+const LOCK_TIMEOUT_MS = 120_000;
 const HARD_DEADLINE_MS = 55_000;
 const MAX_CHUNKS_PER_INVOCATION = 60;
 // Per-provider concurrency. Azure handles many parallel calls easily; Gemini
-// TTS is quota-constrained so we keep it sequential.
+// TTS must be sequential to avoid 429 storms that cause billed-but-discarded
+// generations.
 const AZURE_CONCURRENCY = 4;
 const GEMINI_CONCURRENCY = 1;
+// Generous timeouts so we never abort a working request while Google keeps
+// generating (and billing) in the background.
+const GEMINI_TIMEOUT_MS = 90_000;
+const AZURE_TIMEOUT_MS = 45_000;
 const TARGET_CHUNK_SIZE = 1800;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
