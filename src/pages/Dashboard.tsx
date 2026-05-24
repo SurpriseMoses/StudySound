@@ -150,13 +150,13 @@ export default function Dashboard() {
         setCont(chosen);
         setHasLessons((lessonCount ?? 0) > 0);
         setRecs(recDocs);
-        setLoading(false);
+        setProfileLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, authLoading]);
 
   const userSubjects = useMemo(() => {
     const ids = profile?.selected_subjects ?? [];
