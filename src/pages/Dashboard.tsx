@@ -186,13 +186,21 @@ export default function Dashboard() {
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium uppercase tracking-wider text-primary/80 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
-                    {isReturning ? "Welcome back" : "Welcome"}
+                    {loading ? "Welcome" : isReturning ? "Welcome back" : "Welcome"}
                   </p>
-                  <h1 className="text-2xl md:text-3xl font-display font-bold mt-1">
-                    {isReturning ? `Welcome back, ${firstName} 👋` : `Hi ${firstName} 👋`}
+                  <h1 className="text-2xl md:text-3xl font-display font-bold mt-1 min-h-[2.25rem] md:min-h-[2.75rem]">
+                    {loading ? (
+                      <span className="inline-block h-7 md:h-9 w-56 rounded-md bg-muted animate-pulse align-middle" />
+                    ) : isReturning ? (
+                      `Welcome back, ${firstName} 👋`
+                    ) : (
+                      `Hi ${firstName} 👋`
+                    )}
                   </h1>
                   <p className="text-muted-foreground mt-2 max-w-xl">
-                    {isReturning
+                    {loading
+                      ? "Loading your learning space…"
+                      : isReturning
                       ? "Pick up where you left off, or generate something new."
                       : `You have ${credits} free credits — start your first lesson and turn any text into audio in seconds.`}
                   </p>
