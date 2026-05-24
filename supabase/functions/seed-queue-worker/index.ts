@@ -467,35 +467,37 @@ async function processClaimedChunk(
     const chunkIdx = queueRow.chunk_index;
 
     if (e instanceof RateLimitedError) {
-      // Upstream quota/timeout — NOT the chunk's fault. Do not count toward
-      // MAX_ATTEMPTS; keep as pending with a long backoff so it resumes
-      // automatically once the provider quota refreshes.
-      const baseDelay = e.retryAfterMs ?? RATE_LIMIT_DELAY_MIN_MS;
-      const jitter = Math.floor(Math.random() * (RATE_LIMIT_DELAY_MAX_MS - RATE_LIMIT_DELAY_MIN_MS));
-      const delayMs = Math.min(Math.max(baseDelay, RATE_LIMIT_DELAY_MIN_MS) + jitter, RATE_LIMIT_DELAY_HARD_CAP_MS);
+      // Rate-limit / timeout / 5xx: count toward MAX_ATTEMPTS with exponential
+      // backoff (2s, 4s, 8s). If exhausted, mark failed — do NOT loop forever,
+      // because every Gemini retry can still bill for partial audio output.
+      const backoffIdx = Math.min(attempts - 1, RATE_LIMIT_BACKOFF_MS.length - 1);
+      const baseDelay = e.retryAfterMs ?? RATE_LIMIT_BACKOFF_MS[Math.max(0, backoffIdx)];
+      const delayMs = Math.min(baseDelay, RATE_LIMIT_DELAY_HARD_CAP_MS);
       const delayedUntil = new Date(Date.now() + delayMs).toISOString();
+      const exhaustedRl = attempts >= MAX_ATTEMPTS;
 
       await admin.from("seed_queue").update({
-        status: "pending",
+        status: exhaustedRl ? "failed" : "pending",
         started_at: null,
-        // Keep attempts where it was — rate-limits don't burn the retry budget.
-        attempts: queueRow.attempts ?? 0,
-        delayed_until: delayedUntil,
-        last_error: `rate-limited (quota/timeout, will auto-retry): ${msg.slice(0, 300)}`,
+        attempts,
+        delayed_until: exhaustedRl ? null : delayedUntil,
+        last_error: exhaustedRl
+          ? `rate-limited (max ${MAX_ATTEMPTS} attempts exhausted): ${msg.slice(0, 300)}`
+          : `rate-limited, backoff ${delayMs}ms (attempt ${attempts}/${MAX_ATTEMPTS}): ${msg.slice(0, 300)}`,
       }).eq("id", queueRow.id);
 
       await admin.from("seed_logs").insert({
         document_id: docId,
         chunk_index: chunkIdx,
-        status: "rate_limited",
+        status: exhaustedRl ? "failed" : "rate_limited",
         error_message: msg,
-        retry_count: queueRow.attempts ?? 0,
+        retry_count: attempts,
       });
       await admin.from("documents").update({
         last_error: `rate-limited: ${msg.slice(0, 300)}`,
       }).eq("id", docId);
 
-      return { result: "rate_limited", detail: msg, queue_id: queueRow.id };
+      return { result: exhaustedRl ? "error" : "rate_limited", detail: msg, queue_id: queueRow.id };
     }
 
     const exhausted = attempts >= MAX_ATTEMPTS;
