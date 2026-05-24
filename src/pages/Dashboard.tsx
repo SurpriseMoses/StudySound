@@ -65,21 +65,23 @@ const QUICK_ACTIONS = [
 ];
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [profile, setProfile] = useState<ProfileBits | null>(null);
   const [cont, setCont] = useState<ContinueLesson | null>(null);
   const [recs, setRecs] = useState<RecommendedDoc[]>([]);
   const [hasLessons, setHasLessons] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const loading = authLoading || (!!user && profileLoading);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) {
-      setLoading(false);
+      setProfileLoading(false);
       return;
     }
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      setProfileLoading(true);
 
       // Profile
       const { data: prof } = await supabase
@@ -148,13 +150,13 @@ export default function Dashboard() {
         setCont(chosen);
         setHasLessons((lessonCount ?? 0) > 0);
         setRecs(recDocs);
-        setLoading(false);
+        setProfileLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, authLoading]);
 
   const userSubjects = useMemo(() => {
     const ids = profile?.selected_subjects ?? [];
