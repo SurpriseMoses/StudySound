@@ -151,7 +151,7 @@ async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", v
       },
       body: ssml,
     },
-    45_000,
+    AZURE_TIMEOUT_MS,
   );
   if (res.ok) return res.arrayBuffer();
   const body = await res.text();
