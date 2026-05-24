@@ -40,20 +40,26 @@ function geminiVoiceForDoc(title: string | null | undefined): string | null {
   return GEMINI_VOICE_BY_TITLE[title.trim().toLowerCase()] ?? null;
 }
 
-// Worker pacing — tuned for faster sustained throughput via parallel TTS
-// calls. Rate-limit handler below auto-backs-off when providers push back.
+// Worker pacing — strict controls to prevent Gemini credit bleed.
+// Rate-limit / timeout retries are CAPPED and use exponential backoff so we
+// never spam the API. Gemini TTS runs strictly sequentially.
 const POST_RATELIMIT_COOLDOWN_MS = 3_000;
-const MAX_ATTEMPTS = 5;
-const RATE_LIMIT_DELAY_MIN_MS = 5_000;
-const RATE_LIMIT_DELAY_MAX_MS = 15_000;
+const MAX_ATTEMPTS = 3; // hard cap per chunk (covers errors AND rate-limits)
+// Exponential backoff schedule for 429 / 5xx / timeouts: 2s, 4s, 8s
+const RATE_LIMIT_BACKOFF_MS = [2_000, 4_000, 8_000];
 const RATE_LIMIT_DELAY_HARD_CAP_MS = 30_000;
-const LOCK_TIMEOUT_MS = 90_000;
+const LOCK_TIMEOUT_MS = 120_000;
 const HARD_DEADLINE_MS = 55_000;
 const MAX_CHUNKS_PER_INVOCATION = 60;
 // Per-provider concurrency. Azure handles many parallel calls easily; Gemini
-// TTS is quota-constrained so we keep it sequential.
+// TTS must be sequential to avoid 429 storms that cause billed-but-discarded
+// generations.
 const AZURE_CONCURRENCY = 4;
 const GEMINI_CONCURRENCY = 1;
+// Generous timeouts so we never abort a working request while Google keeps
+// generating (and billing) in the background.
+const GEMINI_TIMEOUT_MS = 90_000;
+const AZURE_TIMEOUT_MS = 45_000;
 const TARGET_CHUNK_SIZE = 1800;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -145,7 +151,7 @@ async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", v
       },
       body: ssml,
     },
-    45_000,
+    AZURE_TIMEOUT_MS,
   );
   if (res.ok) return res.arrayBuffer();
   const body = await res.text();
@@ -203,7 +209,7 @@ async function ttsGemini(text: string, voiceName: string, apiKey: string): Promi
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
       },
     }),
-  }, 60_000);
+  }, GEMINI_TIMEOUT_MS);
 
   if (!res.ok) {
     const body = await res.text();
@@ -461,35 +467,37 @@ async function processClaimedChunk(
     const chunkIdx = queueRow.chunk_index;
 
     if (e instanceof RateLimitedError) {
-      // Upstream quota/timeout — NOT the chunk's fault. Do not count toward
-      // MAX_ATTEMPTS; keep as pending with a long backoff so it resumes
-      // automatically once the provider quota refreshes.
-      const baseDelay = e.retryAfterMs ?? RATE_LIMIT_DELAY_MIN_MS;
-      const jitter = Math.floor(Math.random() * (RATE_LIMIT_DELAY_MAX_MS - RATE_LIMIT_DELAY_MIN_MS));
-      const delayMs = Math.min(Math.max(baseDelay, RATE_LIMIT_DELAY_MIN_MS) + jitter, RATE_LIMIT_DELAY_HARD_CAP_MS);
+      // Rate-limit / timeout / 5xx: count toward MAX_ATTEMPTS with exponential
+      // backoff (2s, 4s, 8s). If exhausted, mark failed — do NOT loop forever,
+      // because every Gemini retry can still bill for partial audio output.
+      const backoffIdx = Math.min(attempts - 1, RATE_LIMIT_BACKOFF_MS.length - 1);
+      const baseDelay = e.retryAfterMs ?? RATE_LIMIT_BACKOFF_MS[Math.max(0, backoffIdx)];
+      const delayMs = Math.min(baseDelay, RATE_LIMIT_DELAY_HARD_CAP_MS);
       const delayedUntil = new Date(Date.now() + delayMs).toISOString();
+      const exhaustedRl = attempts >= MAX_ATTEMPTS;
 
       await admin.from("seed_queue").update({
-        status: "pending",
+        status: exhaustedRl ? "failed" : "pending",
         started_at: null,
-        // Keep attempts where it was — rate-limits don't burn the retry budget.
-        attempts: queueRow.attempts ?? 0,
-        delayed_until: delayedUntil,
-        last_error: `rate-limited (quota/timeout, will auto-retry): ${msg.slice(0, 300)}`,
+        attempts,
+        delayed_until: exhaustedRl ? null : delayedUntil,
+        last_error: exhaustedRl
+          ? `rate-limited (max ${MAX_ATTEMPTS} attempts exhausted): ${msg.slice(0, 300)}`
+          : `rate-limited, backoff ${delayMs}ms (attempt ${attempts}/${MAX_ATTEMPTS}): ${msg.slice(0, 300)}`,
       }).eq("id", queueRow.id);
 
       await admin.from("seed_logs").insert({
         document_id: docId,
         chunk_index: chunkIdx,
-        status: "rate_limited",
+        status: exhaustedRl ? "failed" : "rate_limited",
         error_message: msg,
-        retry_count: queueRow.attempts ?? 0,
+        retry_count: attempts,
       });
       await admin.from("documents").update({
         last_error: `rate-limited: ${msg.slice(0, 300)}`,
       }).eq("id", docId);
 
-      return { result: "rate_limited", detail: msg, queue_id: queueRow.id };
+      return { result: exhaustedRl ? "error" : "rate_limited", detail: msg, queue_id: queueRow.id };
     }
 
     const exhausted = attempts >= MAX_ATTEMPTS;
