@@ -832,6 +832,9 @@ export type Database = {
       }
       translation_blueprints: {
         Row: {
+          batch_job_name: string | null
+          batch_status: string | null
+          batch_submitted_at: string | null
           blueprint_text: string
           created_at: string
           document_id: string
@@ -842,6 +845,9 @@ export type Database = {
           visual_prompts: Json | null
         }
         Insert: {
+          batch_job_name?: string | null
+          batch_status?: string | null
+          batch_submitted_at?: string | null
           blueprint_text: string
           created_at?: string
           document_id: string
@@ -852,6 +858,9 @@ export type Database = {
           visual_prompts?: Json | null
         }
         Update: {
+          batch_job_name?: string | null
+          batch_status?: string | null
+          batch_submitted_at?: string | null
           blueprint_text?: string
           created_at?: string
           document_id?: string
@@ -926,6 +935,9 @@ export type Database = {
       translation_seed_queue: {
         Row: {
           attempts: number
+          batch_index: number | null
+          batch_job_name: string | null
+          batch_submitted_at: string | null
           chunk_index: number
           completed_at: string | null
           created_at: string
@@ -941,6 +953,9 @@ export type Database = {
         }
         Insert: {
           attempts?: number
+          batch_index?: number | null
+          batch_job_name?: string | null
+          batch_submitted_at?: string | null
           chunk_index: number
           completed_at?: string | null
           created_at?: string
@@ -956,6 +971,9 @@ export type Database = {
         }
         Update: {
           attempts?: number
+          batch_index?: number | null
+          batch_job_name?: string | null
+          batch_submitted_at?: string | null
           chunk_index?: number
           completed_at?: string | null
           created_at?: string
@@ -1323,6 +1341,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      visual_prompts_batch_jobs: {
+        Row: {
+          batch_job_name: string
+          document_id: string
+          last_error: string | null
+          status: string
+          submitted_at: string
+          updated_at: string
+        }
+        Insert: {
+          batch_job_name: string
+          document_id: string
+          last_error?: string | null
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+        }
+        Update: {
+          batch_job_name?: string
+          document_id?: string
+          last_error?: string | null
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       visual_scenes: {
         Row: {
