@@ -529,6 +529,31 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const startedAt = Date.now();
 
+  // ──────────────────────────────────────────────────────────────────────
+  // AUDIO SEEDING PAUSED — Tier-1 Gemini TTS quota (10 RPM / 200 RPD) is
+  // too tight for backlog seeding. Worker stays off until Tier-2 upgrade.
+  // To resume: set env var AUDIO_SEEDING_PAUSED=false and (re)start the
+  // worker from the admin UI. See chat thread 2026-06-02.
+  // ──────────────────────────────────────────────────────────────────────
+  if ((Deno.env.get("AUDIO_SEEDING_PAUSED") ?? "true").toLowerCase() !== "false") {
+    try {
+      const admin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      await admin.from("seed_worker_state").update({
+        is_running: false,
+        last_heartbeat: null,
+        last_error: "paused: audio seeding on hold (Tier-1 quota)",
+      }).eq("id", 1);
+    } catch { /* ignore */ }
+    return new Response(JSON.stringify({
+      ok: true,
+      paused: true,
+      reason: "audio seeding on hold — Tier-1 quota; set AUDIO_SEEDING_PAUSED=false to resume",
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -536,6 +561,7 @@ Deno.serve(async (req) => {
     const AZURE_KEY = Deno.env.get("Azure_Secret_Key_SpeechServices");
     const GEMINI_KEY = Deno.env.get("Gemini_Secret_Key");
     if (!AZURE_KEY && !GEMINI_KEY) throw new Error("Neither Azure nor Gemini TTS key configured");
+
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
