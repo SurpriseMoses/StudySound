@@ -1,143 +1,241 @@
-// generate-visual-prompts — produces a chronological list of 10-12 Leonardo.ai
-// image prompts per seeded book, grounded on the existing translation_blueprints.
+// generate-visual-prompts — Gemini Batch API + "Visual Bible" character consistency.
 //
-// POST /generate-visual-prompts?document_id=<uuid>           → single doc
-// POST /generate-visual-prompts                              → all seeded docs (limit param)
-// POST /generate-visual-prompts?force=true                   → regenerate existing
+// Strategy for character consistency across 10-12 images per book:
+//   Step 1: Ask Gemini for a structured JSON object
+//           { character_bible: [{ name, physical_description, attire, distinguishing_marks }],
+//             scenes:         [{ chapter_reference, scene_description,
+//                                 action_text, characters_present: [name, ...] }] }
+//   Step 2: Server-side, build each scene's final leonardo_prompt as:
+//           "<action_text>. CHARACTERS: <Name1 — full bible desc>; <Name2 — full bible desc>. <STYLE>"
+//   → Character descriptions are BYTE-IDENTICAL across scenes ⇒ the downstream
+//     image model gets the same reference text every time, locking visual identity.
 //
-// Body (optional JSON): { style?: string }
-//   style — designated Leonardo style keywords appended to every prompt.
-//           Defaults to a painterly classic-literature illustration style.
+// Endpoints:
+//   POST /generate-visual-prompts                          → submit batch for all qualifying docs
+//   POST /generate-visual-prompts?document_id=<uuid>       → submit/poll a single doc
+//   POST /generate-visual-prompts?poll=true                → only drain in-flight (cron)
+//   POST /generate-visual-prompts?force=true               → resubmit even if prompts exist
+//   Body (optional JSON): { style?: string }
 //
-// Stores results in translation_blueprints.visual_prompts (jsonb) — adds the
-// column if missing via a separate migration. If the column does not exist,
-// results are still returned in the HTTP response.
+// In-flight batches tracked in visual_prompts_batch_jobs (one row per doc).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import {
+  submitBatch,
+  pollBatch,
+  extractText,
+  type BatchRequestItem,
+} from "../_shared/gemini-batch.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const MODEL = "gemini-2.5-pro";
+const MODEL = "gemini-2.5-flash";
+const MAX_DOCS_PER_BATCH = 10;
 
-const SYSTEM_PROMPT = `You are an expert AI art director generating descriptive image prompts for Leonardo.ai based on classic literature. 
+const SYSTEM_PROMPT = `You are an expert AI art director generating descriptive image prompts for Leonardo.ai based on classic literature.
 
-I will provide you with a book blueprint and a target visual style. 
+I will provide you with a book blueprint and a target visual style.
 
-Your task is to break the book down into 10-12 chronological key narrative milestones. For each milestone, output a structured JSON array containing:
+You must output a single valid JSON object with this EXACT shape, and nothing else:
 
-1. "chapter_reference": The chapter number or scene marker.
+{
+  "character_bible": [
+    {
+      "name": "string — the name as it should appear in every scene prompt",
+      "physical_description": "string — age, build, face, hair, eyes, skin tone, race/ethnicity (concrete, visual, 1-2 sentences)",
+      "attire": "string — typical clothing, fabrics, accessories (period-accurate, concrete)",
+      "distinguishing_marks": "string — scars, posture, gait, eyepatch, peg leg, etc. (or empty string if none)"
+    }
+  ],
+  "scenes": [
+    {
+      "chapter_reference": "string — chapter number or scene marker",
+      "scene_description": "string — short summary for admin context (one sentence)",
+      "action_text": "string — what is happening in this image, INCLUDING setting, weather, time of day, lighting (e.g. 'moody candlelit shadows', 'vivid dynamic morning light'). Refer to characters ONLY by the names listed in character_bible (do NOT redescribe their appearance here).",
+      "characters_present": ["string — names that appear in this image, exactly as in character_bible"]
+    }
+  ]
+}
 
-2. "scene_description": A short summary of what is happening for the admin's context.
-
-3. "leonardo_prompt": A highly descriptive visual prompt written in English. 
-
-Prompt Formatting Rules for Leonardo.ai:
-
-- Start with the subject and core action (e.g., "An old pirate with a scarred face sits at a wooden table...").
-
-- Describe the setting, weather, and background depth.
-
-- Specify the lighting (e.g., "moody candlelit shadows", "vivid dynamic lighting").
-
-- Append the designated style keywords at the very end.
-
-- Crucial: Keep the main characters' physical descriptions completely identical across all scene prompts so the AI maintains character consistency.
-
-- Do NOT use vague buzzwords like "photorealistic" or "ultra-detailed". Use descriptive text instead.
-
-Output ONLY a clean, valid JSON array. No conversational text or markdown blocks.`;
+Rules:
+- 10 to 12 scenes, chronologically ordered through the book.
+- Every name in any scene's characters_present MUST exist in character_bible. Do not invent names.
+- Include EVERY major recurring character in character_bible (minimum 4, maximum 12).
+- Physical descriptions in character_bible must be concrete and visual — no vague words like "handsome" or "mysterious".
+- Do NOT use buzzwords like "photorealistic", "ultra-detailed", "8k", "trending on artstation".
+- action_text is the per-scene moment only; do NOT repeat character descriptions there.
+- Output ONLY the JSON object, no markdown fences, no commentary.`;
 
 const DEFAULT_STYLE =
   "painterly digital illustration, warm cinematic color palette, soft brushwork, classic storybook composition, period-accurate costuming and architecture";
 
-interface VisualPrompt {
+interface CharacterBibleEntry {
+  name: string;
+  physical_description: string;
+  attire: string;
+  distinguishing_marks?: string;
+}
+interface SceneEntry {
+  chapter_reference: string;
+  scene_description: string;
+  action_text: string;
+  characters_present?: string[];
+}
+
+interface OutputPrompt {
   chapter_reference: string;
   scene_description: string;
   leonardo_prompt: string;
 }
 
-async function generatePrompts(
-  title: string,
-  blueprint: string,
+function buildLeonardoPrompt(
+  scene: SceneEntry,
+  bible: CharacterBibleEntry[],
   style: string,
-  apiKey: string,
-): Promise<VisualPrompt[]> {
-  const user = `BOOK TITLE: ${title}
-
-TARGET VISUAL STYLE KEYWORDS (append to every prompt):
-${style}
-
-BLUEPRINT:
-${blueprint}`;
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
-  const body = JSON.stringify({
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents: [{ role: "user", parts: [{ text: user }] }],
-    generationConfig: {
-      temperature: 0.6,
-      maxOutputTokens: 8192,
-      responseMimeType: "application/json",
-    },
-    safetySettings: [
-      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-    ],
-  });
-
-  let lastErr = "";
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) {
-      const waitMs = Math.min(30_000, 2_000 * Math.pow(2, attempt - 1)) +
-        Math.floor(Math.random() * 1500);
-      console.log(`[visual-prompts] retry ${attempt} after ${waitMs}ms for "${title}"`);
-      await new Promise((r) => setTimeout(r, waitMs));
-    }
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-    });
-    if (res.status === 503 || res.status === 429) {
-      lastErr = `Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`;
-      continue;
-    }
-    if (!res.ok) {
-      throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 400)}`);
-    }
-    const json = await res.json();
-    const cand = json?.candidates?.[0];
-    const out = cand?.content?.parts?.map((p: any) => p?.text ?? "").join("") ?? "";
-    if (!out.trim()) {
-      throw new Error(
-        `Empty response (finishReason=${cand?.finishReason ?? "unknown"})`,
-      );
-    }
-    // Strip possible markdown fences just in case.
-    const cleaned = out.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (e) {
-      throw new Error(`Invalid JSON from Gemini: ${(e as Error).message}. Raw: ${cleaned.slice(0, 300)}`);
-    }
-    if (!Array.isArray(parsed)) {
-      throw new Error(`Expected JSON array, got: ${typeof parsed}`);
-    }
-    const prompts = (parsed as VisualPrompt[]).filter(
-      (p) => p && typeof p.leonardo_prompt === "string" && p.leonardo_prompt.trim().length > 0,
-    );
-    if (prompts.length < 10) {
-      throw new Error(`Only ${prompts.length} prompts returned, expected 10-12.`);
-    }
-    return prompts.slice(0, 12);
+): string {
+  const bibleByName = new Map(bible.map((c) => [c.name.trim().toLowerCase(), c]));
+  const names = (scene.characters_present ?? []).filter((n) => typeof n === "string" && n.trim());
+  const characterClauses: string[] = [];
+  for (const name of names) {
+    const entry = bibleByName.get(name.trim().toLowerCase());
+    if (!entry) continue;
+    const parts = [
+      entry.physical_description?.trim(),
+      entry.attire?.trim(),
+      entry.distinguishing_marks?.trim(),
+    ].filter((s): s is string => Boolean(s));
+    characterClauses.push(`${entry.name} — ${parts.join("; ")}`);
   }
-  throw new Error(`Gemini unavailable after retries: ${lastErr}`);
+
+  const characterBlock = characterClauses.length > 0
+    ? ` CHARACTERS IN SCENE: ${characterClauses.join(". ")}.`
+    : "";
+  return `${scene.action_text.trim()}.${characterBlock} STYLE: ${style}`.replace(/\s+/g, " ").trim();
+}
+
+function buildRequest(title: string, blueprint: string, style: string): BatchRequestItem {
+  const user = `BOOK TITLE: ${title}\n\nTARGET VISUAL STYLE (use as STYLE keywords):\n${style}\n\nBLUEPRINT:\n${blueprint}`;
+  return {
+    request: {
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: "user", parts: [{ text: user }] }],
+      generationConfig: {
+        temperature: 0.6,
+        maxOutputTokens: 8192,
+        responseMimeType: "application/json",
+      },
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+      ],
+    },
+  };
+}
+
+function parseAndBuild(rawText: string, style: string): { prompts: OutputPrompt[]; bible: CharacterBibleEntry[] } {
+  const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  const parsed = JSON.parse(cleaned);
+  const bible: CharacterBibleEntry[] = Array.isArray(parsed?.character_bible) ? parsed.character_bible : [];
+  const scenes: SceneEntry[] = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
+  if (bible.length === 0) throw new Error("Empty character_bible");
+  if (scenes.length < 10) throw new Error(`Only ${scenes.length} scenes (need 10-12)`);
+  const prompts = scenes.slice(0, 12).map((scene) => ({
+    chapter_reference: String(scene.chapter_reference ?? ""),
+    scene_description: String(scene.scene_description ?? ""),
+    leonardo_prompt: buildLeonardoPrompt(scene, bible, style),
+  }));
+  return { prompts, bible };
+}
+
+// deno-lint-ignore no-explicit-any
+async function pollAllRunning(admin: any, apiKey: string, style: string) {
+  const { data: jobs, error } = await admin
+    .from("visual_prompts_batch_jobs")
+    .select("document_id, batch_job_name")
+    .eq("status", "running");
+  if (error) throw error;
+
+  // Group jobs by batch_job_name; one batch may cover multiple docs.
+  const byJob = new Map<string, string[]>();
+  for (const j of jobs ?? []) {
+    const arr = byJob.get(j.batch_job_name) ?? [];
+    arr.push(j.document_id);
+    byJob.set(j.batch_job_name, arr);
+  }
+
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const [jobName, docIds] of byJob) {
+    try {
+      const status = await pollBatch(jobName, apiKey);
+      if (status.state === "JOB_STATE_SUCCEEDED" && status.inlinedResponses) {
+        // Re-read jobs for this batch in the order they were inserted (id asc)
+        // — matches the order requests were appended at submit time.
+        const { data: ordered } = await admin
+          .from("visual_prompts_batch_jobs")
+          .select("document_id")
+          .eq("batch_job_name", jobName)
+          .order("submitted_at", { ascending: true })
+          .order("document_id", { ascending: true });
+        const orderedDocs = (ordered ?? []).map((r: any) => r.document_id);
+        let ok = 0, fail = 0;
+        for (let i = 0; i < orderedDocs.length; i++) {
+          const docId = orderedDocs[i];
+          const item = status.inlinedResponses[i];
+          if (!item || item.error) {
+            await admin.from("visual_prompts_batch_jobs").update({
+              status: "failed",
+              last_error: item?.error?.message ?? "missing response slot",
+              updated_at: new Date().toISOString(),
+            }).eq("document_id", docId);
+            fail++;
+            continue;
+          }
+          try {
+            const text = extractText(item.response);
+            const { prompts, bible } = parseAndBuild(text, style);
+            await admin.from("translation_blueprints").update({
+              visual_prompts: prompts,
+              updated_at: new Date().toISOString(),
+            }).eq("document_id", docId);
+            await admin.from("visual_prompts_batch_jobs").update({
+              status: "done",
+              last_error: null,
+              updated_at: new Date().toISOString(),
+            }).eq("document_id", docId);
+            console.log(`[visual-prompts] ✓ doc=${docId} bible=${bible.length} prompts=${prompts.length}`);
+            ok++;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            await admin.from("visual_prompts_batch_jobs").update({
+              status: "failed",
+              last_error: msg,
+              updated_at: new Date().toISOString(),
+            }).eq("document_id", docId);
+            fail++;
+          }
+        }
+        results.push({ job: jobName, state: status.state, ok, fail });
+      } else if (status.state === "JOB_STATE_FAILED" || status.state === "JOB_STATE_CANCELLED" || status.state === "JOB_STATE_EXPIRED") {
+        await admin.from("visual_prompts_batch_jobs").update({
+          status: "failed",
+          last_error: status.error?.message ?? status.state,
+          updated_at: new Date().toISOString(),
+        }).in("document_id", docIds);
+        results.push({ job: jobName, state: status.state });
+      } else {
+        results.push({ job: jobName, state: status.state, docs: docIds.length });
+      }
+    } catch (e) {
+      results.push({ job: jobName, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return results;
 }
 
 Deno.serve(async (req) => {
@@ -148,15 +246,15 @@ Deno.serve(async (req) => {
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const GEMINI_KEY = Deno.env.get("Gemini_Secret_Key");
     if (!GEMINI_KEY) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "Gemini_Secret_Key not configured" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ ok: false, error: "Gemini_Secret_Key not configured" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const url = new URL(req.url);
     const force = url.searchParams.get("force") === "true";
-    const limit = Math.max(1, Math.min(20, Number(url.searchParams.get("limit") ?? "2")));
+    const pollOnly = url.searchParams.get("poll") === "true";
+    const limit = Math.max(1, Math.min(MAX_DOCS_PER_BATCH, Number(url.searchParams.get("limit") ?? String(MAX_DOCS_PER_BATCH))));
     const singleDocId = url.searchParams.get("document_id");
 
     let style = DEFAULT_STYLE;
@@ -164,18 +262,25 @@ Deno.serve(async (req) => {
       try {
         const body = await req.json();
         if (body?.style && typeof body.style === "string") style = body.style.trim();
-      } catch { /* no body, use default */ }
+      } catch { /* no body */ }
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-    // Pull blueprints, then fetch docs separately (no FK in schema cache).
+    // 1) Drain any in-flight batches first.
+    const polled = await pollAllRunning(admin, GEMINI_KEY, style);
+
+    if (pollOnly) {
+      return new Response(JSON.stringify({ ok: true, polled }, null, 2), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 2) Gather candidates needing visual prompts.
     let bpQuery = admin
       .from("translation_blueprints")
       .select("document_id, blueprint_text, visual_prompts");
-    if (singleDocId) {
-      bpQuery = bpQuery.eq("document_id", singleDocId);
-    }
+    if (singleDocId) bpQuery = bpQuery.eq("document_id", singleDocId);
     const { data: bps, error: bpErr } = await bpQuery;
     if (bpErr) throw bpErr;
 
@@ -190,98 +295,81 @@ Deno.serve(async (req) => {
       docMap = new Map((docs ?? []).map((d: any) => [d.id, d]));
     }
 
-    const candidates = (bps ?? [])
-      .map((row: any) => ({ ...row, documents: docMap.get(row.document_id) }))
-      .filter((row: any) => {
-        if (!row.documents) return false;
-        if (singleDocId) return true;
-        return row.documents.seed_translation === true;
-      });
+    // In-flight jobs to avoid double-submit.
+    const { data: running } = await admin
+      .from("visual_prompts_batch_jobs")
+      .select("document_id")
+      .eq("status", "running");
+    const runningSet = new Set((running ?? []).map((r: any) => r.document_id));
 
-    const results: Array<{
-      document_id: string;
-      title: string;
-      status: string;
-      count?: number;
-      error?: string;
-      prompts?: VisualPrompt[];
-    }> = [];
-    let generated = 0;
-
-    for (const row of candidates as any[]) {
-      const doc = row.documents;
-      if (generated >= limit) {
-        results.push({
-          document_id: row.document_id,
-          title: doc?.title ?? "(unknown)",
-          status: "deferred (limit reached)",
-        });
-        continue;
-      }
+    const toSubmit: Array<{ id: string; title: string; blueprint: string }> = [];
+    const skipped: Array<{ id: string; reason: string }> = [];
+    for (const row of bps ?? []) {
+      if (toSubmit.length >= limit) break;
+      const doc = docMap.get(row.document_id);
+      if (!doc) continue;
+      if (!singleDocId && !doc.seed_translation) continue;
+      if (runningSet.has(row.document_id)) { skipped.push({ id: row.document_id, reason: "batch running" }); continue; }
       if (!force && Array.isArray(row.visual_prompts) && row.visual_prompts.length > 0) {
-        results.push({
-          document_id: row.document_id,
-          title: doc?.title ?? "(unknown)",
-          status: "skipped (exists)",
-          count: row.visual_prompts.length,
-        });
+        skipped.push({ id: row.document_id, reason: "prompts exist" });
         continue;
       }
       if (!row.blueprint_text || row.blueprint_text.length < 500) {
-        results.push({
-          document_id: row.document_id,
-          title: doc?.title ?? "(unknown)",
-          status: "skipped (no blueprint)",
-        });
+        skipped.push({ id: row.document_id, reason: "no blueprint" });
         continue;
       }
-
-      try {
-        const prompts = await generatePrompts(doc.title, row.blueprint_text, style, GEMINI_KEY);
-
-        const { error: upErr } = await admin
-          .from("translation_blueprints")
-          .update({
-            visual_prompts: prompts,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("document_id", row.document_id);
-        if (upErr) {
-          // Column may not exist yet — return prompts in response anyway.
-          console.warn(`[visual-prompts] persist failed: ${upErr.message}`);
-        }
-
-        results.push({
-          document_id: row.document_id,
-          title: doc.title,
-          status: "generated",
-          count: prompts.length,
-          prompts,
-        });
-        generated++;
-        console.log(`[visual-prompts] ✓ ${doc.title} (${prompts.length} prompts)`);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        results.push({
-          document_id: row.document_id,
-          title: doc?.title ?? "(unknown)",
-          status: "error",
-          error: msg,
-        });
-        console.error(`[visual-prompts] ✗ ${doc?.title}: ${msg}`);
-      }
+      toSubmit.push({ id: row.document_id, title: doc.title, blueprint: row.blueprint_text });
     }
 
-    return new Response(
-      JSON.stringify({ ok: true, count: results.length, style, results }, null, 2),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    if (toSubmit.length === 0) {
+      return new Response(JSON.stringify({ ok: true, polled, submitted: 0, skipped, style }, null, 2), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Pre-insert tracking rows in submit order so polling order matches.
+    const submittedAt = new Date().toISOString();
+    const placeholders = toSubmit.map((d) => ({
+      document_id: d.id,
+      batch_job_name: "(pending)",
+      submitted_at: submittedAt,
+      status: "pending",
+      last_error: null as string | null,
+      updated_at: submittedAt,
+    }));
+    const { error: upErr } = await admin
+      .from("visual_prompts_batch_jobs")
+      .upsert(placeholders, { onConflict: "document_id" });
+    if (upErr) throw upErr;
+
+    const requests = toSubmit.map((d) => buildRequest(d.title, d.blueprint, style));
+    const { name: jobName } = await submitBatch(MODEL, requests, GEMINI_KEY, `visual-prompts-${Date.now()}`);
+
+    await admin
+      .from("visual_prompts_batch_jobs")
+      .update({
+        batch_job_name: jobName,
+        status: "running",
+        updated_at: new Date().toISOString(),
+      })
+      .in("document_id", toSubmit.map((d) => d.id));
+
+    console.log(`[visual-prompts] submitted batch ${jobName} for ${toSubmit.length} docs`);
+
+    return new Response(JSON.stringify({
+      ok: true,
+      polled,
+      submitted: toSubmit.length,
+      batch_job_name: jobName,
+      style,
+      docs: toSubmit.map((d) => ({ id: d.id, title: d.title })),
+      skipped,
+    }, null, 2), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e: any) {
     const msg = e?.message ?? e?.error_description ?? e?.hint ?? JSON.stringify(e);
     console.error("[visual-prompts] fatal:", msg, e);
     return new Response(JSON.stringify({ ok: false, error: msg }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
