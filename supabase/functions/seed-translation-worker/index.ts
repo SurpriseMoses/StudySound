@@ -1,68 +1,55 @@
-// seed-translation-worker — single global worker that drains
-// translation_seed_queue, translating chunks into zu/xh/tn/nso via Azure
-// Translator and writing into translation_assets.
+// seed-translation-worker — Gemini Batch API mode.
 //
-// Behaviour mirrors seed-queue-worker (audio): single lock via
-// translation_worker_state, batched processing per invocation, exponential
-// back-off on 429s, idempotent on cached translations.
+// Each tick (called from cron or manually):
+//   1) POLL: for every distinct batch_job_name in translation_seed_queue
+//      where status='batched', GET its status. On SUCCEEDED, write
+//      translation_assets and mark rows 'done'. On row-level errors, return
+//      them to 'pending' with exp-backoff.
+//   2) SUBMIT: if we're below the in-flight job cap, claim up to N pending
+//      rows for the oldest active document, submit them as one batch, and
+//      mark them 'batched' with the operation name.
 //
-// Optional cron: ping POST every ~30s while is_running = true.
+// No per-request retry loops or sleeps — the batch API absorbs that. Saves
+// ~50% on per-token cost vs. interactive generateContent.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { isInvalidChunk } from "../_shared/clean-text.ts";
 import {
   CURRENT_TRANSLATION_VERSION,
+  LANGUAGE_LABELS,
   preprocessForTranslation,
   sha256Hex,
   detectEnglishLeak,
-  geminiTranslateMulti,
-  TranslationRateLimitError,
-  TranslationCreditsExhaustedError,
 } from "../_shared/translation-pipeline.ts";
+import {
+  submitBatch,
+  pollBatch,
+  extractText,
+  type BatchRequestItem,
+} from "../_shared/gemini-batch.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const MODEL = "gemini-2.5-flash";
 const TARGET_CHUNK_SIZE = 700;
 const HARD_MIN = 400;
 
-const INTER_CHUNK_DELAY_MS = 200;
-const MAX_ATTEMPTS = 8;
-// Exponential back-off for rate-limited rows: base * 2^(attempt-1) + jitter,
-// clamped to [MIN, HARD_CAP]. Honours Retry-After when supplied.
-const RATE_LIMIT_BASE_MS = 2_000;
-const RATE_LIMIT_DELAY_MIN_MS = 1_000;
-const RATE_LIMIT_DELAY_HARD_CAP_MS = 2 * 60_000;
-const RATE_LIMIT_JITTER_MS = 1_000;
-// Generic transient errors back off more gently
-const ERROR_BASE_MS = 5_000;
-const ERROR_HARD_CAP_MS = 60_000;
-const CREDIT_EXHAUSTED_DELAY_MS = 10 * 60_000;
-const LOCK_TIMEOUT_MS = 20_000;
-const MIN_WORKER_INTERVAL_MS = 5_000;
-const HARD_DEADLINE_MS = 120_000;
-const MAX_CHUNKS_PER_INVOCATION = 80;
-const PARALLEL_WORKERS = 4;
-// If the only remaining work is delayed, wait up to this long inside the
-// invocation for the soonest row to become ready.
-const MAX_INLINE_WAIT_MS = 5_000;
+// One batch holds at most this many requests across at most this many docs.
+const MAX_REQUESTS_PER_BATCH = 200;
+const MAX_INFLIGHT_BATCHES = 2;
+const MAX_ATTEMPTS = 6;
 
-function expBackoffMs(attempts: number, base: number, cap: number, jitter = RATE_LIMIT_JITTER_MS): number {
-  // attempts is the new attempt count (1 = first failure)
+// Row-level error back-off.
+const ERROR_BASE_MS = 30_000;
+const ERROR_HARD_CAP_MS = 30 * 60_000;
+
+function expBackoffMs(attempts: number, base: number, cap: number): number {
   const exp = Math.min(cap, base * Math.pow(2, Math.max(0, attempts - 1)));
-  const j = Math.floor(Math.random() * jitter);
-  return Math.min(cap, Math.max(RATE_LIMIT_DELAY_MIN_MS, exp + j));
+  return Math.min(cap, exp + Math.floor(Math.random() * 5_000));
 }
-
-const AZURE_TRANSLATOR_REGION = Deno.env.get("AZURE_TRANSLATOR_REGION") ?? "southafricanorth";
-
-const AZURE_TRANSLATOR_LANG: Record<string, string> = {
-  en: "en", af: "af", zu: "zu", xh: "xh", nso: "nso", tn: "tn", fr: "fr",
-};
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function chunkText(text: string): string[] {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -83,436 +70,451 @@ function chunkText(text: string): string[] {
   return chunks;
 }
 
-// --- preprocessing: normalize ALL CAPS / title-case to fix translation bugs ---
-function toSentenceCaseHeading(line: string): string {
-  let out = line.toLowerCase();
-  out = out.replace(/\b(mr|mrs|ms|dr|prof|st)\./g, (a) => a.charAt(0).toUpperCase() + a.slice(1));
-  out = out.replace(/(^|[\s“"'‘’(\[])([a-z])/g, (_, p: string, c: string) => `${p}${c.toUpperCase()}`);
-  out = out.replace(/([.!?:;]\s+)([a-z])/g, (_, p: string, c: string) => `${p}${c.toUpperCase()}`);
-  out = out.replace(/\b([ivxlcdm]+)\b/gi, (r) => r.toUpperCase());
-  return out;
+function buildSystemPrompt(sourceLabel: string, targetLabel: string, blueprint?: string): string {
+  const base =
+    `You are a professional translator for South African high-school study material. ` +
+    `Translate the user's text from ${sourceLabel} to ${targetLabel}. ` +
+    `Rules:\n` +
+    `1. Output ONLY the translated text. No preface, no quotes, no notes, no source.\n` +
+    `2. Preserve line breaks and paragraph structure exactly.\n` +
+    `3. Translate ALL words — do NOT leave English words, headings, or ALL-CAPS phrases untranslated, unless they are proper names.\n` +
+    `4. Keep numbers, dates, and proper nouns as-is.\n` +
+    `5. Use natural, clear ${targetLabel} suitable for a teenage learner.`;
+  if (!blueprint) return base;
+  return `${base}\n\n=== PER-BOOK TRANSLATION BLUEPRINT ===\nApply every detail below as ground truth when translating this chunk. Use the character glossary for consistent naming, the idiom guide for archaic phrases, and the plot summary for register/tone.\n\n${blueprint}`;
 }
 
-function normalizeAllCaps(text: string): string {
-  const lines = text.split(/\r?\n/).map((line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return line;
-    const letters = trimmed.match(/[A-Za-z]/g) ?? [];
-    const upper = trimmed.match(/[A-Z]/g) ?? [];
-    const ratio = letters.length > 0 ? upper.length / letters.length : 0;
-    if (letters.length >= 4 && ratio >= 0.8) {
-      const lead = line.match(/^\s*/)?.[0] ?? "";
-      const trail = line.match(/\s*$/)?.[0] ?? "";
-      return `${lead}${toSentenceCaseHeading(trimmed)}${trail}`;
-    }
-    return line;
-  });
-  return lines.join("\n").replace(/\b[A-Z][A-Z'’\-]*[A-Z]\b/g, (w) =>
-    w.charAt(0) + w.slice(1).toLowerCase());
-}
-
-// Translate one source text into N target languages via Lovable AI (Gemini).
-// Re-uses the shared geminiTranslateMulti helper. Maps its 429 rate-limit
-// error onto the worker's back-off path via the existing pending-row delay.
-async function translateMulti(
+function buildRequest(
   text: string,
   sourceLang: string,
-  targetLangs: string[],
-  // deno-lint-ignore no-explicit-any
-  admin?: any,
-  documentId?: string,
-  blueprintText?: string,
-): Promise<Record<string, string>> {
-  try {
-    return await geminiTranslateMulti(text, sourceLang, targetLangs, {
-      admin, documentId, blueprintText,
-    });
-  } catch (e) {
-    if (e instanceof TranslationRateLimitError) {
-      // Re-throw as plain Error so existing catch path treats as transient/retry.
-      const err = new Error(e.message) as Error & { retryAfterMs?: number };
-      err.retryAfterMs = e.retryAfterMs;
-      throw err;
-    }
-    throw e;
-  }
+  targetLang: string,
+  blueprint: string | undefined,
+): BatchRequestItem {
+  const sourceLabel = LANGUAGE_LABELS[sourceLang] ?? sourceLang;
+  const targetLabel = LANGUAGE_LABELS[targetLang] ?? targetLang;
+  return {
+    request: {
+      systemInstruction: { parts: [{ text: buildSystemPrompt(sourceLabel, targetLabel, blueprint) }] },
+      contents: [{ role: "user", parts: [{ text }] }],
+      generationConfig: { temperature: 0.2 },
+    },
+  };
 }
 
 type DocCacheEntry = { chunks: string[]; sourceLang: string; title: string; blueprint?: string };
 
 // deno-lint-ignore no-explicit-any
-async function processOne(admin: any, _unused: string, cache: Map<string, DocCacheEntry>) {
+async function loadDocEntry(admin: any, documentId: string, cache: Map<string, DocCacheEntry>): Promise<DocCacheEntry | null> {
+  const cached = cache.get(documentId);
+  if (cached) return cached;
+  const [{ data: doc }, { data: bp }] = await Promise.all([
+    admin.from("documents").select("id, title, clean_text, language").eq("id", documentId).maybeSingle(),
+    admin.from("translation_blueprints").select("blueprint_text").eq("document_id", documentId).maybeSingle(),
+  ]);
+  if (!doc?.clean_text) return null;
+  const entry: DocCacheEntry = {
+    chunks: chunkText(doc.clean_text),
+    sourceLang: (doc.language ?? "en").toLowerCase(),
+    title: doc.title,
+    blueprint: bp?.blueprint_text ?? undefined,
+  };
+  cache.set(documentId, entry);
+  return entry;
+}
+
+// ─── POLL PHASE ──────────────────────────────────────────────────────────────
+
+// deno-lint-ignore no-explicit-any
+async function pollInFlightBatches(admin: any, apiKey: string, cache: Map<string, DocCacheEntry>) {
+  const { data: distinct, error } = await admin
+    .from("translation_seed_queue")
+    .select("batch_job_name")
+    .eq("status", "batched")
+    .not("batch_job_name", "is", null);
+  if (error) throw error;
+  const jobNames = Array.from(new Set((distinct ?? []).map((r: any) => r.batch_job_name as string)));
+
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const jobName of jobNames) {
+    try {
+      const status = await pollBatch(jobName, apiKey);
+      if (status.state !== "JOB_STATE_SUCCEEDED") {
+        if (
+          status.state === "JOB_STATE_FAILED" ||
+          status.state === "JOB_STATE_CANCELLED" ||
+          status.state === "JOB_STATE_EXPIRED"
+        ) {
+          // Whole batch died — return all member rows to pending with exp-backoff.
+          const { data: members } = await admin
+            .from("translation_seed_queue")
+            .select("id, attempts")
+            .eq("batch_job_name", jobName);
+          for (const m of members ?? []) {
+            const attempts = (m.attempts ?? 0) + 1;
+            const exhausted = attempts >= MAX_ATTEMPTS;
+            const delay = expBackoffMs(attempts, ERROR_BASE_MS, ERROR_HARD_CAP_MS);
+            await admin.from("translation_seed_queue").update({
+              status: exhausted ? "failed" : "pending",
+              attempts,
+              started_at: null,
+              delayed_until: exhausted ? null : new Date(Date.now() + delay).toISOString(),
+              batch_job_name: null,
+              batch_index: null,
+              batch_submitted_at: null,
+              last_error: `batch ${status.state}: ${status.error?.message ?? ""}`.slice(0, 400),
+            }).eq("id", m.id);
+          }
+          results.push({ job: jobName, state: status.state, requeued: members?.length ?? 0 });
+        } else {
+          results.push({ job: jobName, state: status.state });
+        }
+        continue;
+      }
+
+      // SUCCEEDED — apply per-row results.
+      const inlined = status.inlinedResponses ?? [];
+      const { data: rows } = await admin
+        .from("translation_seed_queue")
+        .select("id, document_id, chunk_index, target_language, attempts, batch_index")
+        .eq("batch_job_name", jobName)
+        .order("batch_index", { ascending: true });
+
+      let okCount = 0, failCount = 0;
+      const inserts: Array<Record<string, unknown>> = [];
+      const doneIds: string[] = [];
+      const retryUpdates: Array<{ id: string; attempts: number; error: string }> = [];
+
+      for (const row of rows ?? []) {
+        const item = inlined[row.batch_index ?? -1];
+        if (!item || item.error) {
+          retryUpdates.push({
+            id: row.id,
+            attempts: (row.attempts ?? 0) + 1,
+            error: item?.error?.message ?? "missing batch slot",
+          });
+          failCount++;
+          continue;
+        }
+        try {
+          const docEntry = await loadDocEntry(admin, row.document_id, cache);
+          if (!docEntry || row.chunk_index >= docEntry.chunks.length) {
+            retryUpdates.push({ id: row.id, attempts: MAX_ATTEMPTS, error: "doc/chunk missing on poll" });
+            failCount++;
+            continue;
+          }
+          const preparedSource = preprocessForTranslation(docEntry.chunks[row.chunk_index]);
+          const currentHash = await sha256Hex(preparedSource);
+          const translated = extractText(item.response)
+            .replace(/^```[a-z]*\n?/i, "")
+            .replace(/```$/i, "")
+            .trim();
+          if (!translated) {
+            retryUpdates.push({ id: row.id, attempts: (row.attempts ?? 0) + 1, error: "empty translation" });
+            failCount++;
+            continue;
+          }
+          const leak = detectEnglishLeak(translated, row.target_language);
+          inserts.push({
+            document_id: row.document_id,
+            chunk_index: row.chunk_index,
+            source_language: docEntry.sourceLang,
+            target_language: row.target_language,
+            translated_text: translated,
+            char_count: translated.length,
+            source_text_hash: currentHash,
+            translation_version: CURRENT_TRANSLATION_VERSION,
+            english_leak_detected: leak.leaked,
+          });
+          doneIds.push(row.id);
+          okCount++;
+        } catch (e) {
+          retryUpdates.push({
+            id: row.id,
+            attempts: (row.attempts ?? 0) + 1,
+            error: e instanceof Error ? e.message : String(e),
+          });
+          failCount++;
+        }
+      }
+
+      if (inserts.length > 0) {
+        // Best-effort: ignore 23505 dupes.
+        const { error: insErr } = await admin.from("translation_assets").insert(inserts);
+        if (insErr && insErr.code !== "23505") {
+          console.warn(`[t-worker] insert assets failed: ${insErr.message}`);
+        }
+      }
+      if (doneIds.length > 0) {
+        await admin.from("translation_seed_queue").update({
+          status: "done",
+          completed_at: new Date().toISOString(),
+          last_error: null,
+        }).in("id", doneIds);
+      }
+      for (const r of retryUpdates) {
+        const exhausted = r.attempts >= MAX_ATTEMPTS;
+        const delay = expBackoffMs(r.attempts, ERROR_BASE_MS, ERROR_HARD_CAP_MS);
+        await admin.from("translation_seed_queue").update({
+          status: exhausted ? "failed" : "pending",
+          attempts: r.attempts,
+          started_at: null,
+          delayed_until: exhausted ? null : new Date(Date.now() + delay).toISOString(),
+          batch_job_name: null,
+          batch_index: null,
+          batch_submitted_at: null,
+          last_error: `batch row failed (${r.attempts}/${MAX_ATTEMPTS}): ${r.error}`.slice(0, 400),
+        }).eq("id", r.id);
+      }
+
+      // Doc-level done check for every doc touched.
+      const touchedDocIds = Array.from(new Set((rows ?? []).map((r: any) => r.document_id as string)));
+      for (const docId of touchedDocIds) {
+        const { count } = await admin.from("translation_seed_queue")
+          .select("id", { count: "exact", head: true })
+          .eq("document_id", docId)
+          .in("status", ["pending", "processing", "batched", "failed"]);
+        if (count === 0) {
+          await admin.from("documents").update({ translation_status: "done" }).eq("id", docId);
+        }
+      }
+
+      results.push({ job: jobName, state: status.state, ok: okCount, fail: failCount });
+    } catch (e) {
+      results.push({ job: jobName, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return { polled: results, inflight: jobNames.length };
+}
+
+// ─── SUBMIT PHASE ─────────────────────────────────────────────────────────────
+
+// deno-lint-ignore no-explicit-any
+async function submitNextBatch(admin: any, apiKey: string, cache: Map<string, DocCacheEntry>) {
   const nowIso = new Date().toISOString();
 
-  // Step 1: pick the document with the oldest pending row. This pins the worker
-  // to one book at a time, so it fully drains book A before touching book B
-  // (instead of round-robining chunk 0 across every queued book).
-  const { data: docPick, error: docPickErr } = await admin
+  // Pick the oldest doc with ready pending rows.
+  const { data: docPick } = await admin
     .from("translation_seed_queue")
-    .select("document_id, priority, created_at")
+    .select("document_id")
     .eq("status", "pending")
     .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
     .order("priority", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
-  if (docPickErr) throw docPickErr;
-  if (!docPick) return { result: "empty" as const, count: 0 };
+  if (!docPick) return { submitted: 0, reason: "no pending rows" };
 
-  // Step 2: within that document, pick the highest-priority lowest chunk_index / language.
-  const { data: row, error: pickErr } = await admin
+  // Claim up to MAX_REQUESTS_PER_BATCH for that doc.
+  const { data: candidates } = await admin
     .from("translation_seed_queue")
     .select("id, document_id, chunk_index, target_language, attempts")
     .eq("status", "pending")
     .eq("document_id", docPick.document_id)
     .or(`delayed_until.is.null,delayed_until.lte.${nowIso}`)
-    .order("priority", { ascending: false })
     .order("chunk_index", { ascending: true })
     .order("target_language", { ascending: true })
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (pickErr) throw pickErr;
-  if (!row) return { result: "empty" as const, count: 0 };
+    .limit(MAX_REQUESTS_PER_BATCH);
+  if (!candidates || candidates.length === 0) return { submitted: 0, reason: "no candidates" };
 
-  // Process only one language row per invocation. Google Gemini often applies
-  // strict per-minute quotas, so batching all languages for one chunk causes
-  // repeated 429s and makes the queue look stuck.
-  const batch = [row] as Array<typeof row>;
-  const ids = batch.map((b) => b.id);
+  const docEntry = await loadDocEntry(admin, docPick.document_id, cache);
+  if (!docEntry) {
+    // Mark all rows for this doc failed — no clean_text.
+    await admin.from("translation_seed_queue").update({
+      status: "failed", last_error: "doc missing clean_text",
+    }).eq("document_id", docPick.document_id).in("id", candidates.map((c: any) => c.id));
+    return { submitted: 0, reason: "no clean_text" };
+  }
 
-  // Atomically claim
+  // Build per-row request payload + skip invalid/out-of-range/cached.
+  type Pending = { row: typeof candidates[number]; sourceHash: string; preparedText: string };
+  const pendings: Pending[] = [];
+  const skipImmediate: string[] = []; // queue ids to mark done as "skipped"
+
+  // Pre-compute hashes and skip invalid/out-of-range rows.
+  for (const row of candidates) {
+    if (row.chunk_index >= docEntry.chunks.length) {
+      skipImmediate.push(row.id);
+      continue;
+    }
+    const sourceText = docEntry.chunks[row.chunk_index];
+    if (isInvalidChunk(sourceText)) {
+      skipImmediate.push(row.id);
+      continue;
+    }
+    const prepared = preprocessForTranslation(sourceText);
+    const hash = await sha256Hex(prepared);
+    pendings.push({ row, sourceHash: hash, preparedText: prepared });
+  }
+
+  if (skipImmediate.length > 0) {
+    await admin.from("translation_seed_queue").update({
+      status: "done",
+      completed_at: new Date().toISOString(),
+      last_error: "skipped: invalid/out-of-range",
+    }).in("id", skipImmediate);
+  }
+
+  if (pendings.length === 0) return { submitted: 0, reason: "all skipped" };
+
+  // Idempotency: skip rows already cached with matching hash + version + no leak.
+  const { data: existing } = await admin
+    .from("translation_assets")
+    .select("id, chunk_index, target_language, translated_text, source_text_hash, translation_version, english_leak_detected")
+    .eq("document_id", docPick.document_id)
+    .in("chunk_index", Array.from(new Set(pendings.map((p) => p.row.chunk_index))));
+
+  const cachedKey = new Set<string>();
+  const staleIds: string[] = [];
+  for (const e of existing ?? []) {
+    const dirty =
+      e.english_leak_detected === true ||
+      (e.translation_version ?? 1) < CURRENT_TRANSLATION_VERSION ||
+      detectEnglishLeak(e.translated_text ?? "", e.target_language).leaked;
+    // We can't compare hash without knowing the matching pending row's hash; do it inline:
+    const matching = pendings.find((p) => p.row.chunk_index === e.chunk_index && p.row.target_language === e.target_language);
+    if (matching && e.source_text_hash && e.source_text_hash !== matching.sourceHash) {
+      staleIds.push(e.id);
+      continue;
+    }
+    if (!dirty) cachedKey.add(`${e.chunk_index}:${e.target_language}`);
+  }
+  if (staleIds.length > 0) {
+    await admin.from("translation_assets").delete().in("id", staleIds);
+  }
+
+  const cachedRowIds = pendings
+    .filter((p) => cachedKey.has(`${p.row.chunk_index}:${p.row.target_language}`))
+    .map((p) => p.row.id);
+  if (cachedRowIds.length > 0) {
+    await admin.from("translation_seed_queue").update({
+      status: "done",
+      completed_at: new Date().toISOString(),
+      last_error: "cached",
+    }).in("id", cachedRowIds);
+  }
+
+  const todo = pendings.filter((p) => !cachedKey.has(`${p.row.chunk_index}:${p.row.target_language}`));
+  if (todo.length === 0) return { submitted: 0, reason: "all cached" };
+
+  // Build batch requests in deterministic order, then submit.
+  const requests: BatchRequestItem[] = todo.map((p) =>
+    buildRequest(p.preparedText, docEntry.sourceLang, p.row.target_language, docEntry.blueprint));
+
+  // Atomically claim TODO rows.
+  const claimedIds = todo.map((p) => p.row.id);
   const { data: claimed, error: claimErr } = await admin
     .from("translation_seed_queue")
     .update({ status: "processing", started_at: new Date().toISOString() })
-    .in("id", ids).eq("status", "pending")
-    .select("id, target_language, attempts");
+    .in("id", claimedIds)
+    .eq("status", "pending")
+    .select("id");
   if (claimErr) throw claimErr;
-  if (!claimed || claimed.length === 0) return { result: "empty" as const, count: 0 };
+  if (!claimed || claimed.length === 0) return { submitted: 0, reason: "claim race" };
 
-  const claimedRows = batch.filter((b) => claimed.some((c: any) => c.id === b.id));
-  const claimedIds = claimedRows.map((b) => b.id);
-
-  await admin.from("translation_worker_state").update({
-    current_queue_id: row.id,
-    current_document_id: row.document_id,
-    current_language: claimedRows.map((c) => c.target_language).join(","),
-    last_heartbeat: new Date().toISOString(),
-  }).eq("id", 1);
-
-  // Load doc + chunks + blueprint
-  let entry = cache.get(row.document_id);
-  if (!entry) {
-    const [{ data: doc, error: docErr }, { data: bp }] = await Promise.all([
-      admin.from("documents").select("id, title, clean_text, language").eq("id", row.document_id).maybeSingle(),
-      admin.from("translation_blueprints").select("blueprint_text").eq("document_id", row.document_id).maybeSingle(),
-    ]);
-    if (docErr) throw docErr;
-    if (!doc?.clean_text) {
-      await admin.from("translation_seed_queue").update({
-        status: "failed", last_error: "Document missing clean_text",
-      }).in("id", claimedIds);
-      return { result: "error" as const, count: 0, detail: "missing clean_text" };
-    }
-    entry = {
-      chunks: chunkText(doc.clean_text),
-      sourceLang: (doc.language ?? "en").toLowerCase(),
-      title: doc.title,
-      blueprint: bp?.blueprint_text ?? undefined,
-    };
-    cache.set(row.document_id, entry);
-    if (entry.blueprint) {
-      console.log(`[t-worker] loaded blueprint (${entry.blueprint.length} chars) for doc=${row.document_id}`);
-    } else {
-      console.warn(`[t-worker] no blueprint for doc=${row.document_id} — caching disabled, quality reduced`);
+  // Filter todo + requests to actually-claimed rows (in case of races).
+  const claimedSet = new Set(claimed.map((c: any) => c.id));
+  const finalTodo: typeof todo = [];
+  const finalRequests: BatchRequestItem[] = [];
+  for (let i = 0; i < todo.length; i++) {
+    if (claimedSet.has(todo[i].row.id)) {
+      finalTodo.push(todo[i]);
+      finalRequests.push(requests[i]);
     }
   }
+  if (finalTodo.length === 0) return { submitted: 0, reason: "no claims survived" };
 
-  if (row.chunk_index >= entry.chunks.length) {
-    await admin.from("translation_seed_queue").update({
-      status: "failed",
-      last_error: `chunk_index ${row.chunk_index} out of range (${entry.chunks.length})`,
-    }).in("id", claimedIds);
-    return { result: "error" as const, count: 0, detail: "out of range" };
-  }
-
-  const sourceText = entry.chunks[row.chunk_index];
-
-  // Skip junk fragments
-  if (isInvalidChunk(sourceText)) {
-    await admin.from("translation_seed_queue").update({
-      status: "done", completed_at: new Date().toISOString(),
-      last_error: "skipped: invalid chunk",
-    }).in("id", claimedIds);
-    return { result: "done" as const, count: claimedRows.length, detail: "invalid chunk skipped" };
-  }
-
-  // Compute hash of the preprocessed source up-front so cache validation matches generate-translation.
-  const preparedSource = preprocessForTranslation(sourceText);
-  const currentHash = await sha256Hex(preparedSource);
-
-  // Idempotency: only treat rows as "cached" if version + hash match AND no leak.
-  const { data: existing } = await admin
-    .from("translation_assets")
-    .select("id, target_language, translated_text, source_text_hash, translation_version, english_leak_detected")
-    .eq("document_id", row.document_id)
-    .eq("chunk_index", row.chunk_index)
-    .in("target_language", claimedRows.map((c) => c.target_language));
-
-  const validCachedLangs = new Set<string>();
-  const staleRowIds: string[] = [];
-  for (const e of existing ?? []) {
-    const ver = e.translation_version ?? 1;
-    const dirty =
-      e.english_leak_detected === true ||
-      ver < CURRENT_TRANSLATION_VERSION ||
-      (e.source_text_hash && e.source_text_hash !== currentHash) ||
-      detectEnglishLeak(e.translated_text ?? "", e.target_language).leaked;
-    if (dirty) {
-      staleRowIds.push(e.id);
-    } else {
-      validCachedLangs.add(e.target_language);
-    }
-  }
-  if (staleRowIds.length > 0) {
-    console.log(`[t-worker] deleting ${staleRowIds.length} stale translation_assets for doc=${row.document_id} chunk=${row.chunk_index}`);
-    await admin.from("translation_assets").delete().in("id", staleRowIds);
-  }
-
-  const cachedRows = claimedRows.filter((c) => validCachedLangs.has(c.target_language));
-  const todoRows = claimedRows.filter((c) => !validCachedLangs.has(c.target_language));
-
-  if (cachedRows.length > 0) {
-    await admin.from("translation_seed_queue").update({
-      status: "done", completed_at: new Date().toISOString(),
-      last_error: "cached",
-    }).in("id", cachedRows.map((c) => c.id));
-  }
-
-  if (todoRows.length === 0) {
-    return { result: "done" as const, count: cachedRows.length, detail: "all cached" };
-  }
-
+  let jobName: string;
   try {
-    const targetLangs = todoRows.map((c) => c.target_language);
-    const translations = await translateMulti(
-      preparedSource,
-      entry.sourceLang,
-      targetLangs,
-      admin,
-      row.document_id,
-      entry.blueprint,
-    );
-
-    const inserts = todoRows
-      .map((c) => {
-        const t = translations[c.target_language];
-        if (!t) return null;
-        const leak = detectEnglishLeak(t, c.target_language);
-        return {
-          document_id: c.document_id,
-          chunk_index: c.chunk_index,
-          source_language: entry!.sourceLang,
-          target_language: c.target_language,
-          translated_text: t,
-          char_count: t.length,
-          source_text_hash: currentHash,
-          translation_version: CURRENT_TRANSLATION_VERSION,
-          english_leak_detected: leak.leaked,
-        };
-      })
-      .filter(Boolean);
-
-    if (inserts.length > 0) {
-      const { error: insErr } = await admin.from("translation_assets").insert(inserts);
-      if (insErr && insErr.code !== "23505") {
-        throw new Error(`Insert translation_assets: ${insErr.message}`);
-      }
-    }
-
-    await admin.from("translation_seed_queue").update({
-      status: "done", completed_at: new Date().toISOString(), last_error: null,
-    }).in("id", todoRows.map((c) => c.id));
-
-    // Mark doc done if no outstanding
-    const { count: pendingForDoc } = await admin.from("translation_seed_queue")
-      .select("id", { count: "exact", head: true })
-      .eq("document_id", row.document_id)
-      .in("status", ["pending", "processing", "failed"]);
-    if (pendingForDoc === 0) {
-      await admin.from("documents").update({
-        translation_status: "done",
-      }).eq("id", row.document_id);
-    }
-
-    console.log(`[t-worker] ✓ doc=${row.document_id} chunk=${row.chunk_index} langs=${targetLangs.join(",")}`);
-    return { result: "done" as const, count: cachedRows.length + todoRows.length };
+    const submitted = await submitBatch(MODEL, finalRequests, apiKey, `translations-${docPick.document_id.slice(0, 8)}-${Date.now()}`);
+    jobName = submitted.name;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-
-    const retryAfterMs = (e as { retryAfterMs?: number })?.retryAfterMs;
-    const isProviderRateLimit = e instanceof TranslationRateLimitError || /^All translation providers are rate-limited:/i.test(msg);
-
-    if (!isProviderRateLimit && (e instanceof TranslationCreditsExhaustedError || /credits exhausted|\b402\b/i.test(msg))) {
-      const delayedUntil = new Date(Date.now() + CREDIT_EXHAUSTED_DELAY_MS).toISOString();
-      await admin.from("translation_seed_queue").update({
-        status: "pending",
-        started_at: null,
-        delayed_until: delayedUntil,
-        last_error: `credits-exhausted (paused 30m, attempts preserved): ${msg}`,
-      }).in("id", todoRows.map((c) => c.id));
-      await admin.from("translation_worker_state").update({
-        is_running: false,
-        last_error: `Paused: ${msg}`,
-        last_heartbeat: null,
-      }).eq("id", 1);
-      return { result: "credit_exhausted" as const, count: 0, detail: msg };
-    }
-
-    if (isProviderRateLimit || retryAfterMs !== undefined || /rate.?limit|429/i.test(msg)) {
-      // Per-row exponential back-off; honour Retry-After as a floor.
-      for (const c of todoRows) {
-        const attempts = (c.attempts ?? 0) + 1;
-        const exhausted = false;
-        const expDelay = expBackoffMs(attempts, RATE_LIMIT_BASE_MS, RATE_LIMIT_DELAY_HARD_CAP_MS);
-        const delayMs = Math.max(retryAfterMs ?? 0, expDelay);
-        await admin.from("translation_seed_queue").update({
-          status: exhausted ? "failed" : "pending",
-          started_at: null, attempts,
-          delayed_until: exhausted ? null : new Date(Date.now() + delayMs).toISOString(),
-          last_error: `rate-limited (${attempts}/${MAX_ATTEMPTS}, retry in ${Math.round(delayMs / 1000)}s): ${msg}`,
-        }).eq("id", c.id);
-      }
-      return { result: "rate_limited" as const, count: 0, detail: msg };
-    }
-
-    for (const c of todoRows) {
-      const attempts = (c.attempts ?? 0) + 1;
-      const exhausted = attempts >= MAX_ATTEMPTS;
-      const delayMs = expBackoffMs(attempts, ERROR_BASE_MS, ERROR_HARD_CAP_MS);
-      await admin.from("translation_seed_queue").update({
-        status: exhausted ? "failed" : "pending",
-        started_at: null, attempts,
-        delayed_until: exhausted ? null : new Date(Date.now() + delayMs).toISOString(),
-        last_error: `error (${attempts}/${MAX_ATTEMPTS}, retry in ${Math.round(delayMs / 1000)}s): ${msg}`,
-      }).eq("id", c.id);
-    }
-    return { result: "error" as const, count: 0, detail: msg };
+    // Submit failed — return rows to pending with backoff.
+    await admin.from("translation_seed_queue").update({
+      status: "pending",
+      started_at: null,
+      delayed_until: new Date(Date.now() + 60_000).toISOString(),
+      last_error: `batch submit failed: ${msg.slice(0, 300)}`,
+    }).in("id", Array.from(claimedSet));
+    throw e;
   }
+
+  // Mark rows 'batched' with their slot index.
+  for (let i = 0; i < finalTodo.length; i++) {
+    await admin.from("translation_seed_queue").update({
+      status: "batched",
+      batch_job_name: jobName,
+      batch_index: i,
+      batch_submitted_at: new Date().toISOString(),
+      last_error: null,
+    }).eq("id", finalTodo[i].row.id);
+  }
+
+  console.log(`[t-worker] submitted batch ${jobName} doc=${docPick.document_id} rows=${finalTodo.length}`);
+  return {
+    submitted: finalTodo.length,
+    batch_job_name: jobName,
+    document_id: docPick.document_id,
+    cached: cachedRowIds.length,
+    skipped: skipImmediate.length,
+  };
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  const startedAt = Date.now();
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const hasTranslationProvider = Boolean(
-      Deno.env.get("Gemini_Secret_Key") ||
-      Deno.env.get("LOVABLE_API_KEY") ||
-      Deno.env.get("Azure_Secret_Key_Translator"),
-    );
-    if (!hasTranslationProvider) {
-      throw new Error("No translation provider is configured");
-    }
+    const GEMINI_KEY = Deno.env.get("Gemini_Secret_Key");
+    if (!GEMINI_KEY) throw new Error("Gemini_Secret_Key not configured (required for Batch API)");
 
-    // Auth: allow either an admin user JWT OR a cron/internal call (any valid JWT
-    // — anon or service role — is fine since this is a non-destructive worker
-    // that only drains a queue and writes to admin-only tables via service role).
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
     const { data: state } = await admin.from("translation_worker_state").select("*").eq("id", 1).maybeSingle();
     if (!state?.is_running) {
-      return new Response(JSON.stringify({ ok: true, status: "paused", processed: 0 }), {
+      return new Response(JSON.stringify({ ok: true, status: "paused" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Atomic lock + cooldown: prevents concurrent browser/cron pings from
-    // running multiple Gemini calls and exhausting the per-minute quota.
-    const lockCutoff = new Date(Date.now() - LOCK_TIMEOUT_MS).toISOString();
-    const { data: lockRows, error: lockErr } = await admin
-      .from("translation_worker_state")
-      .update({ last_heartbeat: new Date().toISOString() })
-      .eq("id", 1)
-      .eq("is_running", true)
-      .or(`last_heartbeat.is.null,last_heartbeat.lt.${lockCutoff}`)
-      .select("*");
-    if (lockErr) throw lockErr;
-    const lockedState = lockRows?.[0];
-    if (!lockedState) {
-      return new Response(JSON.stringify({
-        ok: true, status: "cooldown_or_active", processed: 0,
-        last_heartbeat: state.last_heartbeat,
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    const cache = new Map<string, DocCacheEntry>();
-    let processed = 0;
-    let stop = false;
-    while (!stop && processed < MAX_CHUNKS_PER_INVOCATION) {
-      if (Date.now() - startedAt > HARD_DEADLINE_MS) break;
-      // Run PARALLEL_WORKERS processOne calls concurrently for throughput.
-      const batchSize = Math.min(PARALLEL_WORKERS, MAX_CHUNKS_PER_INVOCATION - processed);
-      const results = await Promise.all(
-        Array.from({ length: batchSize }, () => processOne(admin, "", cache).catch((e) => ({
-          result: "error" as const, count: 0, detail: e instanceof Error ? e.message : String(e),
-        }))),
-      );
-      let anyEmpty = false;
-      let anyHalt = false;
-      for (const r of results) {
-        if (r.result === "empty") { anyEmpty = true; continue; }
-        if (r.result === "done") processed += r.count ?? 1;
-        if (r.result === "credit_exhausted") anyHalt = true;
-      }
-      if (anyHalt) { stop = true; break; }
-      await admin.from("translation_worker_state").update({
-        last_heartbeat: new Date().toISOString(),
-        total_processed: (lockedState.total_processed ?? 0) + processed,
-      }).eq("id", 1);
-      if (anyEmpty) {
-        const remaining = HARD_DEADLINE_MS - (Date.now() - startedAt);
-        if (remaining < 2_000) { stop = true; break; }
-        const { data: nextDelayed } = await admin
-          .from("translation_seed_queue")
-          .select("delayed_until")
-          .eq("status", "pending")
-          .not("delayed_until", "is", null)
-          .order("delayed_until", { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        if (!nextDelayed?.delayed_until) { stop = true; break; }
-        const waitMs = Math.max(
-          0,
-          Math.min(MAX_INLINE_WAIT_MS, remaining - 2_000,
-            new Date(nextDelayed.delayed_until).getTime() - Date.now()),
-        );
-        if (waitMs > MAX_INLINE_WAIT_MS) { stop = true; break; }
-        if (waitMs > 0) await sleep(waitMs);
-        continue;
-      }
-      if (INTER_CHUNK_DELAY_MS > 0) await sleep(INTER_CHUNK_DELAY_MS);
-    }
-
-    // Release the soft lock when this invocation exits cleanly. If the
-    // function crashes, the heartbeat remains and LOCK_TIMEOUT_MS still lets a
-    // later cron tick recover after it goes stale.
     await admin.from("translation_worker_state").update({
-      current_queue_id: null,
-      current_document_id: null,
-      current_language: null,
-      last_heartbeat: new Date(Date.now() - LOCK_TIMEOUT_MS + MIN_WORKER_INTERVAL_MS).toISOString(),
+      last_heartbeat: new Date().toISOString(),
+      last_error: null,
     }).eq("id", 1);
 
-    return new Response(JSON.stringify({ ok: true, processed, ms: Date.now() - startedAt }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const cache = new Map<string, DocCacheEntry>();
+
+    // 1) Poll any in-flight batches.
+    const pollOut = await pollInFlightBatches(admin, GEMINI_KEY, cache);
+
+    // 2) Submit fresh batches up to the in-flight cap.
+    const submissions: Array<Record<string, unknown>> = [];
+    let inflightCount = pollOut.inflight;
+    while (inflightCount < MAX_INFLIGHT_BATCHES) {
+      const sub = await submitNextBatch(admin, GEMINI_KEY, cache);
+      submissions.push(sub);
+      if ((sub.submitted as number) === 0) break;
+      inflightCount++;
+    }
+
+    return new Response(JSON.stringify({
+      ok: true,
+      mode: "batch",
+      poll: pollOut.polled,
+      submit: submissions,
+    }, null, 2), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error("[seed-translation-worker]", msg);
-    return new Response(JSON.stringify({ error: msg }), {
+    console.error("[t-worker]", msg);
+    try {
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      await admin.from("translation_worker_state").update({
+        last_error: msg, last_heartbeat: null,
+      }).eq("id", 1);
+    } catch { /* ignore */ }
+    return new Response(JSON.stringify({ ok: false, error: msg }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
