@@ -823,11 +823,33 @@ Deno.serve(async (req) => {
         .eq("document_id", doc!.id)
         .eq("chunk_index", chunk_index)
         .eq("target_language", lang)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (tr?.translated_text) return tr.translated_text;
-      // No cache — do NOT silently invoke generate-translation here, that
-      // would charge the user credits without confirmation. Fall back to the
-      // source text; the TranslationSection handles explicit unlock.
+      // No cache — only auto-invoke generate-translation when the user has
+      // ALREADY paid for this chunk (replay, no new charge). Otherwise fall
+      // back to source text; TranslationSection handles explicit unlock.
+      const { data: paid } = await admin
+        .from("user_translation_access")
+        .select("id")
+        .eq("user_id", authedUserId)
+        .eq("document_id", doc!.id)
+        .eq("chunk_index", chunk_index)
+        .eq("target_language", lang)
+        .maybeSingle();
+      if (!paid) return chunks[chunk_index];
+      try {
+        const { data: gen } = await admin.functions.invoke("generate-translation", {
+          body: { lesson_id, chunk_index, target_language: lang },
+          headers: authHeader ? { Authorization: authHeader } : undefined,
+        });
+        if (gen?.success && typeof gen.translated_text === "string" && gen.translated_text) {
+          return gen.translated_text;
+        }
+      } catch (e) {
+        console.warn("[audio] resolveDisplayText fallback invoke failed:", e instanceof Error ? e.message : String(e));
+      }
       return chunks[chunk_index];
     }
 
