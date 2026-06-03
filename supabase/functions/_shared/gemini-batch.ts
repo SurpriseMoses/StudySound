@@ -84,10 +84,15 @@ export async function pollBatch(name: string, apiKey: string): Promise<BatchStat
   }
   const json = JSON.parse(text);
   // Shape: { name, metadata: { state, ... }, done, response: { inlinedResponses: { inlinedResponses: [...] } }, error }
+  // NOTE: Gemini Batch API returns states prefixed with BATCH_STATE_ (not JOB_STATE_).
+  // Normalize both prefixes to JOB_STATE_* for consistent downstream handling.
   const meta = json?.metadata ?? {};
-  const state: BatchState = (meta?.state ?? json?.response?.metadata?.state ?? "JOB_STATE_UNSPECIFIED") as BatchState;
+  const rawState: string = (meta?.state ?? json?.response?.metadata?.state ?? "JOB_STATE_UNSPECIFIED") as string;
+  const state: BatchState = rawState.replace(/^BATCH_STATE_/, "JOB_STATE_") as BatchState;
   const inlined = json?.response?.inlinedResponses?.inlinedResponses
     ?? json?.response?.inlinedResponses
+    ?? json?.response?.responses?.responses
+    ?? json?.response?.responses
     ?? undefined;
   return {
     name,
