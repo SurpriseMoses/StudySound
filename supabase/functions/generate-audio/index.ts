@@ -19,7 +19,7 @@ const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "nso", "tn"]);
 
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
-const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "tn", "fr"]);
+const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "tn", "ts", "fr"]);
 
 // =========================================================================
 // VOICE ROUTING
