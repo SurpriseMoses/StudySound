@@ -1246,6 +1246,18 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+    if (/quota_exceeded/i.test(msg) || /ElevenLabs 401/i.test(msg)) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          audio_unavailable: true,
+          fallback: false,
+          code: "PROVIDER_QUOTA_EXCEEDED",
+          error: "Audio narration is temporarily unavailable for this language. Please try a different language or check back soon.",
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     return new Response(JSON.stringify({ error: msg, fallback: false }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
