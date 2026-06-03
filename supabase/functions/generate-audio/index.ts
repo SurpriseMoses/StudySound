@@ -19,7 +19,7 @@ const AZURE_LANGS = new Set(["zu", "af", "xh", "en", "fr", "nso", "tn"]);
 
 const ELEVEN_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
-const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "tn", "fr"]);
+const TRANSLATABLE_LANGS = new Set(["en", "af", "zu", "xh", "nso", "tn", "ts", "fr"]);
 
 // =========================================================================
 // VOICE ROUTING
@@ -825,31 +825,10 @@ Deno.serve(async (req) => {
         .eq("target_language", lang)
         .maybeSingle();
       if (tr?.translated_text) return tr.translated_text;
-      // Otherwise generate (also caches it for the audio step below).
-      const { data: trData, error: trErr } = await admin.functions.invoke("generate-translation", {
-        body: { lesson_id, chunk_index, target_language: lang },
-        headers: { Authorization: authHeader },
-      });
-      if (trErr || !trData?.translated_text) {
-        const describedError = trErr ? await describeError(trErr) : null;
-        const details =
-          (typeof trData?.error === "string" && trData.error) ||
-          describedError?.message ||
-          `Translation unavailable for ${lang}`;
-        const shouldFallback =
-          trData?.fallback === true ||
-          describedError?.fallback === true ||
-          describedError?.status === 429 ||
-          (describedError?.status ?? 0) >= 500 ||
-          isUnsupportedTranslationError(details) ||
-          describedError?.code === "TRANSLATION_UNSUPPORTED";
-        console.error(`[audio] translation failed for ${lang} chunk ${chunk_index}: ${details}`);
-        if (shouldFallback) {
-          return chunks[chunk_index];
-        }
-        throw new Error(details);
-      }
-      return trData.translated_text;
+      // No cache — do NOT silently invoke generate-translation here, that
+      // would charge the user credits without confirmation. Fall back to the
+      // source text; the TranslationSection handles explicit unlock.
+      return chunks[chunk_index];
     }
 
     // Lightweight per-chunk status check — no charge, no generation.
