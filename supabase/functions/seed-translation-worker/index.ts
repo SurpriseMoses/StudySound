@@ -309,7 +309,7 @@ async function pollInFlightBatches(admin: any, apiKey: string, cache: Map<string
       results.push({ job: jobName, error: e instanceof Error ? e.message : String(e) });
     }
   }
-  return { polled: results, inflight: jobNames.length };
+  return { polled: results, inflight: liveInflightCount };
 }
 
 // ─── SUBMIT PHASE ─────────────────────────────────────────────────────────────
