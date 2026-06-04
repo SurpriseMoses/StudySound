@@ -20,7 +20,7 @@ type SeedDoc = {
   char_count: number;
   seed_translation: boolean;
   translation_status: "pending" | "processing" | "done" | "failed";
-  queue_counts: { pending: number; processing: number; done: number; failed: number };
+  queue_counts: { pending: number; processing: number; batched: number; done: number; failed: number };
   cached_per_lang: Record<string, number>;
   total_chunks_est: number;
 };
