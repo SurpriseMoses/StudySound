@@ -39,7 +39,7 @@ const HARD_MIN = 400;
 
 // One batch holds at most this many requests across at most this many docs.
 const MAX_REQUESTS_PER_BATCH = 200;
-const MAX_INFLIGHT_BATCHES = 2;
+const MAX_INFLIGHT_BATCHES = 8;
 const MAX_ATTEMPTS = 6;
 
 // Row-level error back-off.
