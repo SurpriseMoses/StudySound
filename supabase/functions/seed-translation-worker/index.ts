@@ -136,39 +136,64 @@ async function pollInFlightBatches(admin: any, apiKey: string, cache: Map<string
 
   const results: Array<Record<string, unknown>> = [];
 
+  // Stale-batch reclaim: any batch older than ~26h that's still PENDING/RUNNING
+  // is considered abandoned (Gemini's SLA is 24h). Requeue its rows so the
+  // inflight cap doesn't block forever.
+  const STALE_BATCH_MS = 26 * 60 * 60 * 1000;
+  let liveInflightCount = 0;
+
   for (const jobName of jobNames) {
     try {
       const status = await pollBatch(jobName, apiKey);
-      if (status.state !== "JOB_STATE_SUCCEEDED") {
-        if (
-          status.state === "JOB_STATE_FAILED" ||
-          status.state === "JOB_STATE_CANCELLED" ||
-          status.state === "JOB_STATE_EXPIRED"
-        ) {
-          // Whole batch died — return all member rows to pending with exp-backoff.
-          const { data: members } = await admin
-            .from("translation_seed_queue")
-            .select("id, attempts")
-            .eq("batch_job_name", jobName);
-          for (const m of members ?? []) {
-            const attempts = (m.attempts ?? 0) + 1;
-            const exhausted = attempts >= MAX_ATTEMPTS;
-            const delay = expBackoffMs(attempts, ERROR_BASE_MS, ERROR_HARD_CAP_MS);
-            await admin.from("translation_seed_queue").update({
-              status: exhausted ? "failed" : "pending",
-              attempts,
-              started_at: null,
-              delayed_until: exhausted ? null : new Date(Date.now() + delay).toISOString(),
-              batch_job_name: null,
-              batch_index: null,
-              batch_submitted_at: null,
-              last_error: `batch ${status.state}: ${status.error?.message ?? ""}`.slice(0, 400),
-            }).eq("id", m.id);
-          }
-          results.push({ job: jobName, state: status.state, requeued: members?.length ?? 0 });
-        } else {
-          results.push({ job: jobName, state: status.state });
+      const isTerminalFail =
+        status.state === "JOB_STATE_FAILED" ||
+        status.state === "JOB_STATE_CANCELLED" ||
+        status.state === "JOB_STATE_EXPIRED";
+
+      let stale = false;
+      if (!isTerminalFail && status.state !== "JOB_STATE_SUCCEEDED") {
+        const { data: oldestRow } = await admin
+          .from("translation_seed_queue")
+          .select("batch_submitted_at")
+          .eq("batch_job_name", jobName)
+          .order("batch_submitted_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (oldestRow?.batch_submitted_at) {
+          const age = Date.now() - new Date(oldestRow.batch_submitted_at).getTime();
+          stale = age > STALE_BATCH_MS;
         }
+      }
+
+      if (isTerminalFail || stale) {
+        const { data: members } = await admin
+          .from("translation_seed_queue")
+          .select("id, attempts")
+          .eq("batch_job_name", jobName);
+        for (const m of members ?? []) {
+          const attempts = (m.attempts ?? 0) + 1;
+          const exhausted = attempts >= MAX_ATTEMPTS;
+          const delay = expBackoffMs(attempts, ERROR_BASE_MS, ERROR_HARD_CAP_MS);
+          await admin.from("translation_seed_queue").update({
+            status: exhausted ? "failed" : "pending",
+            attempts,
+            started_at: null,
+            delayed_until: exhausted ? null : new Date(Date.now() + delay).toISOString(),
+            batch_job_name: null,
+            batch_index: null,
+            batch_submitted_at: null,
+            last_error: stale
+              ? `batch stale (>26h ${status.state}); requeued`
+              : `batch ${status.state}: ${status.error?.message ?? ""}`.slice(0, 400),
+          }).eq("id", m.id);
+        }
+        results.push({ job: jobName, state: status.state, requeued: members?.length ?? 0, stale });
+        continue;
+      }
+
+      if (status.state !== "JOB_STATE_SUCCEEDED") {
+        liveInflightCount++;
+        results.push({ job: jobName, state: status.state });
         continue;
       }
 
