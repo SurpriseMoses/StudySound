@@ -1,58 +1,63 @@
 ## Goal
 
-Move three text/prompt seeding flows to the **Gemini Batch API** (50% cheaper, no per-minute caps), and pause the audio/TTS seed worker so it stops burning Tier-1 quota.
+Use the uploaded `studysound_translation_pipeline_fix` spec as the source of truth and bring the seed translation pipeline fully in line with it. The recent issues (stuck %, "done" while still 76–77%, languages dropping out of the UI) are all symptoms of the same root cause the spec calls out: **we sometimes treat "translation row exists" as "done" instead of using `status + hash + version`**.
 
-### Scope
-1. `seed-translation-worker` → batch translations of all chunks × 6 languages.
-2. `generate-translation-blueprints` → batch blueprint generation per book.
-3. `generate-visual-prompts` → batch visual-prompt generation, with a hardened "Visual Bible" character-consistency prompt.
-4. `seed-queue-worker` (audio) → paused (early exit + worker flag off).
+Most of the spec is already implemented (hashing, `CURRENT_TRANSLATION_VERSION`, English-leak detection, preprocessing, batch tracking, blueprint caching). This plan closes the remaining gaps.
 
-### How Gemini Batch API works (used in all 3 functions)
-- Submit: `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:batchGenerateContent?key=…` with `{requests:[{request:{contents,…}}, …]}`. Returns an operation name like `batches/abc-123`.
-- Poll: `GET https://generativelanguage.googleapis.com/v1beta/{operation_name}?key=…`. Returns `metadata.state` ∈ `JOB_STATE_PENDING|RUNNING|SUCCEEDED|FAILED|CANCELLED`. When `SUCCEEDED`, `response.inlinedResponses[i]` aligns with submitted `requests[i]`.
-- Pricing: 50% of standard generateContent. SLA: ≤24h, usually minutes for small jobs.
-- Each function will: (a) on tick — poll any in-flight batch and persist results; (b) if no in-flight batch — submit a new one from pending work.
+## Scope of changes
 
----
+### 1. State model — make `status` authoritative
+- `translation_seed_queue.status` stays the single source of truth per (chunk × language). No code path may infer completion from row existence alone.
+- Add an explicit `stale` status path: when `source_text_hash` or `translation_version` no longer matches, the row is flipped to `stale` and re-queued instead of silently reused.
 
-### 1. Schema migration (one migration)
-- `translation_seed_queue`: add `batch_job_name text`, `batch_index int`, `batch_submitted_at timestamptz`. New status value `batched`.
-- `translation_blueprints`: add `batch_job_name text`, `batch_submitted_at timestamptz`, `batch_status text` (for in-flight blueprint generation).
-- New table `visual_prompts_batch_jobs(document_id uuid pk, batch_job_name text, submitted_at timestamptz, status text, last_error text)` — visuals don't have a queue table, so store one in-flight job per book here.
-- Standard GRANTs + admin-only RLS on the new table.
+### 2. Doc-level completion (fix "Great Expectations says done at 77%")
+- The trigger fix from last turn (`pending|processing|failed|batched` all count as outstanding) stays.
+- Add a second guard in `seed-translation-worker`: before any `documents.translation_status='done'` write, re-check the queue counts in the same statement (`WHERE NOT EXISTS (... outstanding ...)`). No "optimistic done".
+- Backfill: re-open any doc currently marked `done` that still has outstanding rows.
 
-### 2. `seed-translation-worker` refactor
-Each tick:
-1. **Poll phase** — find distinct `batch_job_name` from rows where `status='batched'`. For each job: GET status.
-   - `SUCCEEDED` → for each `inlinedResponses[i]`, find the queue row by `(batch_job_name, batch_index)`, run `detectEnglishLeak`, insert into `translation_assets`, mark row `done`. Row-level errors → back to `pending` with attempts++ and exp-backoff.
-   - `RUNNING/PENDING` → leave as-is.
-   - `FAILED/CANCELLED` → mark all member rows `pending` with last_error.
-2. **Submit phase** — if fewer than N (e.g. 2) in-flight jobs, claim up to ~200 pending rows for the oldest doc, build one batch request per row (system = base prompt + per-book blueprint; user = source chunk text), POST batch, write back `batch_job_name`, `batch_index`, `status='batched'`.
+### 3. Progress calculation (fix stuck %)
+- `AdminSeedTranslations` reads progress as `completed / total` per language directly from `translation_seed_queue` (no cached aggregate). Confirm the query already does this; if it falls back to `translation_assets` counts anywhere, switch it to the queue.
+- "Processing now" badge: keep the `current_document_id` write added last turn, plus also clear it when the doc flips to `done`.
 
-Keeps existing per-row idempotency check (skip rows already cached with matching hash + version). Removes the per-language sleep & per-chunk retry loop (the batch absorbs that).
+### 4. Gemini batch result mapping (fix silent partials)
+- In `seed-translation-worker` batch-drain path: for every returned result, require a `chunk_id` match. Unmapped/empty results → mark row `failed` with `last_error='batch_unmapped'` and increment `attempts`, instead of leaving it `batched` forever (which is what made counts hang).
+- After draining a batch, assert `completed + failed == batch_size`; if not, log + re-queue the missing chunk_ids.
 
-### 3. `generate-translation-blueprints` refactor
-- On call, build a batch of N blueprint requests (one per qualifying doc), POST batch, store `batch_job_name` on each `translation_blueprints` row with `batch_status='running'`.
-- Add a `?poll=true` mode (and call from cron) that polls outstanding `batch_status='running'` rows, writes `blueprint_text` + invalidates `gemini_context_caches` on success.
+### 5. Cache validation on read
+- `generate-translation` (on-demand) and the seed worker both check: `status='completed' AND source_text_hash = <new hash> AND translation_version = CURRENT_TRANSLATION_VERSION`. Anything else → recompute. Confirm both paths; tighten the seed worker which currently shortcuts on row presence in one branch.
 
-### 4. `generate-visual-prompts` refactor — Visual Bible
-- Replace the system prompt with a two-part deliverable: model must return `{ character_bible: [{name, physical_description, attire, distinguishing_marks}], scenes: [10–12 entries each referencing only character names from `character_bible`] }`. The `leonardo_prompt` for each scene is constructed server-side as `"<scene action with [Character Name]>. CHARACTERS: <full bible descriptions for every character mentioned in this scene>. <style keywords>"` — so character descriptions are byte-identical across scenes, guaranteeing consistency.
-- Submit one batch covering all qualifying docs; persist `batch_job_name` to `visual_prompts_batch_jobs`. Add `?poll=true` to drain; on success, write to `translation_blueprints.visual_prompts` exactly as today (downstream `unlock-scene` etc. unchanged).
+### 6. English-leak handling
+- Already implemented in `translation-pipeline.ts`. Add: when leak is detected during batch result handling, mark `failed` (not `completed`), so the retry loop picks it up. Today some batched results bypass the leak check.
 
-### 5. Audio seeding pause
-- `seed-queue-worker`: at top of handler, if `Deno.env.get('AUDIO_SEEDING_PAUSED') !== 'false'` (defaults to paused) → flip `seed_worker_state.is_running=false` and return `{ok:true, paused:true}`. No batch claims, no Gemini calls, no Azure calls.
-- One-time DB update: `update seed_worker_state set is_running=false` (via insert tool, not migration).
-- Admin UI's start button on `AdminSeedAudio` still works once we set the env var to `false` later (no code change needed to resume).
+### 7. Job control
+- `seed-translation-manager` already prevents duplicate runs via `translation_worker_state.is_running`. Add: per-document/per-language guard so a manual "translate this book" can't double-queue rows that are already `pending|processing|batched`.
 
-### 6. Cron
-- Reuse existing `seed-translation-worker` cron tick — now also polls. Frequency stays.
-- Add a new cron (every 2 min) hitting `generate-translation-blueprints?poll=true` and `generate-visual-prompts?poll=true` so submitted batches drain without manual prompting. Done via `supabase--insert` (cron schema), not a migration.
+### 8. UI subscriptions
+- `AdminSeedTranslations` already polls. Switch the per-language progress tiles to read directly from `translation_seed_queue` aggregates (it mostly does — verify Afrikaans/Xhosa/Zulu tiles aren't reading a stale `translation_assets` count, which is the most likely cause of "no translation showing when toggling languages").
 
-### Out of scope
-- Live (user-triggered) translation/quiz/visual unlock endpoints — they must stay synchronous.
-- ElevenLabs / Tier-2 upgrade for audio — deferred per user.
-- No DB schema migration that touches `auth`/`storage`/`realtime`.
+### 9. Backfill / cleanup migration
+One migration to:
+- Reset rows stuck in `batched` for >2h with no `batch_job_id` resolution → back to `pending`.
+- Reopen documents wrongly marked `done` while outstanding rows exist.
+- Mark rows whose `source_text_hash` ≠ current chunk hash as `stale` then `pending`.
 
-### Verification
-After ship: trigger blueprint batch on 1 doc → poll → confirm blueprint written. Then trigger translation worker on a small backlog → confirm `batched` rows transition to `done` with non-leaked translations. Then trigger visuals → confirm 10-12 prompts with identical character descriptions across scenes. Confirm audio worker returns `paused:true`.
+## Files touched
+- `supabase/functions/seed-translation-worker/index.ts` — batch result mapping, doc-done guard, leak-on-batch, stale detection.
+- `supabase/functions/seed-translation-manager/index.ts` — per-doc/lang dedupe.
+- `supabase/functions/generate-translation/index.ts` — strict cache validation.
+- `src/pages/admin/AdminSeedTranslations.tsx` — ensure all per-language tiles read from `translation_seed_queue`.
+- One new migration for backfill + the `tsq_maybe_mark_doc_done` tightening.
+
+## Out of scope
+- Re-architecting the audio/TTS pipeline (spec mentions it but only as downstream consumer).
+- Changing the UI design of the admin page beyond the data source it reads from.
+- Changing chunking logic — `clean_text → chunks` stays as-is.
+
+## Validation
+After deploy:
+1. Pick a doc currently at 77% Afrikaans → confirm queue counts match UI %.
+2. Force a chunk's `clean_text` to change → confirm its translations flip to `stale` and re-translate.
+3. Submit a Gemini batch and kill one result → confirm the missing chunk becomes `failed` then retries, not stuck `batched`.
+4. Confirm `documents.translation_status='done'` only appears when `SELECT COUNT(*) FROM translation_seed_queue WHERE document_id=X AND status<>'completed'` returns 0.
+
+Approve and I'll implement in the order above (migration first, then worker, then manager, then UI verification).
