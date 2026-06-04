@@ -240,6 +240,15 @@ async function pollInFlightBatches(admin: any, apiKey: string, cache: Map<string
             continue;
           }
           const leak = detectEnglishLeak(translated, row.target_language);
+          if (leak.leaked) {
+            retryUpdates.push({
+              id: row.id,
+              attempts: (row.attempts ?? 0) + 1,
+              error: `english leak (${leak.reason ?? "ratio"}: ${leak.englishRatio.toFixed(2)})`,
+            });
+            failCount++;
+            continue;
+          }
           inserts.push({
             document_id: row.document_id,
             chunk_index: row.chunk_index,
@@ -249,7 +258,7 @@ async function pollInFlightBatches(admin: any, apiKey: string, cache: Map<string
             char_count: translated.length,
             source_text_hash: currentHash,
             translation_version: CURRENT_TRANSLATION_VERSION,
-            english_leak_detected: leak.leaked,
+            english_leak_detected: false,
           });
           doneIds.push(row.id);
           okCount++;
