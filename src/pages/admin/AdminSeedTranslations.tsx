@@ -178,7 +178,7 @@ export default function AdminSeedTranslations() {
         char_count: d.char_count,
         seed_translation: !!d.seed_translation,
         translation_status: (d.translation_status ?? "pending") as SeedDoc["translation_status"],
-        queue_counts: queueByDoc.get(d.id) ?? { pending: 0, processing: 0, done: 0, failed: 0 },
+        queue_counts: queueByDoc.get(d.id) ?? { pending: 0, processing: 0, batched: 0, done: 0, failed: 0 },
         cached_per_lang: cachedByDocLang.get(d.id) ?? {},
         total_chunks_est: Math.max(1, Math.ceil((d.char_count || 0) / 700)),
       })),
