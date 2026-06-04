@@ -589,12 +589,12 @@ export default function AdminSeedTranslations() {
                 const isCurrent = queueStatus?.worker?.current_document_id === d.id;
                 const totalCells = d.total_chunks_est * TARGET_LANGS.length;
                 const totalCached = TARGET_LANGS.reduce((s, l) => s + (d.cached_per_lang[l] ?? 0), 0);
-                const queueOutstanding = d.queue_counts.pending + d.queue_counts.processing + d.queue_counts.failed;
+                const queueOutstanding = d.queue_counts.pending + d.queue_counts.processing + d.queue_counts.batched + d.queue_counts.failed;
                 const hasQueueHistory = Object.values(d.queue_counts).some((count) => count > 0);
                 const displayStatus: SeedDoc["translation_status"] =
                   d.translation_status === "done" || (d.seed_translation && hasQueueHistory && queueOutstanding === 0) ? "done"
                   : d.queue_counts.failed > 0 || d.translation_status === "failed" ? "failed"
-                  : isCurrent || d.queue_counts.pending > 0 || d.queue_counts.processing > 0 || d.translation_status === "processing" ? "processing"
+                  : isCurrent || d.queue_counts.pending > 0 || d.queue_counts.processing > 0 || d.queue_counts.batched > 0 || d.translation_status === "processing" ? "processing"
                   : "pending";
                 const pct = displayStatus === "done" ? 100 : Math.min(100, Math.round((totalCached / totalCells) * 100));
                 return (
