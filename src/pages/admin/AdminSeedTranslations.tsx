@@ -162,7 +162,7 @@ export default function AdminSeedTranslations() {
           cachedByDocLang.set(a.document_id, m);
         });
         queueRows.forEach((row) => {
-          const counts = queueByDoc.get(row.document_id) ?? { pending: 0, processing: 0, done: 0, failed: 0 };
+          const counts = queueByDoc.get(row.document_id) ?? { pending: 0, processing: 0, batched: 0, done: 0, failed: 0 };
           const status = row.status as keyof SeedDoc["queue_counts"];
           if (status in counts) counts[status] += 1;
           queueByDoc.set(row.document_id, counts);
