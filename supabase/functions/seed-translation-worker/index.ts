@@ -524,6 +524,21 @@ Deno.serve(async (req) => {
       inflightCount++;
     }
 
+    // Update worker_state.current_document_id to reflect the doc with the most
+    // recently submitted in-flight batch (drives "processing now" badge in UI).
+    const { data: activeRow } = await admin
+      .from("translation_seed_queue")
+      .select("document_id, batch_submitted_at")
+      .eq("status", "batched")
+      .order("batch_submitted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    await admin.from("translation_worker_state").update({
+      current_document_id: activeRow?.document_id ?? null,
+      current_queue_id: null,
+      current_language: null,
+    }).eq("id", 1);
+
     return new Response(JSON.stringify({
       ok: true,
       mode: "batch",
