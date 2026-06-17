@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Shield, BarChart3, FileAudio, Users, AlertTriangle, ArrowLeft, ShieldAlert, Coins, Trophy, Mic2, Languages, Workflow, Activity, Image as ImageIcon } from "lucide-react";
+import { Shield, BarChart3, FileAudio, Users, AlertTriangle, ArrowLeft, ShieldAlert, Coins, Trophy, Mic2, Languages, Workflow, Activity, Image as ImageIcon, Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -8,6 +8,7 @@ const links = [
   { to: "/admin/economy", label: "Credit economy", icon: Coins, end: false },
   { to: "/admin/abuse", label: "Abuse", icon: ShieldAlert, end: false },
   { to: "/admin/pipeline", label: "Pipeline", icon: Workflow, end: false },
+  { to: "/admin/ingestion", label: "Ingestion", icon: Inbox, end: false },
   { to: "/admin/seeding-status", label: "Seeding status", icon: Activity, end: false },
   { to: "/admin/documents", label: "Documents & cache", icon: FileAudio, end: false },
   { to: "/admin/seed-audio", label: "Seed audio", icon: Mic2, end: false },
@@ -17,6 +18,7 @@ const links = [
   { to: "/admin/users", label: "Users & roles", icon: Users, end: false },
   { to: "/admin/errors", label: "Error log", icon: AlertTriangle, end: false },
 ];
+
 
 export default function AdminLayout() {
   const location = useLocation();
