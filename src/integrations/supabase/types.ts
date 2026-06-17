@@ -108,6 +108,95 @@ export type Database = {
           },
         ]
       }
+      content_quality_metrics: {
+        Row: {
+          cleaning_success_rate: number | null
+          computed_at: string
+          document_id: string
+          duplicate_score: number | null
+          english_leakage_pct: number | null
+          missing_chunks: number | null
+          ocr_score: number | null
+          translation_health: number | null
+        }
+        Insert: {
+          cleaning_success_rate?: number | null
+          computed_at?: string
+          document_id: string
+          duplicate_score?: number | null
+          english_leakage_pct?: number | null
+          missing_chunks?: number | null
+          ocr_score?: number | null
+          translation_health?: number | null
+        }
+        Update: {
+          cleaning_success_rate?: number | null
+          computed_at?: string
+          document_id?: string
+          duplicate_score?: number | null
+          english_leakage_pct?: number | null
+          missing_chunks?: number | null
+          ocr_score?: number | null
+          translation_health?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_quality_metrics_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: true
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      content_sources: {
+        Row: {
+          country: string | null
+          created_at: string
+          curriculum: string | null
+          id: string
+          import_count: number
+          last_import_at: string | null
+          license_type: Database["public"]["Enums"]["license_type"]
+          name: string
+          notes: string | null
+          source_type: string
+          source_url: string | null
+          updated_at: string
+          verification_status: Database["public"]["Enums"]["source_verification"]
+        }
+        Insert: {
+          country?: string | null
+          created_at?: string
+          curriculum?: string | null
+          id?: string
+          import_count?: number
+          last_import_at?: string | null
+          license_type?: Database["public"]["Enums"]["license_type"]
+          name: string
+          notes?: string | null
+          source_type?: string
+          source_url?: string | null
+          updated_at?: string
+          verification_status?: Database["public"]["Enums"]["source_verification"]
+        }
+        Update: {
+          country?: string | null
+          created_at?: string
+          curriculum?: string | null
+          id?: string
+          import_count?: number
+          last_import_at?: string | null
+          license_type?: Database["public"]["Enums"]["license_type"]
+          name?: string
+          notes?: string | null
+          source_type?: string
+          source_url?: string | null
+          updated_at?: string
+          verification_status?: Database["public"]["Enums"]["source_verification"]
+        }
+        Relationships: []
+      }
       credit_transactions: {
         Row: {
           amount: number
@@ -153,6 +242,86 @@ export type Database = {
         }
         Relationships: []
       }
+      curriculum_tags: {
+        Row: {
+          confidence: number | null
+          country: string | null
+          created_at: string
+          curriculum: string | null
+          document_id: string
+          grade: string | null
+          id: string
+          subject: string | null
+          subtopic: string | null
+          topic: string | null
+        }
+        Insert: {
+          confidence?: number | null
+          country?: string | null
+          created_at?: string
+          curriculum?: string | null
+          document_id: string
+          grade?: string | null
+          id?: string
+          subject?: string | null
+          subtopic?: string | null
+          topic?: string | null
+        }
+        Update: {
+          confidence?: number | null
+          country?: string | null
+          created_at?: string
+          curriculum?: string | null
+          document_id?: string
+          grade?: string | null
+          id?: string
+          subject?: string | null
+          subtopic?: string | null
+          topic?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "curriculum_tags_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      curriculum_taxonomy: {
+        Row: {
+          country: string
+          created_at: string
+          curriculum: string
+          grade: string
+          id: string
+          subject: string
+          subtopic: string | null
+          topic: string | null
+        }
+        Insert: {
+          country: string
+          created_at?: string
+          curriculum: string
+          grade: string
+          id?: string
+          subject: string
+          subtopic?: string | null
+          topic?: string | null
+        }
+        Update: {
+          country?: string
+          created_at?: string
+          curriculum?: string
+          grade?: string
+          id?: string
+          subject?: string
+          subtopic?: string | null
+          topic?: string | null
+        }
+        Relationships: []
+      }
       daily_rewards: {
         Row: {
           created_at: string
@@ -189,15 +358,19 @@ export type Database = {
           clean_text: string | null
           cleaning_version: number
           content_hash: string
+          country: string | null
           created_at: string
           current_chunk_index: number | null
+          curriculum: string | null
           doc_type: string | null
           grade_level: string | null
           id: string
+          import_job_id: string | null
           invalid_chunks: Json
           is_seeded: boolean
           language: string
           last_error: string | null
+          license_type: Database["public"]["Enums"]["license_type"] | null
           page_count: number | null
           raw_text: string | null
           seed_audio: boolean
@@ -205,6 +378,7 @@ export type Database = {
           seed_audio_progress: number
           seed_audio_status: string
           seed_translation: boolean
+          source_id: string | null
           source_url: string | null
           subject_type: Database["public"]["Enums"]["subject_type"]
           tags: Json
@@ -217,15 +391,19 @@ export type Database = {
           clean_text?: string | null
           cleaning_version?: number
           content_hash: string
+          country?: string | null
           created_at?: string
           current_chunk_index?: number | null
+          curriculum?: string | null
           doc_type?: string | null
           grade_level?: string | null
           id?: string
+          import_job_id?: string | null
           invalid_chunks?: Json
           is_seeded?: boolean
           language?: string
           last_error?: string | null
+          license_type?: Database["public"]["Enums"]["license_type"] | null
           page_count?: number | null
           raw_text?: string | null
           seed_audio?: boolean
@@ -233,6 +411,7 @@ export type Database = {
           seed_audio_progress?: number
           seed_audio_status?: string
           seed_translation?: boolean
+          source_id?: string | null
           source_url?: string | null
           subject_type?: Database["public"]["Enums"]["subject_type"]
           tags?: Json
@@ -245,15 +424,19 @@ export type Database = {
           clean_text?: string | null
           cleaning_version?: number
           content_hash?: string
+          country?: string | null
           created_at?: string
           current_chunk_index?: number | null
+          curriculum?: string | null
           doc_type?: string | null
           grade_level?: string | null
           id?: string
+          import_job_id?: string | null
           invalid_chunks?: Json
           is_seeded?: boolean
           language?: string
           last_error?: string | null
+          license_type?: Database["public"]["Enums"]["license_type"] | null
           page_count?: number | null
           raw_text?: string | null
           seed_audio?: boolean
@@ -261,6 +444,7 @@ export type Database = {
           seed_audio_progress?: number
           seed_audio_status?: string
           seed_translation?: boolean
+          source_id?: string | null
           source_url?: string | null
           subject_type?: Database["public"]["Enums"]["subject_type"]
           tags?: Json
@@ -268,7 +452,22 @@ export type Database = {
           translation_status?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "documents_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "ingestion_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "content_sources"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       gemini_context_caches: {
         Row: {
@@ -331,6 +530,128 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ingestion_jobs: {
+        Row: {
+          attempts: number
+          country: string | null
+          created_at: string
+          created_by: string | null
+          curriculum: string | null
+          document_id: string | null
+          finished_at: string | null
+          grade: string | null
+          id: string
+          input_raw_text: string | null
+          input_upload_path: string | null
+          input_url: string | null
+          last_error: string | null
+          progress: number
+          source_id: string | null
+          started_at: string | null
+          state: Database["public"]["Enums"]["ingestion_state"]
+          subject: string | null
+          title_hint: string | null
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          country?: string | null
+          created_at?: string
+          created_by?: string | null
+          curriculum?: string | null
+          document_id?: string | null
+          finished_at?: string | null
+          grade?: string | null
+          id?: string
+          input_raw_text?: string | null
+          input_upload_path?: string | null
+          input_url?: string | null
+          last_error?: string | null
+          progress?: number
+          source_id?: string | null
+          started_at?: string | null
+          state?: Database["public"]["Enums"]["ingestion_state"]
+          subject?: string | null
+          title_hint?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          country?: string | null
+          created_at?: string
+          created_by?: string | null
+          curriculum?: string | null
+          document_id?: string | null
+          finished_at?: string | null
+          grade?: string | null
+          id?: string
+          input_raw_text?: string | null
+          input_upload_path?: string | null
+          input_url?: string | null
+          last_error?: string | null
+          progress?: number
+          source_id?: string | null
+          started_at?: string | null
+          state?: Database["public"]["Enums"]["ingestion_state"]
+          subject?: string | null
+          title_hint?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ingestion_jobs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingestion_jobs_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "content_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ingestion_stage_logs: {
+        Row: {
+          created_at: string
+          id: string
+          job_id: string
+          message: string | null
+          meta: Json
+          stage: Database["public"]["Enums"]["ingestion_state"]
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          job_id: string
+          message?: string | null
+          meta?: Json
+          stage: Database["public"]["Enums"]["ingestion_state"]
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          job_id?: string
+          message?: string | null
+          meta?: Json
+          stage?: Database["public"]["Enums"]["ingestion_state"]
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ingestion_stage_logs_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "ingestion_jobs"
             referencedColumns: ["id"]
           },
         ]
@@ -1544,6 +1865,26 @@ export type Database = {
     Enums: {
       app_role: "admin" | "user"
       asset_type: "audio" | "image" | "quiz"
+      ingestion_state:
+        | "pending"
+        | "downloading"
+        | "parsing"
+        | "structuring"
+        | "tagging"
+        | "cleaning"
+        | "chunking"
+        | "translating"
+        | "audio_seeding"
+        | "completed"
+        | "failed"
+        | "cancelled"
+      license_type:
+        | "public_domain"
+        | "creative_commons"
+        | "government_educational"
+        | "educational_use"
+        | "unknown"
+      source_verification: "unverified" | "verified" | "blocked"
       subject_type: "novel" | "history" | "science" | "other"
       subscription_plan: "free" | "essential" | "premium"
       voice_provider: "azure" | "elevenlabs" | "gemini"
@@ -1676,6 +2017,28 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "user"],
       asset_type: ["audio", "image", "quiz"],
+      ingestion_state: [
+        "pending",
+        "downloading",
+        "parsing",
+        "structuring",
+        "tagging",
+        "cleaning",
+        "chunking",
+        "translating",
+        "audio_seeding",
+        "completed",
+        "failed",
+        "cancelled",
+      ],
+      license_type: [
+        "public_domain",
+        "creative_commons",
+        "government_educational",
+        "educational_use",
+        "unknown",
+      ],
+      source_verification: ["unverified", "verified", "blocked"],
       subject_type: ["novel", "history", "science", "other"],
       subscription_plan: ["free", "essential", "premium"],
       voice_provider: ["azure", "elevenlabs", "gemini"],
