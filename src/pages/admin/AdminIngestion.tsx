@@ -83,12 +83,12 @@ export default function AdminIngestion() {
 
   const saveSource = async () => {
     if (!editSource) return;
-    const payload = {
+    const payload: any = {
       name: editSource.name?.trim(),
       source_type: editSource.source_type ?? "web",
       source_url: editSource.source_url ?? null,
-      license_type: editSource.license_type ?? "unknown",
-      verification_status: editSource.verification_status ?? "unverified",
+      license_type: (editSource.license_type ?? "unknown") as any,
+      verification_status: (editSource.verification_status ?? "unverified") as any,
       country: editSource.country ?? null,
       curriculum: editSource.curriculum ?? null,
     };
@@ -99,6 +99,7 @@ export default function AdminIngestion() {
     if (error) toast({ title: error.message, variant: "destructive" });
     else { setEditSource(null); refresh(); }
   };
+
 
   const setVerification = async (s: Source, status: typeof STATES[number]) => {
     const { error } = await supabase.from("content_sources").update({ verification_status: status }).eq("id", s.id);
