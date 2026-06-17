@@ -1,63 +1,69 @@
-## Goal
+## StudySound Content Ingestion System
 
-Use the uploaded `studysound_translation_pipeline_fix` spec as the source of truth and bring the seed translation pipeline fully in line with it. The recent issues (stuck %, "done" while still 76–77%, languages dropping out of the UI) are all symptoms of the same root cause the spec calls out: **we sometimes treat "translation row exists" as "done" instead of using `status + hash + version`**.
+A scalable ingestion engine that imports, validates, cleans, structures, chunks, translates and seeds educational content at curriculum scale. Existing pieces (translation seed queue/worker, audio seeding, documents table) are reused — this plan adds the upstream layers (sources, licenses, pipeline orchestration, QC, curriculum tags) and an admin UI to drive everything.
 
-Most of the spec is already implemented (hashing, `CURRENT_TRANSLATION_VERSION`, English-leak detection, preprocessing, batch tracking, blueprint caching). This plan closes the remaining gaps.
+### Pipeline
+```text
+SOURCE → LICENSE VALIDATION → DOWNLOAD/IMPORT → TEXT EXTRACTION →
+STRUCTURE DETECTION → CURRICULUM TAGGING → CLEANING → CHUNKING →
+TRANSLATION → AUDIO GENERATION → LIBRARY
+```
 
-## Scope of changes
+States: `pending → downloading → parsing → cleaning → structuring → chunking → translating → audio_seeding → completed | failed`.
 
-### 1. State model — make `status` authoritative
-- `translation_seed_queue.status` stays the single source of truth per (chunk × language). No code path may infer completion from row existence alone.
-- Add an explicit `stale` status path: when `source_text_hash` or `translation_version` no longer matches, the row is flipped to `stale` and re-queued instead of silently reused.
+### Database (new tables, all with GRANTs + RLS, admin-only via `has_role`)
+- `content_sources` — name, type, url, license_type, verification_status (`unverified|verified|blocked`), notes, import counts, last_import_at.
+- `ingestion_jobs` — source_id, input (url/upload path/raw text), state, current_stage, progress %, error, attempts, document_id (once created), curriculum hints (grade/subject/curriculum/country), created_by, timestamps.
+- `ingestion_stage_logs` — job_id, stage, status, started/finished, message (for live progress + QC).
+- `curriculum_tags` — document_id, grade, subject, topic, subtopic, curriculum, country (unique per doc+tag).
+- `content_quality_metrics` — document_id, ocr_score, cleaning_success_rate, duplicate_score, translation_health, english_leakage_pct, missing_chunks, computed_at.
+- Extend `documents` with: `source_id`, `license_type`, `curriculum`, `country`, `grade`, `import_job_id`, `content_hash` (sha256 of normalized text — duplicate detection).
 
-### 2. Doc-level completion (fix "Great Expectations says done at 77%")
-- The trigger fix from last turn (`pending|processing|failed|batched` all count as outstanding) stays.
-- Add a second guard in `seed-translation-worker`: before any `documents.translation_status='done'` write, re-check the queue counts in the same statement (`WHERE NOT EXISTS (... outstanding ...)`). No "optimistic done".
-- Backfill: re-open any doc currently marked `done` that still has outstanding rows.
+License rule enforced at DB level: trigger blocks an `ingestion_jobs` insert if the source's license isn't in the allowed set (`public_domain|creative_commons|government_educational|educational_use`) or status is `blocked`/`unverified`.
 
-### 3. Progress calculation (fix stuck %)
-- `AdminSeedTranslations` reads progress as `completed / total` per language directly from `translation_seed_queue` (no cached aggregate). Confirm the query already does this; if it falls back to `translation_assets` counts anywhere, switch it to the queue.
-- "Processing now" badge: keep the `current_document_id` write added last turn, plus also clear it when the doc flips to `done`.
+Duplicate prevention: unique index on `documents.content_hash`; unique `(source_id, source_url)` on `ingestion_jobs` for in-flight rows; unique `(document_id, chunk_index, kind)` already exists for assets.
 
-### 4. Gemini batch result mapping (fix silent partials)
-- In `seed-translation-worker` batch-drain path: for every returned result, require a `chunk_id` match. Unmapped/empty results → mark row `failed` with `last_error='batch_unmapped'` and increment `attempts`, instead of leaving it `batched` forever (which is what made counts hang).
-- After draining a batch, assert `completed + failed == batch_size`; if not, log + re-queue the missing chunk_ids.
+### Edge functions
+- `ingestion-orchestrator` — public admin entrypoint. Accepts `{source_id, url|upload_path|raw_text, hints}`, validates license, creates `ingestion_jobs` row, enqueues stage 1.
+- `ingestion-worker` — cron-triggered (every minute via `pg_cron`+`pg_net`). Picks one `pending`/in-progress job, advances exactly one stage, writes a `ingestion_stage_logs` row, updates progress, returns. Stages:
+  1. **download/import** — fetch URL (PDF/HTML/EPUB/TXT) or load uploaded file; store raw bytes in `uploads` bucket.
+  2. **text extraction** — reuses `extract-document` for PDFs; HTML→text via Readability-like strip; EPUB via JSZip.
+  3. **structure detection** — Gemini call to return JSON {chapters[], sections[], toc, exercises[]}.
+  4. **curriculum tagging** — Gemini classifies grade/subject/topic/subtopic against a CAPS taxonomy seed; writes `curriculum_tags`.
+  5. **cleaning** — applies TOC removal, dup chapter/scene removal, OCR/underscore/exeunt/dot-leader/header-footer cleanup (reuses `_shared/clean-text.ts`, extended with the new passes).
+  6. **chunking** — creates `documents` row (if not yet), splits into chunks (≈900 chars, sentence-aware), computes `content_hash`, dedupes.
+  7. **translation seeding** — enqueues into existing `translation_seed_queue` (flips `seed_translation=true`).
+  8. **audio seeding** — enqueues into existing audio seed pipeline.
+  9. **completed** — computes `content_quality_metrics` and marks job done.
+- `compute-quality-metrics` — callable per document, used at stage 9 and from admin UI.
 
-### 5. Cache validation on read
-- `generate-translation` (on-demand) and the seed worker both check: `status='completed' AND source_text_hash = <new hash> AND translation_version = CURRENT_TRANSLATION_VERSION`. Anything else → recompute. Confirm both paths; tighten the seed worker which currently shortcuts on row presence in one branch.
+### Curriculum taxonomy seed
+A `curriculum_taxonomy` table seeded with: South Africa CAPS — Mathematics G10-12, Physical Sciences G10-12, Mathematical Literacy G10-12, plus generic OpenStax/Wikibooks/Gutenberg subject buckets. Used to constrain the Gemini classifier output.
 
-### 6. English-leak handling
-- Already implemented in `translation-pipeline.ts`. Add: when leak is detected during batch result handling, mark `failed` (not `completed`), so the retry loop picks it up. Today some batched results bypass the leak check.
+### Admin UI (`/admin/ingestion`)
+Single page with three tabs, mobile-first, teal/coral, Space Grotesk/DM Sans:
+1. **Sources** — list + add/edit `content_sources`, set license + verification status, "Block" / "Verify" actions.
+2. **Jobs** — table of `ingestion_jobs` with live stage badges, progress bar, per-stage log drawer, "Retry" / "Cancel" / "Reprocess from stage X". New-job dialog: pick source, paste URL or upload file, set grade/subject hints.
+3. **Analytics** — totals (sources / documents / chunks / audio assets / translations / storage), top sources by yield, QC dashboard (OCR score, cleaning rate, duplicates, translation health, English leakage, missing chunks).
 
-### 7. Job control
-- `seed-translation-manager` already prevents duplicate runs via `translation_worker_state.is_running`. Add: per-document/per-language guard so a manual "translate this book" can't double-queue rows that are already `pending|processing|batched`.
+Admin-only — gated by existing `useIsAdmin` + `AdminRoute`. Linked from `AdminLayout` sidebar between "Documents" and "Seed Translations".
 
-### 8. UI subscriptions
-- `AdminSeedTranslations` already polls. Switch the per-language progress tiles to read directly from `translation_seed_queue` aggregates (it mostly does — verify Afrikaans/Xhosa/Zulu tiles aren't reading a stale `translation_assets` count, which is the most likely cause of "no translation showing when toggling languages").
+### Initial seed
+Insert SA priority sources into `content_sources`:
+- Siyavula Mathematics G10/G11/G12 (CC-BY)
+- Siyavula Physical Sciences G10/G11/G12 (CC-BY)
+- Siyavula Mathematical Literacy G10-12 (CC-BY)
+- DBE workbooks index (Government Educational)
+- OpenStax (CC-BY), Gutenberg (Public Domain), OER Commons, Wikibooks (CC-BY-SA).
 
-### 9. Backfill / cleanup migration
-One migration to:
-- Reset rows stuck in `batched` for >2h with no `batch_job_id` resolution → back to `pending`.
-- Reopen documents wrongly marked `done` while outstanding rows exist.
-- Mark rows whose `source_text_hash` ≠ current chunk hash as `stale` then `pending`.
+Verification status starts `verified` for these well-known licenses; others land as `unverified` and are blocked until an admin verifies.
 
-## Files touched
-- `supabase/functions/seed-translation-worker/index.ts` — batch result mapping, doc-done guard, leak-on-batch, stale detection.
-- `supabase/functions/seed-translation-manager/index.ts` — per-doc/lang dedupe.
-- `supabase/functions/generate-translation/index.ts` — strict cache validation.
-- `src/pages/admin/AdminSeedTranslations.tsx` — ensure all per-language tiles read from `translation_seed_queue`.
-- One new migration for backfill + the `tsq_maybe_mark_doc_done` tightening.
+### Out-of-scope for this PR (call out explicitly)
+- Actual large-scale crawl of Siyavula/DBE catalogs (we wire the source records + per-URL ingestion; bulk crawler is a follow-up).
+- Multi-country curriculum taxonomies beyond CAPS seed.
+- Per-country pricing/locale changes.
 
-## Out of scope
-- Re-architecting the audio/TTS pipeline (spec mentions it but only as downstream consumer).
-- Changing the UI design of the admin page beyond the data source it reads from.
-- Changing chunking logic — `clean_text → chunks` stays as-is.
-
-## Validation
-After deploy:
-1. Pick a doc currently at 77% Afrikaans → confirm queue counts match UI %.
-2. Force a chunk's `clean_text` to change → confirm its translations flip to `stale` and re-translate.
-3. Submit a Gemini batch and kill one result → confirm the missing chunk becomes `failed` then retries, not stuck `batched`.
-4. Confirm `documents.translation_status='done'` only appears when `SELECT COUNT(*) FROM translation_seed_queue WHERE document_id=X AND status<>'completed'` returns 0.
-
-Approve and I'll implement in the order above (migration first, then worker, then manager, then UI verification).
+### Questions before I start
+1. **Scope confirmation**: Should I build the full UI + orchestrator + worker + all 9 stages in one go, or ship in phases (Phase 1: sources/jobs/UI + stages 1-2; Phase 2: 3-6; Phase 3: 7-9 wiring to existing seed pipelines)?
+2. **License default**: For brand-new sources added in the admin UI, default to `unverified` (blocked) or `verified` (admin must downgrade)? Spec says unknown licenses must be blocked — I'll default to `unverified` unless you say otherwise.
+3. **Bulk crawler**: Do you want a "Crawl Siyavula catalog" button now, or per-URL ingestion only for v1?
