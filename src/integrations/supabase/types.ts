@@ -154,14 +154,17 @@ export type Database = {
           country: string | null
           created_at: string
           curriculum: string | null
+          grade: string | null
           id: string
           import_count: number
           last_import_at: string | null
+          last_sync_at: string | null
           license_type: Database["public"]["Enums"]["license_type"]
           name: string
           notes: string | null
           source_type: string
           source_url: string | null
+          subject: string | null
           updated_at: string
           verification_status: Database["public"]["Enums"]["source_verification"]
         }
@@ -169,14 +172,17 @@ export type Database = {
           country?: string | null
           created_at?: string
           curriculum?: string | null
+          grade?: string | null
           id?: string
           import_count?: number
           last_import_at?: string | null
+          last_sync_at?: string | null
           license_type?: Database["public"]["Enums"]["license_type"]
           name: string
           notes?: string | null
           source_type?: string
           source_url?: string | null
+          subject?: string | null
           updated_at?: string
           verification_status?: Database["public"]["Enums"]["source_verification"]
         }
@@ -184,14 +190,17 @@ export type Database = {
           country?: string | null
           created_at?: string
           curriculum?: string | null
+          grade?: string | null
           id?: string
           import_count?: number
           last_import_at?: string | null
+          last_sync_at?: string | null
           license_type?: Database["public"]["Enums"]["license_type"]
           name?: string
           notes?: string | null
           source_type?: string
           source_url?: string | null
+          subject?: string | null
           updated_at?: string
           verification_status?: Database["public"]["Enums"]["source_verification"]
         }
@@ -252,6 +261,50 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coverage_snapshots: {
+        Row: {
+          country: string
+          covered_topics: number
+          created_at: string
+          curriculum: string
+          id: string
+          note: string | null
+          resources: number
+          source_id: string | null
+          total_topics: number
+        }
+        Insert: {
+          country?: string
+          covered_topics: number
+          created_at?: string
+          curriculum?: string
+          id?: string
+          note?: string | null
+          resources?: number
+          source_id?: string | null
+          total_topics: number
+        }
+        Update: {
+          country?: string
+          covered_topics?: number
+          created_at?: string
+          curriculum?: string
+          id?: string
+          note?: string | null
+          resources?: number
+          source_id?: string | null
+          total_topics?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coverage_snapshots_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "content_sources"
             referencedColumns: ["id"]
           },
         ]

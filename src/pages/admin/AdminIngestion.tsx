@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Play, Plus, RefreshCw, ShieldCheck, ShieldOff } from "lucide-react";
+import { Loader2, Play, Plus, RefreshCw, ShieldCheck, ShieldOff, Download, TrendingUp, Sparkles } from "lucide-react";
 
 type Source = {
   id: string;
@@ -22,9 +22,13 @@ type Source = {
   verification_status: "unverified" | "verified" | "blocked";
   country: string | null;
   curriculum: string | null;
+  grade: string | null;
+  subject: string | null;
+  last_sync_at: string | null;
   import_count: number;
   last_import_at: string | null;
 };
+
 
 type Job = {
   id: string;
@@ -128,9 +132,10 @@ export default function AdminIngestion() {
       </div>
 
       <Tabs defaultValue="jobs">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="jobs">Jobs</TabsTrigger>
           <TabsTrigger value="sources">Sources</TabsTrigger>
+          <TabsTrigger value="caps">CAPS Sources</TabsTrigger>
           <TabsTrigger value="coverage">Coverage</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
@@ -138,6 +143,12 @@ export default function AdminIngestion() {
         <TabsContent value="coverage">
           <CoverageDashboard />
         </TabsContent>
+
+        <TabsContent value="caps">
+          <CapsSourcesPanel sources={sources} onChanged={refresh} />
+        </TabsContent>
+
+
 
 
         {/* JOBS */}
@@ -400,20 +411,60 @@ const SUBJECT_PRIORITY = new Set([
   "English First Additional Language", "Life Sciences", "Accounting",
 ]);
 
+// Importance score for ranking next imports.
+const SUBJECT_RANK: Record<string, number> = {
+  "Mathematics": 100,
+  "Mathematical Literacy": 70,
+  "Physical Sciences": 90,
+  "Life Sciences": 80,
+  "Accounting": 70,
+  "Geography": 60,
+  "English Home Language": 55,
+  "English First Additional Language": 55,
+};
+
+
 function CoverageDashboard() {
   const [rows, setRows] = useState<CoverageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [drillGrade, setDrillGrade] = useState<string>("all");
   const [drillSubject, setDrillSubject] = useState<string>("all");
+  const [lastSnapshot, setLastSnapshot] = useState<{ covered_topics: number; total_topics: number; created_at: string } | null>(null);
 
   const load = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("v_caps_coverage" as any)
-      .select("grade,subject,topic,resources,resources_any,best_confidence")
-      .eq("country", "ZA").eq("curriculum", "CAPS");
-    setRows(((data ?? []) as unknown) as CoverageRow[]);
+    const [cov, snap] = await Promise.all([
+      supabase
+        .from("v_caps_coverage" as any)
+        .select("grade,subject,topic,resources,resources_any,best_confidence")
+        .eq("country", "ZA").eq("curriculum", "CAPS"),
+      supabase
+        .from("coverage_snapshots" as any)
+        .select("covered_topics,total_topics,created_at")
+        .eq("country", "ZA").eq("curriculum", "CAPS")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    setRows(((cov.data ?? []) as unknown) as CoverageRow[]);
+    setLastSnapshot((snap.data as any) ?? null);
     setLoading(false);
+  };
+
+  // Persist a snapshot when coverage materially changes (debounced).
+  const snapshotIfChanged = async (totalTopics: number, coveredTopics: number, resources: number) => {
+    if (!totalTopics) return;
+    const { data: latest } = await supabase
+      .from("coverage_snapshots" as any)
+      .select("covered_topics,total_topics")
+      .eq("country", "ZA").eq("curriculum", "CAPS")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if ((latest as any)?.covered_topics === coveredTopics && (latest as any)?.total_topics === totalTopics) return;
+    await supabase.from("coverage_snapshots" as any).insert({
+      country: "ZA", curriculum: "CAPS",
+      total_topics: totalTopics, covered_topics: coveredTopics, resources,
+    });
   };
 
   useEffect(() => {
@@ -425,6 +476,7 @@ function CoverageDashboard() {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
+
 
   const stats = useMemo(() => {
     const totalTopics = rows.length;
@@ -460,13 +512,45 @@ function CoverageDashboard() {
       }))
       .sort((a, b) => b.priority - a.priority || Number(a.grade) - Number(b.grade) || a.subject.localeCompare(b.subject));
 
-    return { totalTopics, coveredTopics, subjects, grades, gaps };
+    // Recommended next imports: uncovered subjects ranked by importance & grade weight.
+    const subjectGapMap = new Map<string, { grade: string; subject: string; uncovered: number; total: number }>();
+    for (const r of rows) {
+      const k = `${r.grade}|${r.subject}`;
+      if (!subjectGapMap.has(k)) subjectGapMap.set(k, { grade: r.grade, subject: r.subject, uncovered: 0, total: 0 });
+      const e = subjectGapMap.get(k)!;
+      e.total += 1;
+      if (r.resources === 0) e.uncovered += 1;
+    }
+    const recommendations = [...subjectGapMap.values()]
+      .filter((s) => s.uncovered > 0)
+      .map((s) => {
+        const gradeWeight = Number(s.grade) >= 11 ? 30 : Number(s.grade) === 10 ? 20 : 10;
+        const subjectScore = SUBJECT_RANK[s.subject] ?? 25;
+        const demand = (s.uncovered / Math.max(s.total, 1)) * 40;
+        return { ...s, score: gradeWeight + subjectScore + demand };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    return { totalTopics, coveredTopics, subjects, grades, gaps, recommendations };
   }, [rows]);
+
+  // Snapshot coverage when it changes so we can report "Coverage gain since last import".
+  useEffect(() => {
+    if (loading) return;
+    const totalResources = stats.subjects.reduce((sum, s) => sum + s.resources, 0);
+    snapshotIfChanged(stats.totalTopics, stats.coveredTopics, totalResources);
+  }, [stats.totalTopics, stats.coveredTopics, loading]);
 
   if (loading) return <Loader2 className="animate-spin mt-4" />;
 
   const pct = stats.totalTopics ? Math.round((stats.coveredTopics / stats.totalTopics) * 100) : 0;
   const lowSubjects = stats.subjects.filter((s) => s.total > 0 && (s.covered / s.total) * 100 < 80);
+
+  const gain = lastSnapshot ? stats.coveredTopics - lastSnapshot.covered_topics : 0;
+  const prevPct = lastSnapshot && lastSnapshot.total_topics
+    ? Math.round((lastSnapshot.covered_topics / lastSnapshot.total_topics) * 100)
+    : pct;
+  const pctGain = pct - prevPct;
 
   const gradeOptions = ["all", ...stats.grades.map((g) => g.grade)];
   const subjectOptions = ["all", ...Array.from(new Set(
@@ -495,6 +579,43 @@ function CoverageDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-primary/40">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" /> Coverage gain
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <div className="text-xs text-muted-foreground">Topics covered</div>
+            <div className="text-xl font-display font-bold">{stats.coveredTopics}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Topics uncovered</div>
+            <div className="text-xl font-display font-bold">{stats.totalTopics - stats.coveredTopics}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Δ topics since last snapshot</div>
+            <div className={`text-xl font-display font-bold ${gain > 0 ? "text-primary" : gain < 0 ? "text-destructive" : ""}`}>
+              {gain > 0 ? "+" : ""}{gain}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Δ coverage %</div>
+            <div className={`text-xl font-display font-bold ${pctGain > 0 ? "text-primary" : pctGain < 0 ? "text-destructive" : ""}`}>
+              {pctGain > 0 ? "+" : ""}{pctGain}%
+            </div>
+          </div>
+          {lastSnapshot && (
+            <div className="md:col-span-4 text-xs text-muted-foreground">
+              Compared to snapshot taken {new Date(lastSnapshot.created_at).toLocaleString()}.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+
 
       {lowSubjects.length > 0 && (
         <Card className="border-destructive/50">
@@ -621,11 +742,185 @@ function CoverageDashboard() {
           )}
         </CardContent>
       </Card>
+
+      <Card className="border-primary/40">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" /> Recommended next imports
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Uncovered subjects ranked by grade weight, subject importance, and student demand.
+          </p>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr className="text-left">
+                <th className="py-1 pr-3">#</th>
+                <th className="py-1 pr-3">Grade</th>
+                <th className="py-1 pr-3">Subject</th>
+                <th className="py-1 pr-3">Uncovered topics</th>
+                <th className="py-1 pr-3">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.recommendations.slice(0, 15).map((r, i) => (
+                <tr key={`${r.grade}-${r.subject}`} className="border-t">
+                  <td className="py-1 pr-3 text-muted-foreground">{i + 1}</td>
+                  <td className="py-1 pr-3">Grade {r.grade}</td>
+                  <td className="py-1 pr-3 font-medium">
+                    {r.subject}
+                    {SUBJECT_PRIORITY.has(r.subject) && (
+                      <Badge variant="secondary" className="ml-2 text-[10px]">priority</Badge>
+                    )}
+                  </td>
+                  <td className="py-1 pr-3">{r.uncovered} / {r.total}</td>
+                  <td className="py-1 pr-3 text-muted-foreground">{Math.round(r.score)}</td>
+                </tr>
+              ))}
+              {stats.recommendations.length === 0 && (
+                <tr><td colSpan={5} className="py-3 text-muted-foreground">All subjects covered.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
+
 function VerifBadge({ v }: { v: Source["verification_status"] }) {
   const variant = v === "verified" ? "default" : v === "blocked" ? "destructive" : "secondary";
   return <Badge variant={variant as any}>{v}</Badge>;
+}
+
+// =============================================================================
+// CAPS Sources panel — registry of curriculum-aligned textbook sources
+// =============================================================================
+
+const SIYAVULA_PRESETS: Array<{
+  name: string;
+  subject: string;
+  grade: string;
+  source_url: string;
+}> = [
+  // Mathematics
+  { name: "Siyavula Mathematics Grade 10", subject: "Mathematics", grade: "10", source_url: "https://www.siyavula.com/read/za/mathematics/grade-10" },
+  { name: "Siyavula Mathematics Grade 11", subject: "Mathematics", grade: "11", source_url: "https://www.siyavula.com/read/za/mathematics/grade-11" },
+  { name: "Siyavula Mathematics Grade 12", subject: "Mathematics", grade: "12", source_url: "https://www.siyavula.com/read/za/mathematics/grade-12" },
+  // Physical Sciences
+  { name: "Siyavula Physical Sciences Grade 10", subject: "Physical Sciences", grade: "10", source_url: "https://www.siyavula.com/read/za/physical-sciences/grade-10" },
+  { name: "Siyavula Physical Sciences Grade 11", subject: "Physical Sciences", grade: "11", source_url: "https://www.siyavula.com/read/za/physical-sciences/grade-11" },
+  { name: "Siyavula Physical Sciences Grade 12", subject: "Physical Sciences", grade: "12", source_url: "https://www.siyavula.com/read/za/physical-sciences/grade-12" },
+  // Life Sciences
+  { name: "Siyavula Life Sciences Grade 10", subject: "Life Sciences", grade: "10", source_url: "https://www.siyavula.com/read/za/life-sciences/grade-10" },
+  { name: "Siyavula Life Sciences Grade 11", subject: "Life Sciences", grade: "11", source_url: "https://www.siyavula.com/read/za/life-sciences/grade-11" },
+  { name: "Siyavula Life Sciences Grade 12", subject: "Life Sciences", grade: "12", source_url: "https://www.siyavula.com/read/za/life-sciences/grade-12" },
+];
+
+function CapsSourcesPanel({ sources, onChanged }: { sources: Source[]; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+
+  const capsRows = useMemo(
+    () =>
+      sources
+        .filter((s) => (s.curriculum ?? "").toUpperCase() === "CAPS")
+        .sort(
+          (a, b) =>
+            (a.subject ?? "").localeCompare(b.subject ?? "") ||
+            Number(a.grade ?? 0) - Number(b.grade ?? 0) ||
+            a.name.localeCompare(b.name),
+        ),
+    [sources],
+  );
+
+  const bulkImportSiyavula = async () => {
+    setBusy(true);
+    const existing = new Set(sources.map((s) => s.name));
+    const rows = SIYAVULA_PRESETS.filter((p) => !existing.has(p.name)).map((p) => ({
+      name: p.name,
+      source_type: "web",
+      source_url: p.source_url,
+      license_type: "creative_commons" as const,
+      verification_status: "verified" as const,
+      country: "ZA",
+      curriculum: "CAPS",
+      grade: p.grade,
+      subject: p.subject,
+    }));
+    if (rows.length === 0) {
+      toast({ title: "All Siyavula sources already registered" });
+      setBusy(false);
+      return;
+    }
+    const { error } = await supabase.from("content_sources").insert(rows as any);
+    setBusy(false);
+    if (error) toast({ title: error.message, variant: "destructive" });
+    else {
+      toast({ title: `Registered ${rows.length} Siyavula source${rows.length === 1 ? "" : "s"}` });
+      onChanged();
+    }
+  };
+
+  return (
+    <div className="space-y-4 mt-4">
+      <Card>
+        <CardHeader className="pb-3 flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">CAPS Content Sources</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Registry of curriculum-aligned textbook sources used for bulk ingestion.
+            </p>
+          </div>
+          <Button size="sm" onClick={bulkImportSiyavula} disabled={busy}>
+            {busy ? <Loader2 className="animate-spin w-4 h-4 mr-1" /> : <Download className="w-4 h-4 mr-1" />}
+            Bulk import Siyavula
+          </Button>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr className="text-left">
+                <th className="py-1 pr-3">Source name</th>
+                <th className="py-1 pr-3">Grade</th>
+                <th className="py-1 pr-3">Subject</th>
+                <th className="py-1 pr-3">Status</th>
+                <th className="py-1 pr-3">License</th>
+                <th className="py-1 pr-3">URL</th>
+                <th className="py-1 pr-3">Last sync</th>
+              </tr>
+            </thead>
+            <tbody>
+              {capsRows.map((s) => (
+                <tr key={s.id} className="border-t align-top">
+                  <td className="py-2 pr-3 font-medium">{s.name}</td>
+                  <td className="py-2 pr-3">{s.grade ?? "—"}</td>
+                  <td className="py-2 pr-3">{s.subject ?? "—"}</td>
+                  <td className="py-2 pr-3"><VerifBadge v={s.verification_status} /></td>
+                  <td className="py-2 pr-3"><Badge variant="secondary">{s.license_type}</Badge></td>
+                  <td className="py-2 pr-3 max-w-[220px] truncate">
+                    {s.source_url ? (
+                      <a href={s.source_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                        {s.source_url}
+                      </a>
+                    ) : "—"}
+                  </td>
+                  <td className="py-2 pr-3 text-muted-foreground text-xs">
+                    {s.last_sync_at ? new Date(s.last_sync_at).toLocaleString() : s.last_import_at ? new Date(s.last_import_at).toLocaleString() : "Never"}
+                  </td>
+                </tr>
+              ))}
+              {capsRows.length === 0 && (
+                <tr><td colSpan={7} className="py-6 text-center text-muted-foreground">
+                  No CAPS sources yet. Click "Bulk import Siyavula" to register the standard textbook set.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
