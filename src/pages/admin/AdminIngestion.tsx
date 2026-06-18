@@ -253,20 +253,57 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
   const [title, setTitle] = useState("");
   const [grade, setGrade] = useState("");
   const [subject, setSubject] = useState("");
+  const [topic, setTopic] = useState("");
+  const [taxonomy, setTaxonomy] = useState<{ grade: string; subject: string; topic: string | null }[]>([]);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from("curriculum_taxonomy")
+      .select("grade,subject,topic")
+      .eq("country", "ZA")
+      .eq("curriculum", "CAPS")
+      .order("grade")
+      .order("subject")
+      .order("topic")
+      .then(({ data }) => setTaxonomy((data ?? []) as any));
+  }, []);
+
+  const grades = useMemo(
+    () => Array.from(new Set(taxonomy.map((t) => t.grade))).sort((a, b) => Number(a) - Number(b)),
+    [taxonomy],
+  );
+  const subjects = useMemo(
+    () => Array.from(new Set(taxonomy.filter((t) => t.grade === grade).map((t) => t.subject))).sort(),
+    [taxonomy, grade],
+  );
+  const topics = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          taxonomy
+            .filter((t) => t.grade === grade && t.subject === subject && t.topic)
+            .map((t) => t.topic as string),
+        ),
+      ).sort(),
+    [taxonomy, grade, subject],
+  );
 
   const submit = async () => {
     if (!sourceId) return toast({ title: "Pick a source", variant: "destructive" });
+    if (!grade || !subject) return toast({ title: "Pick grade & subject", variant: "destructive" });
     if (!url && !rawText) return toast({ title: "URL or raw text required", variant: "destructive" });
     setBusy(true);
+    const titleHint = [title, topic].filter(Boolean).join(" — ") || undefined;
     const { error, data } = await supabase.functions.invoke("ingestion-orchestrator", {
       body: {
         source_id: sourceId,
         input_url: url || undefined,
         input_raw_text: rawText || undefined,
-        title_hint: title || undefined,
-        grade: grade || undefined,
-        subject: subject || undefined,
+        title_hint: titleHint,
+        grade,
+        subject,
+        topic: topic || undefined,
         curriculum: "CAPS",
         country: "ZA",
       },
@@ -290,13 +327,29 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
             <SelectContent>{sources.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
           </Select>
         </Field>
+        <div className="grid grid-cols-3 gap-2">
+          <Field label="Grade">
+            <Select value={grade} onValueChange={(v) => { setGrade(v); setSubject(""); setTopic(""); }}>
+              <SelectTrigger><SelectValue placeholder="Grade" /></SelectTrigger>
+              <SelectContent>{grades.map((g) => <SelectItem key={g} value={g}>Grade {g}</SelectItem>)}</SelectContent>
+            </Select>
+          </Field>
+          <Field label="Subject">
+            <Select value={subject} onValueChange={(v) => { setSubject(v); setTopic(""); }} disabled={!grade}>
+              <SelectTrigger><SelectValue placeholder="Subject" /></SelectTrigger>
+              <SelectContent>{subjects.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+            </Select>
+          </Field>
+          <Field label="Topic">
+            <Select value={topic} onValueChange={setTopic} disabled={!subject || topics.length === 0}>
+              <SelectTrigger><SelectValue placeholder={topics.length ? "Topic" : "—"} /></SelectTrigger>
+              <SelectContent>{topics.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+            </Select>
+          </Field>
+        </div>
         <Field label="Title hint"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
         <Field label="URL"><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." /></Field>
         <Field label="…or paste raw text"><Textarea rows={4} value={rawText} onChange={(e) => setRawText(e.target.value)} /></Field>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Grade"><Input value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="10" /></Field>
-          <Field label="Subject"><Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Mathematics" /></Field>
-        </div>
       </div>
       <DialogFooter>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -305,6 +358,7 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
     </DialogContent>
   );
 }
+
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className="space-y-1"><Label className="text-xs">{label}</Label>{children}</div>;
