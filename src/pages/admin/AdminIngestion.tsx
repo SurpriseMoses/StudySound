@@ -131,8 +131,14 @@ export default function AdminIngestion() {
         <TabsList>
           <TabsTrigger value="jobs">Jobs</TabsTrigger>
           <TabsTrigger value="sources">Sources</TabsTrigger>
+          <TabsTrigger value="coverage">Coverage</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="coverage">
+          <CoverageDashboard />
+        </TabsContent>
+
 
         {/* JOBS */}
         <TabsContent value="jobs" className="space-y-4">
@@ -375,6 +381,194 @@ function StateBadge({ state }: { state: string }) {
   const terminal = state === "completed" || state === "failed" || state === "cancelled";
   const variant = state === "completed" ? "default" : state === "failed" ? "destructive" : terminal ? "secondary" : "outline";
   return <Badge variant={variant as any}>{state}</Badge>;
+}
+
+type TaxRow = { grade: string; subject: string; topic: string | null };
+type TagRow = { grade: string | null; subject: string | null; topic: string | null; document_id: string };
+
+function CoverageDashboard() {
+  const [tax, setTax] = useState<TaxRow[]>([]);
+  const [tags, setTags] = useState<TagRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const [t, g] = await Promise.all([
+        supabase.from("curriculum_taxonomy").select("grade,subject,topic").eq("country", "ZA").eq("curriculum", "CAPS"),
+        supabase.from("curriculum_tags").select("grade,subject,topic,document_id").eq("country", "ZA").eq("curriculum", "CAPS"),
+      ]);
+      setTax((t.data ?? []) as TaxRow[]);
+      setTags((g.data ?? []) as TagRow[]);
+      setLoading(false);
+    })();
+  }, []);
+
+  const stats = useMemo(() => {
+    // Count resources per (grade|subject|topic)
+    const resByKey = new Map<string, Set<string>>();
+    const resBySubject = new Map<string, Set<string>>();
+    const resByGrade = new Map<string, Set<string>>();
+    for (const r of tags) {
+      const k = `${r.grade ?? ""}|${r.subject ?? ""}|${r.topic ?? ""}`;
+      if (!resByKey.has(k)) resByKey.set(k, new Set());
+      resByKey.get(k)!.add(r.document_id);
+      const sk = `${r.grade ?? ""}|${r.subject ?? ""}`;
+      if (!resBySubject.has(sk)) resBySubject.set(sk, new Set());
+      resBySubject.get(sk)!.add(r.document_id);
+      const gk = `${r.grade ?? ""}`;
+      if (!resByGrade.has(gk)) resByGrade.set(gk, new Set());
+      resByGrade.get(gk)!.add(r.document_id);
+    }
+
+    const totalTopics = tax.length;
+    const coveredTopics = tax.filter((t) => {
+      const k = `${t.grade}|${t.subject}|${t.topic ?? ""}`;
+      return (resByKey.get(k)?.size ?? 0) > 0;
+    }).length;
+
+    // Subject-level rollup
+    const subjMap = new Map<string, { grade: string; subject: string; total: number; covered: number; resources: number }>();
+    for (const t of tax) {
+      const key = `${t.grade}|${t.subject}`;
+      if (!subjMap.has(key)) subjMap.set(key, { grade: t.grade, subject: t.subject, total: 0, covered: 0, resources: 0 });
+      const e = subjMap.get(key)!;
+      e.total += 1;
+      const rk = `${t.grade}|${t.subject}|${t.topic ?? ""}`;
+      if ((resByKey.get(rk)?.size ?? 0) > 0) e.covered += 1;
+      e.resources = resBySubject.get(key)?.size ?? 0;
+    }
+    const subjects = Array.from(subjMap.values()).sort(
+      (a, b) => Number(a.grade) - Number(b.grade) || a.subject.localeCompare(b.subject),
+    );
+
+    // Grade rollup
+    const gradeMap = new Map<string, { grade: string; total: number; covered: number; resources: number; subjects: number }>();
+    for (const s of subjects) {
+      if (!gradeMap.has(s.grade)) gradeMap.set(s.grade, { grade: s.grade, total: 0, covered: 0, resources: 0, subjects: 0 });
+      const e = gradeMap.get(s.grade)!;
+      e.total += s.total;
+      e.covered += s.covered;
+      e.subjects += 1;
+      e.resources = resByGrade.get(s.grade)?.size ?? 0;
+    }
+    const grades = Array.from(gradeMap.values()).sort((a, b) => Number(a.grade) - Number(b.grade));
+
+    return { totalTopics, coveredTopics, uncovered: totalTopics - coveredTopics, subjects, grades };
+  }, [tax, tags]);
+
+  if (loading) return <Loader2 className="animate-spin mt-4" />;
+
+  const pct = stats.totalTopics ? Math.round((stats.coveredTopics / stats.totalTopics) * 100) : 0;
+  const lowSubjects = stats.subjects.filter((s) => s.total > 0 && (s.covered / s.total) * 100 < 80);
+
+  return (
+    <div className="space-y-6 mt-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Stat label="Total CAPS topics" value={stats.totalTopics} />
+        <Stat label="Topics with content" value={stats.coveredTopics} />
+        <Stat label="Topics without content" value={stats.uncovered} />
+        <Card>
+          <CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground font-normal">Coverage</CardTitle></CardHeader>
+          <CardContent className="space-y-1">
+            <div className="text-2xl font-display font-bold">{pct}%</div>
+            <Progress value={pct} className="h-2" />
+          </CardContent>
+        </Card>
+      </div>
+
+      {lowSubjects.length > 0 && (
+        <Card className="border-destructive/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Subjects below 80% coverage ({lowSubjects.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {lowSubjects.map((s) => (
+              <Badge key={`${s.grade}-${s.subject}`} variant="destructive">
+                G{s.grade} · {s.subject} — {Math.round((s.covered / s.total) * 100)}%
+              </Badge>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">By Grade</CardTitle></CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr className="text-left">
+                <th className="py-1 pr-3">Grade</th>
+                <th className="py-1 pr-3">Subjects</th>
+                <th className="py-1 pr-3">Topics</th>
+                <th className="py-1 pr-3">Covered</th>
+                <th className="py-1 pr-3">Resources</th>
+                <th className="py-1 pr-3">Coverage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.grades.map((g) => {
+                const p = g.total ? Math.round((g.covered / g.total) * 100) : 0;
+                return (
+                  <tr key={g.grade} className="border-t">
+                    <td className="py-1 pr-3 font-medium">Grade {g.grade}</td>
+                    <td className="py-1 pr-3">{g.subjects}</td>
+                    <td className="py-1 pr-3">{g.total}</td>
+                    <td className="py-1 pr-3">{g.covered}</td>
+                    <td className="py-1 pr-3">{g.resources}</td>
+                    <td className="py-1 pr-3">
+                      <div className="flex items-center gap-2">
+                        <Progress value={p} className="h-1.5 w-20" />
+                        <span className={p < 80 ? "text-destructive" : ""}>{p}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">By Subject</CardTitle></CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr className="text-left">
+                <th className="py-1 pr-3">Grade</th>
+                <th className="py-1 pr-3">Subject</th>
+                <th className="py-1 pr-3">Topics</th>
+                <th className="py-1 pr-3">Covered</th>
+                <th className="py-1 pr-3">Resources</th>
+                <th className="py-1 pr-3">Coverage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.subjects.map((s) => {
+                const p = s.total ? Math.round((s.covered / s.total) * 100) : 0;
+                const low = p < 80;
+                return (
+                  <tr key={`${s.grade}-${s.subject}`} className={`border-t ${low ? "bg-destructive/5" : ""}`}>
+                    <td className="py-1 pr-3">G{s.grade}</td>
+                    <td className="py-1 pr-3 font-medium">{s.subject}</td>
+                    <td className="py-1 pr-3">{s.total}</td>
+                    <td className="py-1 pr-3">{s.covered}</td>
+                    <td className="py-1 pr-3">{s.resources}</td>
+                    <td className="py-1 pr-3">
+                      <div className="flex items-center gap-2">
+                        <Progress value={p} className="h-1.5 w-20" />
+                        <span className={low ? "text-destructive font-medium" : ""}>{p}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function VerifBadge({ v }: { v: Source["verification_status"] }) {
