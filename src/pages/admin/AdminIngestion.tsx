@@ -640,3 +640,133 @@ function VerifBadge({ v }: { v: Source["verification_status"] }) {
   const variant = v === "verified" ? "default" : v === "blocked" ? "destructive" : "secondary";
   return <Badge variant={variant as any}>{v}</Badge>;
 }
+
+// =============================================================================
+// CAPS Sources panel — registry of curriculum-aligned textbook sources
+// =============================================================================
+
+const SIYAVULA_PRESETS: Array<{
+  name: string;
+  subject: string;
+  grade: string;
+  source_url: string;
+}> = [
+  // Mathematics
+  { name: "Siyavula Mathematics Grade 10", subject: "Mathematics", grade: "10", source_url: "https://www.siyavula.com/read/za/mathematics/grade-10" },
+  { name: "Siyavula Mathematics Grade 11", subject: "Mathematics", grade: "11", source_url: "https://www.siyavula.com/read/za/mathematics/grade-11" },
+  { name: "Siyavula Mathematics Grade 12", subject: "Mathematics", grade: "12", source_url: "https://www.siyavula.com/read/za/mathematics/grade-12" },
+  // Physical Sciences
+  { name: "Siyavula Physical Sciences Grade 10", subject: "Physical Sciences", grade: "10", source_url: "https://www.siyavula.com/read/za/physical-sciences/grade-10" },
+  { name: "Siyavula Physical Sciences Grade 11", subject: "Physical Sciences", grade: "11", source_url: "https://www.siyavula.com/read/za/physical-sciences/grade-11" },
+  { name: "Siyavula Physical Sciences Grade 12", subject: "Physical Sciences", grade: "12", source_url: "https://www.siyavula.com/read/za/physical-sciences/grade-12" },
+  // Life Sciences
+  { name: "Siyavula Life Sciences Grade 10", subject: "Life Sciences", grade: "10", source_url: "https://www.siyavula.com/read/za/life-sciences/grade-10" },
+  { name: "Siyavula Life Sciences Grade 11", subject: "Life Sciences", grade: "11", source_url: "https://www.siyavula.com/read/za/life-sciences/grade-11" },
+  { name: "Siyavula Life Sciences Grade 12", subject: "Life Sciences", grade: "12", source_url: "https://www.siyavula.com/read/za/life-sciences/grade-12" },
+];
+
+function CapsSourcesPanel({ sources, onChanged }: { sources: Source[]; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+
+  const capsRows = useMemo(
+    () =>
+      sources
+        .filter((s) => (s.curriculum ?? "").toUpperCase() === "CAPS")
+        .sort(
+          (a, b) =>
+            (a.subject ?? "").localeCompare(b.subject ?? "") ||
+            Number(a.grade ?? 0) - Number(b.grade ?? 0) ||
+            a.name.localeCompare(b.name),
+        ),
+    [sources],
+  );
+
+  const bulkImportSiyavula = async () => {
+    setBusy(true);
+    const existing = new Set(sources.map((s) => s.name));
+    const rows = SIYAVULA_PRESETS.filter((p) => !existing.has(p.name)).map((p) => ({
+      name: p.name,
+      source_type: "web",
+      source_url: p.source_url,
+      license_type: "creative_commons" as const,
+      verification_status: "verified" as const,
+      country: "ZA",
+      curriculum: "CAPS",
+      grade: p.grade,
+      subject: p.subject,
+    }));
+    if (rows.length === 0) {
+      toast({ title: "All Siyavula sources already registered" });
+      setBusy(false);
+      return;
+    }
+    const { error } = await supabase.from("content_sources").insert(rows as any);
+    setBusy(false);
+    if (error) toast({ title: error.message, variant: "destructive" });
+    else {
+      toast({ title: `Registered ${rows.length} Siyavula source${rows.length === 1 ? "" : "s"}` });
+      onChanged();
+    }
+  };
+
+  return (
+    <div className="space-y-4 mt-4">
+      <Card>
+        <CardHeader className="pb-3 flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">CAPS Content Sources</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Registry of curriculum-aligned textbook sources used for bulk ingestion.
+            </p>
+          </div>
+          <Button size="sm" onClick={bulkImportSiyavula} disabled={busy}>
+            {busy ? <Loader2 className="animate-spin w-4 h-4 mr-1" /> : <Download className="w-4 h-4 mr-1" />}
+            Bulk import Siyavula
+          </Button>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr className="text-left">
+                <th className="py-1 pr-3">Source name</th>
+                <th className="py-1 pr-3">Grade</th>
+                <th className="py-1 pr-3">Subject</th>
+                <th className="py-1 pr-3">Status</th>
+                <th className="py-1 pr-3">License</th>
+                <th className="py-1 pr-3">URL</th>
+                <th className="py-1 pr-3">Last sync</th>
+              </tr>
+            </thead>
+            <tbody>
+              {capsRows.map((s) => (
+                <tr key={s.id} className="border-t align-top">
+                  <td className="py-2 pr-3 font-medium">{s.name}</td>
+                  <td className="py-2 pr-3">{s.grade ?? "—"}</td>
+                  <td className="py-2 pr-3">{s.subject ?? "—"}</td>
+                  <td className="py-2 pr-3"><VerifBadge v={s.verification_status} /></td>
+                  <td className="py-2 pr-3"><Badge variant="secondary">{s.license_type}</Badge></td>
+                  <td className="py-2 pr-3 max-w-[220px] truncate">
+                    {s.source_url ? (
+                      <a href={s.source_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                        {s.source_url}
+                      </a>
+                    ) : "—"}
+                  </td>
+                  <td className="py-2 pr-3 text-muted-foreground text-xs">
+                    {s.last_sync_at ? new Date(s.last_sync_at).toLocaleString() : s.last_import_at ? new Date(s.last_import_at).toLocaleString() : "Never"}
+                  </td>
+                </tr>
+              ))}
+              {capsRows.length === 0 && (
+                <tr><td colSpan={7} className="py-6 text-center text-muted-foreground">
+                  No CAPS sources yet. Click "Bulk import Siyavula" to register the standard textbook set.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
