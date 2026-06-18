@@ -70,6 +70,44 @@ export type Database = {
           },
         ]
       }
+      caps_sync_logs: {
+        Row: {
+          action: string
+          created_at: string
+          id: string
+          message: string | null
+          meta: Json
+          source_id: string | null
+          status: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          id?: string
+          message?: string | null
+          meta?: Json
+          source_id?: string | null
+          status: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          id?: string
+          message?: string | null
+          meta?: Json
+          source_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "caps_sync_logs_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "content_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       character_sheets: {
         Row: {
           character_name: string
@@ -152,55 +190,76 @@ export type Database = {
       content_sources: {
         Row: {
           country: string | null
+          coverage_gained: number
           created_at: string
           curriculum: string | null
+          docs_discovered: number
+          docs_imported: number
+          docs_mapped: number
           grade: string | null
           id: string
           import_count: number
           last_import_at: string | null
           last_sync_at: string | null
+          last_sync_error: string | null
+          last_sync_hash: string | null
           license_type: Database["public"]["Enums"]["license_type"]
           name: string
           notes: string | null
           source_type: string
           source_url: string | null
           subject: string | null
+          sync_status: string
           updated_at: string
           verification_status: Database["public"]["Enums"]["source_verification"]
         }
         Insert: {
           country?: string | null
+          coverage_gained?: number
           created_at?: string
           curriculum?: string | null
+          docs_discovered?: number
+          docs_imported?: number
+          docs_mapped?: number
           grade?: string | null
           id?: string
           import_count?: number
           last_import_at?: string | null
           last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_hash?: string | null
           license_type?: Database["public"]["Enums"]["license_type"]
           name: string
           notes?: string | null
           source_type?: string
           source_url?: string | null
           subject?: string | null
+          sync_status?: string
           updated_at?: string
           verification_status?: Database["public"]["Enums"]["source_verification"]
         }
         Update: {
           country?: string | null
+          coverage_gained?: number
           created_at?: string
           curriculum?: string | null
+          docs_discovered?: number
+          docs_imported?: number
+          docs_mapped?: number
           grade?: string | null
           id?: string
           import_count?: number
           last_import_at?: string | null
           last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_hash?: string | null
           license_type?: Database["public"]["Enums"]["license_type"]
           name?: string
           notes?: string | null
           source_type?: string
           source_url?: string | null
           subject?: string | null
+          sync_status?: string
           updated_at?: string
           verification_status?: Database["public"]["Enums"]["source_verification"]
         }

@@ -27,6 +27,12 @@ type Source = {
   last_sync_at: string | null;
   import_count: number;
   last_import_at: string | null;
+  sync_status: "idle" | "pending" | "syncing" | "completed" | "failed";
+  last_sync_error: string | null;
+  docs_discovered: number;
+  docs_imported: number;
+  docs_mapped: number;
+  coverage_gained: number;
 };
 
 
@@ -819,9 +825,21 @@ const SIYAVULA_PRESETS: Array<{
   { name: "Siyavula Life Sciences Grade 12", subject: "Life Sciences", grade: "12", source_url: "https://www.siyavula.com/read/za/life-sciences/grade-12" },
 ];
 
+type SyncLog = {
+  id: string;
+  source_id: string | null;
+  action: string;
+  status: string;
+  message: string | null;
+  created_at: string;
+};
+
 function CapsSourcesPanel({ sources, onChanged }: { sources: Source[]; onChanged: () => void }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
+  const [logs, setLogs] = useState<SyncLog[]>([]);
+  const [jobsBySource, setJobsBySource] = useState<Record<string, { imported: number; mapped: number }>>({});
 
   const capsRows = useMemo(
     () =>
@@ -835,6 +853,66 @@ function CapsSourcesPanel({ sources, onChanged }: { sources: Source[]; onChanged
         ),
     [sources],
   );
+
+  const loadAux = async () => {
+    const [logsRes, jobsRes] = await Promise.all([
+      supabase.from("caps_sync_logs").select("*").order("created_at", { ascending: false }).limit(50),
+      supabase.from("ingestion_jobs").select("source_id,state,document_id"),
+    ]);
+    setLogs((logsRes.data ?? []) as SyncLog[]);
+    const map: Record<string, { imported: number; mapped: number }> = {};
+    for (const j of jobsRes.data ?? []) {
+      if (!j.source_id) continue;
+      if (!map[j.source_id]) map[j.source_id] = { imported: 0, mapped: 0 };
+      if (j.state === "completed") map[j.source_id].imported += 1;
+      if (j.document_id) map[j.source_id].mapped += 1;
+    }
+    setJobsBySource(map);
+  };
+
+  useEffect(() => {
+    loadAux();
+    const ch = supabase
+      .channel("caps_sync_logs_changes")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "caps_sync_logs" }, () => {
+        loadAux();
+        onChanged();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  const syncOne = async (s: Source) => {
+    setSyncingIds((p) => new Set(p).add(s.id));
+    const { data, error } = await supabase.functions.invoke("caps-source-sync", { body: { source_id: s.id } });
+    setSyncingIds((p) => { const n = new Set(p); n.delete(s.id); return n; });
+    if (error) toast({ title: "Sync failed", description: error.message, variant: "destructive" });
+    else toast({ title: `Synced ${s.name}`, description: (data as any)?.results?.[0]?.status ?? "done" });
+    onChanged();
+    loadAux();
+  };
+
+  const syncAll = async () => {
+    setBusy(true);
+    const ids = capsRows.filter((s) => s.verification_status === "verified").map((s) => s.id);
+    if (ids.length === 0) { setBusy(false); return toast({ title: "No verified CAPS sources" }); }
+    const { error } = await supabase.functions.invoke("caps-source-sync", { body: { source_ids: ids } });
+    setBusy(false);
+    if (error) toast({ title: error.message, variant: "destructive" });
+    else toast({ title: `Sync triggered for ${ids.length} sources` });
+    onChanged();
+    loadAux();
+  };
+
+  const retryFailed = async () => {
+    setBusy(true);
+    const { data, error } = await supabase.functions.invoke("caps-source-sync", { body: { retry_failed: true } });
+    setBusy(false);
+    if (error) toast({ title: error.message, variant: "destructive" });
+    else toast({ title: `Retried ${(data as any)?.results?.length ?? 0} failed sources` });
+    onChanged();
+    loadAux();
+  };
 
   const bulkImportSiyavula = async () => {
     setBusy(true);
@@ -850,70 +928,118 @@ function CapsSourcesPanel({ sources, onChanged }: { sources: Source[]; onChanged
       grade: p.grade,
       subject: p.subject,
     }));
-    if (rows.length === 0) {
-      toast({ title: "All Siyavula sources already registered" });
-      setBusy(false);
-      return;
-    }
+    if (rows.length === 0) { setBusy(false); return toast({ title: "All Siyavula sources already registered" }); }
     const { error } = await supabase.from("content_sources").insert(rows as any);
     setBusy(false);
     if (error) toast({ title: error.message, variant: "destructive" });
-    else {
-      toast({ title: `Registered ${rows.length} Siyavula source${rows.length === 1 ? "" : "s"}` });
-      onChanged();
-    }
+    else { toast({ title: `Registered ${rows.length} Siyavula source${rows.length === 1 ? "" : "s"}` }); onChanged(); }
   };
+
+  const totals = useMemo(() => {
+    let discovered = 0, imported = 0, mapped = 0, gained = 0;
+    for (const s of capsRows) {
+      discovered += s.docs_discovered ?? 0;
+      imported += jobsBySource[s.id]?.imported ?? 0;
+      mapped += jobsBySource[s.id]?.mapped ?? 0;
+      gained += s.coverage_gained ?? 0;
+    }
+    return { discovered, imported, mapped, gained };
+  }, [capsRows, jobsBySource]);
+
+  const hasFailed = capsRows.some((s) => s.sync_status === "failed");
 
   return (
     <div className="space-y-4 mt-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Stat label="Discovered" value={totals.discovered} />
+        <Stat label="Imported" value={totals.imported} />
+        <Stat label="Mapped" value={totals.mapped} />
+        <Stat label="Coverage gained" value={totals.gained} />
+      </div>
+
       <Card>
-        <CardHeader className="pb-3 flex flex-row items-start justify-between gap-3">
+        <CardHeader className="pb-3 flex flex-row items-start justify-between gap-3 flex-wrap">
           <div>
             <CardTitle className="text-base">CAPS Content Sources</CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              Registry of curriculum-aligned textbook sources used for bulk ingestion.
+              One-click curriculum ingestion from registered CAPS sources.
             </p>
           </div>
-          <Button size="sm" onClick={bulkImportSiyavula} disabled={busy}>
-            {busy ? <Loader2 className="animate-spin w-4 h-4 mr-1" /> : <Download className="w-4 h-4 mr-1" />}
-            Bulk import Siyavula
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={bulkImportSiyavula} disabled={busy}>
+              <Download className="w-4 h-4 mr-1" /> Bulk import Siyavula
+            </Button>
+            {hasFailed && (
+              <Button size="sm" variant="outline" onClick={retryFailed} disabled={busy}>
+                <RefreshCw className="w-4 h-4 mr-1" /> Retry failed
+              </Button>
+            )}
+            <Button size="sm" onClick={syncAll} disabled={busy || capsRows.length === 0}>
+              {busy ? <Loader2 className="animate-spin w-4 h-4 mr-1" /> : <Play className="w-4 h-4 mr-1" />}
+              Sync all
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr className="text-left">
-                <th className="py-1 pr-3">Source name</th>
+                <th className="py-1 pr-3">Source</th>
                 <th className="py-1 pr-3">Grade</th>
                 <th className="py-1 pr-3">Subject</th>
                 <th className="py-1 pr-3">Status</th>
                 <th className="py-1 pr-3">License</th>
-                <th className="py-1 pr-3">URL</th>
+                <th className="py-1 pr-3">Discovered</th>
+                <th className="py-1 pr-3">Imported</th>
+                <th className="py-1 pr-3">Mapped</th>
                 <th className="py-1 pr-3">Last sync</th>
+                <th className="py-1 pr-3"></th>
               </tr>
             </thead>
             <tbody>
-              {capsRows.map((s) => (
-                <tr key={s.id} className="border-t align-top">
-                  <td className="py-2 pr-3 font-medium">{s.name}</td>
-                  <td className="py-2 pr-3">{s.grade ?? "—"}</td>
-                  <td className="py-2 pr-3">{s.subject ?? "—"}</td>
-                  <td className="py-2 pr-3"><VerifBadge v={s.verification_status} /></td>
-                  <td className="py-2 pr-3"><Badge variant="secondary">{s.license_type}</Badge></td>
-                  <td className="py-2 pr-3 max-w-[220px] truncate">
-                    {s.source_url ? (
-                      <a href={s.source_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-                        {s.source_url}
-                      </a>
-                    ) : "—"}
-                  </td>
-                  <td className="py-2 pr-3 text-muted-foreground text-xs">
-                    {s.last_sync_at ? new Date(s.last_sync_at).toLocaleString() : s.last_import_at ? new Date(s.last_import_at).toLocaleString() : "Never"}
-                  </td>
-                </tr>
-              ))}
+              {capsRows.map((s) => {
+                const aux = jobsBySource[s.id] ?? { imported: 0, mapped: 0 };
+                const isSyncing = syncingIds.has(s.id) || s.sync_status === "syncing";
+                return (
+                  <tr key={s.id} className="border-t align-top">
+                    <td className="py-2 pr-3">
+                      <div className="font-medium">{s.name}</div>
+                      {s.source_url && (
+                        <a href={s.source_url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline truncate block max-w-[220px]">
+                          {s.source_url}
+                        </a>
+                      )}
+                      {s.last_sync_error && (
+                        <div className="text-xs text-destructive mt-1">{s.last_sync_error}</div>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">{s.grade ?? "—"}</td>
+                    <td className="py-2 pr-3">{s.subject ?? "—"}</td>
+                    <td className="py-2 pr-3"><SyncBadge status={s.sync_status} /></td>
+                    <td className="py-2 pr-3"><Badge variant="secondary">{s.license_type}</Badge></td>
+                    <td className="py-2 pr-3">{s.docs_discovered ?? 0}</td>
+                    <td className="py-2 pr-3">{aux.imported}</td>
+                    <td className="py-2 pr-3">{aux.mapped}</td>
+                    <td className="py-2 pr-3 text-muted-foreground text-xs">
+                      {s.last_sync_at ? new Date(s.last_sync_at).toLocaleString() : "Never"}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Button
+                        size="sm"
+                        variant={s.sync_status === "failed" ? "outline" : "ghost"}
+                        disabled={isSyncing || s.verification_status !== "verified" || !s.source_url}
+                        onClick={() => syncOne(s)}
+                      >
+                        {isSyncing ? <Loader2 className="animate-spin w-4 h-4" /> :
+                          s.sync_status === "failed" ? <><RefreshCw className="w-4 h-4 mr-1" /> Retry</> :
+                          <><Play className="w-4 h-4 mr-1" /> Sync now</>}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
               {capsRows.length === 0 && (
-                <tr><td colSpan={7} className="py-6 text-center text-muted-foreground">
+                <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">
                   No CAPS sources yet. Click "Bulk import Siyavula" to register the standard textbook set.
                 </td></tr>
               )}
@@ -921,6 +1047,49 @@ function CapsSourcesPanel({ sources, onChanged }: { sources: Source[]; onChanged
           </table>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Sync logs</CardTitle></CardHeader>
+        <CardContent className="overflow-x-auto max-h-96 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground sticky top-0 bg-background">
+              <tr className="text-left">
+                <th className="py-1 pr-3">Time</th>
+                <th className="py-1 pr-3">Source</th>
+                <th className="py-1 pr-3">Action</th>
+                <th className="py-1 pr-3">Result</th>
+                <th className="py-1 pr-3">Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((l) => {
+                const src = sources.find((s) => s.id === l.source_id);
+                const variant = l.status === "error" ? "destructive" : l.status === "success" ? "default" : "secondary";
+                return (
+                  <tr key={l.id} className="border-t">
+                    <td className="py-1 pr-3 text-xs text-muted-foreground whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</td>
+                    <td className="py-1 pr-3 truncate max-w-[180px]">{src?.name ?? "—"}</td>
+                    <td className="py-1 pr-3">{l.action}</td>
+                    <td className="py-1 pr-3"><Badge variant={variant as any}>{l.status}</Badge></td>
+                    <td className="py-1 pr-3 text-xs text-muted-foreground">{l.message}</td>
+                  </tr>
+                );
+              })}
+              {logs.length === 0 && (
+                <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No sync activity yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
     </div>
   );
+}
+
+function SyncBadge({ status }: { status: Source["sync_status"] }) {
+  const variant =
+    status === "completed" ? "default" :
+    status === "failed" ? "destructive" :
+    status === "syncing" || status === "pending" ? "outline" : "secondary";
+  return <Badge variant={variant as any}>{status}</Badge>;
 }
