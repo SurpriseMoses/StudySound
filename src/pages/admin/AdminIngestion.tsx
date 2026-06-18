@@ -27,6 +27,12 @@ type Source = {
   last_sync_at: string | null;
   import_count: number;
   last_import_at: string | null;
+  sync_status: "idle" | "pending" | "syncing" | "completed" | "failed";
+  last_sync_error: string | null;
+  docs_discovered: number;
+  docs_imported: number;
+  docs_mapped: number;
+  coverage_gained: number;
 };
 
 
