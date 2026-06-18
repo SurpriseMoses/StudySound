@@ -131,8 +131,14 @@ export default function AdminIngestion() {
         <TabsList>
           <TabsTrigger value="jobs">Jobs</TabsTrigger>
           <TabsTrigger value="sources">Sources</TabsTrigger>
+          <TabsTrigger value="coverage">Coverage</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="coverage">
+          <CoverageDashboard />
+        </TabsContent>
+
 
         {/* JOBS */}
         <TabsContent value="jobs" className="space-y-4">
