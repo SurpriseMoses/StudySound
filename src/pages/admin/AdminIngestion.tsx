@@ -429,15 +429,42 @@ function CoverageDashboard() {
   const [loading, setLoading] = useState(true);
   const [drillGrade, setDrillGrade] = useState<string>("all");
   const [drillSubject, setDrillSubject] = useState<string>("all");
+  const [lastSnapshot, setLastSnapshot] = useState<{ covered_topics: number; total_topics: number; created_at: string } | null>(null);
 
   const load = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("v_caps_coverage" as any)
-      .select("grade,subject,topic,resources,resources_any,best_confidence")
-      .eq("country", "ZA").eq("curriculum", "CAPS");
-    setRows(((data ?? []) as unknown) as CoverageRow[]);
+    const [cov, snap] = await Promise.all([
+      supabase
+        .from("v_caps_coverage" as any)
+        .select("grade,subject,topic,resources,resources_any,best_confidence")
+        .eq("country", "ZA").eq("curriculum", "CAPS"),
+      supabase
+        .from("coverage_snapshots" as any)
+        .select("covered_topics,total_topics,created_at")
+        .eq("country", "ZA").eq("curriculum", "CAPS")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    setRows(((cov.data ?? []) as unknown) as CoverageRow[]);
+    setLastSnapshot((snap.data as any) ?? null);
     setLoading(false);
+  };
+
+  // Persist a snapshot when coverage materially changes (debounced).
+  const snapshotIfChanged = async (totalTopics: number, coveredTopics: number, resources: number) => {
+    if (!totalTopics) return;
+    const { data: latest } = await supabase
+      .from("coverage_snapshots" as any)
+      .select("covered_topics,total_topics")
+      .eq("country", "ZA").eq("curriculum", "CAPS")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if ((latest as any)?.covered_topics === coveredTopics && (latest as any)?.total_topics === totalTopics) return;
+    await supabase.from("coverage_snapshots" as any).insert({
+      country: "ZA", curriculum: "CAPS",
+      total_topics: totalTopics, covered_topics: coveredTopics, resources,
+    });
   };
 
   useEffect(() => {
@@ -449,6 +476,7 @@ function CoverageDashboard() {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
+
 
   const stats = useMemo(() => {
     const totalTopics = rows.length;
