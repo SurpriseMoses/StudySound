@@ -512,13 +512,45 @@ function CoverageDashboard() {
       }))
       .sort((a, b) => b.priority - a.priority || Number(a.grade) - Number(b.grade) || a.subject.localeCompare(b.subject));
 
-    return { totalTopics, coveredTopics, subjects, grades, gaps };
+    // Recommended next imports: uncovered subjects ranked by importance & grade weight.
+    const subjectGapMap = new Map<string, { grade: string; subject: string; uncovered: number; total: number }>();
+    for (const r of rows) {
+      const k = `${r.grade}|${r.subject}`;
+      if (!subjectGapMap.has(k)) subjectGapMap.set(k, { grade: r.grade, subject: r.subject, uncovered: 0, total: 0 });
+      const e = subjectGapMap.get(k)!;
+      e.total += 1;
+      if (r.resources === 0) e.uncovered += 1;
+    }
+    const recommendations = [...subjectGapMap.values()]
+      .filter((s) => s.uncovered > 0)
+      .map((s) => {
+        const gradeWeight = Number(s.grade) >= 11 ? 30 : Number(s.grade) === 10 ? 20 : 10;
+        const subjectScore = SUBJECT_RANK[s.subject] ?? 25;
+        const demand = (s.uncovered / Math.max(s.total, 1)) * 40;
+        return { ...s, score: gradeWeight + subjectScore + demand };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    return { totalTopics, coveredTopics, subjects, grades, gaps, recommendations };
   }, [rows]);
+
+  // Snapshot coverage when it changes so we can report "Coverage gain since last import".
+  useEffect(() => {
+    if (loading) return;
+    const totalResources = stats.subjects.reduce((sum, s) => sum + s.resources, 0);
+    snapshotIfChanged(stats.totalTopics, stats.coveredTopics, totalResources);
+  }, [stats.totalTopics, stats.coveredTopics, loading]);
 
   if (loading) return <Loader2 className="animate-spin mt-4" />;
 
   const pct = stats.totalTopics ? Math.round((stats.coveredTopics / stats.totalTopics) * 100) : 0;
   const lowSubjects = stats.subjects.filter((s) => s.total > 0 && (s.covered / s.total) * 100 < 80);
+
+  const gain = lastSnapshot ? stats.coveredTopics - lastSnapshot.covered_topics : 0;
+  const prevPct = lastSnapshot && lastSnapshot.total_topics
+    ? Math.round((lastSnapshot.covered_topics / lastSnapshot.total_topics) * 100)
+    : pct;
+  const pctGain = pct - prevPct;
 
   const gradeOptions = ["all", ...stats.grades.map((g) => g.grade)];
   const subjectOptions = ["all", ...Array.from(new Set(
@@ -547,6 +579,43 @@ function CoverageDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-primary/40">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" /> Coverage gain
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <div className="text-xs text-muted-foreground">Topics covered</div>
+            <div className="text-xl font-display font-bold">{stats.coveredTopics}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Topics uncovered</div>
+            <div className="text-xl font-display font-bold">{stats.totalTopics - stats.coveredTopics}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Δ topics since last snapshot</div>
+            <div className={`text-xl font-display font-bold ${gain > 0 ? "text-primary" : gain < 0 ? "text-destructive" : ""}`}>
+              {gain > 0 ? "+" : ""}{gain}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Δ coverage %</div>
+            <div className={`text-xl font-display font-bold ${pctGain > 0 ? "text-primary" : pctGain < 0 ? "text-destructive" : ""}`}>
+              {pctGain > 0 ? "+" : ""}{pctGain}%
+            </div>
+          </div>
+          {lastSnapshot && (
+            <div className="md:col-span-4 text-xs text-muted-foreground">
+              Compared to snapshot taken {new Date(lastSnapshot.created_at).toLocaleString()}.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+
 
       {lowSubjects.length > 0 && (
         <Card className="border-destructive/50">
