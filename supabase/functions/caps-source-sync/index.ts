@@ -106,22 +106,89 @@ Deno.serve(async (req) => {
           message: `Created via CAPS sync (source=${s.name})`,
         });
 
-        // Kick worker (fire and forget)
-        fetch(`${SUPABASE_URL}/functions/v1/ingestion-worker`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "apikey": ANON },
-          body: JSON.stringify({ job_id: job.id }),
-        }).catch(() => {});
+        await mark(admin, s.id, { docs_discovered: (s.docs_discovered ?? 0) + 1 });
+        await log(admin, s.id, "job_created", "info",
+          `Ingestion job ${job.id} queued — running pipeline`, { job_id: job.id });
 
-        await mark(admin, s.id, {
-          sync_status: "completed",
-          last_sync_at: new Date().toISOString(),
-          last_sync_hash: hash,
-          docs_discovered: (s.docs_discovered ?? 0) + 1,
-          coverage_gained: Math.max(0, beforeCovered), // recomputed by worker via dashboard
-        });
-        await log(admin, s.id, "job_created", "success", `Ingestion job ${job.id} queued`, { job_id: job.id });
-        results.push({ source_id: s.id, status: "queued", job_id: job.id });
+        // Drive the worker to completion. It advances ONE stage per call,
+        // so we loop until the job reaches a terminal state (or we hit the cap).
+        const MAX_STEPS = 12;
+        let finalState = "pending";
+        let lastError: string | null = null;
+        let documentId: string | null = null;
+
+        for (let i = 0; i < MAX_STEPS; i++) {
+          const resp = await fetch(`${SUPABASE_URL}/functions/v1/ingestion-worker`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": ANON,
+              "Authorization": `Bearer ${SERVICE_ROLE}`,
+            },
+            body: JSON.stringify({ job_id: job.id }),
+          });
+          await resp.text().catch(() => "");
+
+          const { data: jrow } = await admin.from("ingestion_jobs")
+            .select("state,last_error,document_id")
+            .eq("id", job.id).maybeSingle();
+          finalState = jrow?.state ?? finalState;
+          lastError = jrow?.last_error ?? null;
+          documentId = jrow?.document_id ?? documentId;
+          await log(admin, s.id, "pipeline_step",
+            finalState === "failed" ? "error" : "info",
+            `Step ${i + 1}: ${finalState}${lastError ? ` — ${lastError}` : ""}`,
+            { job_id: job.id, state: finalState });
+
+          if (["completed", "failed", "cancelled"].includes(finalState)) break;
+        }
+
+        const afterCovered = await countCovered(admin, s);
+        const mappedRes = documentId
+          ? await admin.from("content_topic_mapping")
+              .select("id", { count: "exact", head: true })
+              .eq("document_id", documentId)
+          : { count: 0 };
+        const mappedCount = (mappedRes as any).count ?? 0;
+        const imported = documentId ? 1 : 0;
+        const gain = Math.max(0, afterCovered - beforeCovered);
+
+        if (finalState === "completed") {
+          await mark(admin, s.id, {
+            sync_status: "completed",
+            last_sync_at: new Date().toISOString(),
+            last_sync_hash: hash,
+            last_sync_error: null,
+            docs_imported: (s.docs_imported ?? 0) + imported,
+            docs_mapped: (s.docs_mapped ?? 0) + mappedCount,
+            coverage_gained: (s.coverage_gained ?? 0) + gain,
+          });
+          await log(admin, s.id, "import_complete", "success",
+            `Imported document ${documentId ?? "?"} — ${mappedCount} CAPS mappings, +${gain} topics covered`,
+            { job_id: job.id, document_id: documentId });
+          results.push({ source_id: s.id, status: "completed", job_id: job.id });
+        } else if (finalState === "failed") {
+          await mark(admin, s.id, {
+            sync_status: "failed",
+            last_sync_error: lastError ?? "pipeline failed",
+            docs_imported: (s.docs_imported ?? 0) + imported,
+            docs_mapped: (s.docs_mapped ?? 0) + mappedCount,
+          });
+          await log(admin, s.id, "import_failed", "error", lastError ?? "pipeline failed", { job_id: job.id });
+          results.push({ source_id: s.id, status: "failed", message: lastError ?? "pipeline failed", job_id: job.id });
+        } else {
+          await mark(admin, s.id, {
+            sync_status: "syncing",
+            last_sync_at: new Date().toISOString(),
+            last_sync_hash: hash,
+            docs_imported: (s.docs_imported ?? 0) + imported,
+            docs_mapped: (s.docs_mapped ?? 0) + mappedCount,
+          });
+          await log(admin, s.id, "pipeline_pending", "warn",
+            `Pipeline still at ${finalState} after ${MAX_STEPS} steps — will resume on next cron`,
+            { job_id: job.id });
+          results.push({ source_id: s.id, status: finalState, job_id: job.id });
+        }
       } catch (e: any) {
         const msg = String(e?.message ?? e);
         await mark(admin, s.id, { sync_status: "failed", last_sync_error: msg });
