@@ -185,7 +185,7 @@ async function processOne(admin: any, s: any, userId: string, force: boolean) {
         headers: {
           "Content-Type": "application/json",
           "apikey": ANON,
-          "Authorization": `Bearer ${ANON}`,
+          "Authorization": `Bearer ${SERVICE_ROLE}`,
         },
         body: JSON.stringify({ job_id: job.id, max_steps: 12 }),
       });
