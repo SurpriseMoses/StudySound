@@ -1,0 +1,1 @@
+ALTER VIEW public.v_caps_coverage SET (security_invoker = true);
