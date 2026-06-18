@@ -22,9 +22,13 @@ type Source = {
   verification_status: "unverified" | "verified" | "blocked";
   country: string | null;
   curriculum: string | null;
+  grade: string | null;
+  subject: string | null;
+  last_sync_at: string | null;
   import_count: number;
   last_import_at: string | null;
 };
+
 
 type Job = {
   id: string;
