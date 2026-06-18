@@ -132,9 +132,10 @@ export default function AdminIngestion() {
       </div>
 
       <Tabs defaultValue="jobs">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="jobs">Jobs</TabsTrigger>
           <TabsTrigger value="sources">Sources</TabsTrigger>
+          <TabsTrigger value="caps">CAPS Sources</TabsTrigger>
           <TabsTrigger value="coverage">Coverage</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
@@ -142,6 +143,12 @@ export default function AdminIngestion() {
         <TabsContent value="coverage">
           <CoverageDashboard />
         </TabsContent>
+
+        <TabsContent value="caps">
+          <CapsSourcesPanel sources={sources} onChanged={refresh} />
+        </TabsContent>
+
+
 
 
         {/* JOBS */}
