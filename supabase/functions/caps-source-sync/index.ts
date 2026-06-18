@@ -54,13 +54,18 @@ Deno.serve(async (req) => {
       const { data: pendingRows } = await admin.from("content_sources")
         .select("*")
         .eq("verification_status", "verified")
-        .eq("sync_status", "pending")
+        .in("sync_status", ["syncing", "pending"])
+        .order("sync_status", { ascending: false })
         .order("updated_at", { ascending: true })
         .limit(1);
       const next = pendingRows?.[0];
       if (!next) return json({ done: true });
       const result = await processOne(admin, next, userId!, !!body.force);
-      scheduleNext(userId!, !!body.force);
+      if (["completed", "no_change", "failed"].includes(String(result.status))) {
+        scheduleNext(userId!, !!body.force);
+      } else {
+        scheduleNext(userId!, true);
+      }
       return json({ results: [result] });
     }
 
@@ -90,7 +95,11 @@ Deno.serve(async (req) => {
 
     const first = sources[0];
     const result = await processOne(admin, first, userId!, !!body.force);
-    scheduleNext(userId!, !!body.force);
+    if (["completed", "no_change", "failed"].includes(String(result.status))) {
+      scheduleNext(userId!, !!body.force);
+    } else {
+      scheduleNext(userId!, true);
+    }
 
     return json({
       queued: sources.length,
@@ -108,7 +117,7 @@ function scheduleNext(userId: string, force: boolean) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "apikey": ANON,
+      "apikey": SERVICE_ROLE,
       "Authorization": `Bearer ${SERVICE_ROLE}`,
     },
     body: JSON.stringify({ next: true, chained_user: userId, force }),
@@ -137,7 +146,8 @@ async function processOne(admin: any, s: any, userId: string, force: boolean) {
     }
 
     const hash = html ? await sha256(html) : null;
-    const unchanged = !force && hash && hash === s.last_sync_hash;
+    const activeJob = await findActiveJob(admin, s);
+    const unchanged = !force && !activeJob && hash && hash === s.last_sync_hash;
     if (unchanged) {
       await mark(admin, s.id, { sync_status: "completed", last_sync_at: new Date().toISOString() });
       await log(admin, s.id, "no_change", "info", "No updates detected (hash match)");
@@ -149,27 +159,20 @@ async function processOne(admin: any, s: any, userId: string, force: boolean) {
 
     const beforeCovered = await countCovered(admin, s);
 
-    const { data: job, error: jErr } = await admin.from("ingestion_jobs").insert({
-      source_id: s.id,
-      input_url: s.source_url,
-      title_hint: s.name,
-      grade: s.grade,
-      subject: s.subject,
-      curriculum: s.curriculum ?? "CAPS",
-      country: s.country ?? "ZA",
-      created_by: userId,
-      state: "pending",
-    }).select("id").single();
-    if (jErr) throw new Error(jErr.message);
+    const { job, reused } = await getOrCreateActiveJob(admin, s, userId);
 
-    await admin.from("ingestion_stage_logs").insert({
-      job_id: job.id, stage: "pending", status: "info",
-      message: `Created via CAPS sync (source=${s.name})`,
-    });
-
-    await mark(admin, s.id, { docs_discovered: (s.docs_discovered ?? 0) + 1 });
-    await log(admin, s.id, "job_created", "info",
-      `Ingestion job ${job.id} queued — running pipeline`, { job_id: job.id });
+    if (reused) {
+      await log(admin, s.id, "job_resumed", "info",
+        `Resuming existing active ingestion job ${job.id}`, { job_id: job.id });
+    } else {
+      await admin.from("ingestion_stage_logs").insert({
+        job_id: job.id, stage: "pending", status: "info",
+        message: `Created via CAPS sync (source=${s.name})`,
+      });
+      await mark(admin, s.id, { docs_discovered: (s.docs_discovered ?? 0) + 1 });
+      await log(admin, s.id, "job_created", "info",
+        `Ingestion job ${job.id} queued — running pipeline`, { job_id: job.id });
+    }
 
     const MAX_STEPS = 12;
     let finalState = "pending";
@@ -181,18 +184,26 @@ async function processOne(admin: any, s: any, userId: string, force: boolean) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "apikey": ANON,
+          "apikey": SERVICE_ROLE,
           "Authorization": `Bearer ${SERVICE_ROLE}`,
         },
-        body: JSON.stringify({ job_id: job.id }),
+        body: JSON.stringify({ job_id: job.id, max_steps: 12 }),
       });
-      await resp.text().catch(() => "");
+      const workerText = await resp.text().catch(() => "");
+      let workerState: string | null = null;
+      try { workerState = JSON.parse(workerText)?.state ?? null; } catch { /* ignore non-json */ }
+      const workerError = !resp.ok ? (workerText || `worker returned HTTP ${resp.status}`) : null;
+
+      // Give the worker's database update a moment to become visible before the
+      // next stage call. Without this, rapid self-calls can repeatedly see the
+      // same stale state and appear stuck at "discovered"/mid-pipeline.
+      await delay(350);
 
       const { data: jrow } = await admin.from("ingestion_jobs")
         .select("state,last_error,document_id")
         .eq("id", job.id).maybeSingle();
-      finalState = jrow?.state ?? finalState;
-      lastError = jrow?.last_error ?? null;
+      finalState = jrow?.state ?? workerState ?? finalState;
+      lastError = jrow?.last_error ?? workerError;
       documentId = jrow?.document_id ?? documentId;
       await log(admin, s.id, "pipeline_step",
         finalState === "failed" ? "error" : "info",
@@ -256,6 +267,42 @@ async function processOne(admin: any, s: any, userId: string, force: boolean) {
   }
 }
 
+async function getOrCreateActiveJob(admin: any, s: any, userId: string) {
+  const { data: existing, error: findErr } = await findActiveJob(admin, s);
+  if (findErr) throw new Error(findErr.message);
+  if (existing?.id) return { job: existing, reused: true };
+
+  const { data: job, error: jErr } = await admin.from("ingestion_jobs").insert({
+    source_id: s.id,
+    input_url: s.source_url,
+    title_hint: s.name,
+    grade: s.grade,
+    subject: s.subject,
+    curriculum: s.curriculum ?? "CAPS",
+    country: s.country ?? "ZA",
+    created_by: userId,
+    state: "pending",
+  }).select("id,state,document_id,last_error").single();
+  if (!jErr) return { job, reused: false };
+  if (!String(jErr.message ?? "").includes("uq_ingestion_jobs_active_url")) throw new Error(jErr.message);
+
+  const { data: raced, error: racedErr } = await findActiveJob(admin, s);
+  if (racedErr || !raced?.id) throw new Error(racedErr?.message ?? jErr.message);
+  return { job: raced, reused: true };
+}
+
+function findActiveJob(admin: any, s: any) {
+  const activeStates = ["pending", "downloading", "parsing", "structuring", "tagging", "cleaning", "chunking", "translating", "audio_seeding"];
+  return admin.from("ingestion_jobs")
+    .select("id,state,document_id,last_error")
+    .eq("source_id", s.id)
+    .eq("input_url", s.source_url)
+    .in("state", activeStates)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+}
+
 async function mark(admin: any, id: string, patch: Record<string, unknown>) {
   await admin.from("content_sources").update(patch).eq("id", id);
 }
@@ -278,6 +325,10 @@ async function sha256(text: string): Promise<string> {
   const buf = new TextEncoder().encode(text);
   const digest = await crypto.subtle.digest("SHA-256", buf);
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function json(body: unknown, status = 200) {

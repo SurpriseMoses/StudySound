@@ -29,18 +29,24 @@ const PROGRESS: Record<string, number> = {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    let body: { job_id?: string; cron?: boolean } = {};
+    let body: { job_id?: string; cron?: boolean; max_steps?: number } = {};
     try { body = await req.json(); } catch { /* cron may pass empty */ }
 
-    const job = await pickJob(body.job_id);
+    let job = await pickJob(body.job_id);
     if (!job) return json({ skipped: "no_pending_jobs" });
 
-    try {
-      const next = await advance(job);
+    const maxSteps = Math.max(1, Math.min(Number(body.max_steps ?? 1) || 1, 20));
+    let steps = 0;
+    for (; steps < maxSteps; steps++) {
+      if (["completed", "failed", "cancelled"].includes(job.state)) break;
+      try {
+        const next = await advance(job);
+        const progress = PROGRESS[next.state] ?? job.progress;
+        const document_id = next.document_id ?? job.document_id;
       await admin.from("ingestion_jobs").update({
         state: next.state,
-        progress: PROGRESS[next.state] ?? job.progress,
-        document_id: next.document_id ?? job.document_id,
+        progress,
+        document_id,
         started_at: job.started_at ?? new Date().toISOString(),
         finished_at: next.state === "completed" ? new Date().toISOString() : null,
         last_error: null,
@@ -49,21 +55,24 @@ Deno.serve(async (req) => {
       await admin.from("ingestion_stage_logs").insert({
         job_id: job.id, stage: next.state, status: "ok", message: next.message ?? null,
       });
-      return json({ job_id: job.id, state: next.state });
-    } catch (err: any) {
-      const attempts = (job.attempts ?? 0) + 1;
-      const failed = attempts >= 3;
-      await admin.from("ingestion_jobs").update({
-        attempts,
-        state: failed ? "failed" : job.state,
-        last_error: String(err?.message ?? err),
-      }).eq("id", job.id);
-      await admin.from("ingestion_stage_logs").insert({
-        job_id: job.id, stage: job.state, status: failed ? "failed" : "error",
-        message: String(err?.message ?? err),
-      });
-      return json({ job_id: job.id, error: String(err?.message ?? err) }, 500);
+        const { data: refreshed } = await admin.from("ingestion_jobs").select("*").eq("id", job.id).maybeSingle();
+        job = refreshed ?? { ...job, state: next.state, progress, document_id, started_at: job.started_at ?? new Date().toISOString(), last_error: null };
+      } catch (err: any) {
+        const attempts = (job.attempts ?? 0) + 1;
+        const failed = attempts >= 3;
+        await admin.from("ingestion_jobs").update({
+          attempts,
+          state: failed ? "failed" : job.state,
+          last_error: String(err?.message ?? err),
+        }).eq("id", job.id);
+        await admin.from("ingestion_stage_logs").insert({
+          job_id: job.id, stage: job.state, status: failed ? "failed" : "error",
+          message: String(err?.message ?? err),
+        });
+        return json({ job_id: job.id, state: failed ? "failed" : job.state, error: String(err?.message ?? err) }, 500);
+      }
     }
+    return json({ job_id: job.id, state: job.state, steps });
   } catch (e) {
     return json({ error: String(e?.message ?? e) }, 500);
   }
@@ -272,10 +281,12 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
       subjectHint: job.subject ?? null,
     });
     if (mappings.length) {
-      await admin.from("content_topic_mapping").upsert(mappings, {
-        onConflict: "document_id,chunk_index,country,curriculum,grade,subject,topic,subtopic",
-        ignoreDuplicates: false,
-      });
+      await admin.from("content_topic_mapping")
+        .delete()
+        .eq("document_id", docId)
+        .eq("source", "auto");
+      const { error: mapErr } = await admin.from("content_topic_mapping").insert(mappings);
+      if (mapErr) throw mapErr;
     }
     return { state: "chunking", document_id: docId, message: `document ${docId}; ${mappings.length} CAPS mappings` };
   } catch (e) {
