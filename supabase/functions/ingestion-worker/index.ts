@@ -249,7 +249,7 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
     }).eq("id", job.source_id);
   }
 
-  // Curriculum tag row
+  // Curriculum tag row (legacy index — kept for back-compat)
   if (job.grade || job.subject) {
     await admin.from("curriculum_tags").insert({
       document_id: docId,
@@ -260,7 +260,136 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
     });
   }
 
-  return { state: "chunking", document_id: docId, message: `document ${docId}` };
+  // CAPS auto-mapping: score taxonomy rows against title + content + headings.
+  try {
+    const mappings = await inferCapsMappings({
+      docId,
+      title: job.title_hint ?? "",
+      text,
+      country: job.country ?? "ZA",
+      curriculum: job.curriculum ?? "CAPS",
+      gradeHint: job.grade ?? null,
+      subjectHint: job.subject ?? null,
+    });
+    if (mappings.length) {
+      await admin.from("content_topic_mapping").upsert(mappings, {
+        onConflict: "document_id,chunk_index,country,curriculum,grade,subject,topic,subtopic",
+        ignoreDuplicates: false,
+      });
+    }
+    return { state: "chunking", document_id: docId, message: `document ${docId}; ${mappings.length} CAPS mappings` };
+  } catch (e) {
+    return { state: "chunking", document_id: docId, message: `document ${docId}; mapping skipped: ${String((e as any)?.message ?? e)}` };
+  }
+}
+
+// ----- CAPS auto-mapping ---------------------------------------------------
+
+interface InferArgs {
+  docId: string;
+  title: string;
+  text: string;
+  country: string;
+  curriculum: string;
+  gradeHint: string | null;
+  subjectHint: string | null;
+}
+
+async function inferCapsMappings(a: InferArgs) {
+  const { data: tax } = await admin
+    .from("curriculum_taxonomy")
+    .select("grade,subject,topic,subtopic")
+    .eq("country", a.country)
+    .eq("curriculum", a.curriculum);
+  if (!tax || tax.length === 0) return [];
+
+  const title = (a.title ?? "").toLowerCase();
+  const head = (a.text ?? "").slice(0, 12000).toLowerCase();
+  const headings = (a.text.match(/^\s*(chapter|section|unit|topic|module)\s+[^\n]{0,80}/gim) ?? [])
+    .join("\n").toLowerCase();
+  const haystack = `${title}\n${headings}\n${head}`;
+
+  // Detect grade from text if hint missing.
+  let detectedGrade: string | null = a.gradeHint;
+  if (!detectedGrade) {
+    const m = haystack.match(/\bgrade[\s\-]*([89]|1[0-2])\b/);
+    if (m) detectedGrade = m[1];
+  }
+
+  const tokenize = (s: string) =>
+    s.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 4);
+
+  const scored = tax.map((row: any) => {
+    const subjectTokens = tokenize(row.subject ?? "");
+    const topicTokens = tokenize(row.topic ?? "");
+    let score = 0;
+    const signals: Record<string, unknown> = {};
+
+    // Subject keyword hits
+    let subjHits = 0;
+    for (const t of subjectTokens) if (haystack.includes(t)) subjHits++;
+    if (subjectTokens.length) {
+      const s = subjHits / subjectTokens.length;
+      score += s * 0.35;
+      if (s > 0) signals.subject_kw = Number(s.toFixed(2));
+    }
+
+    // Topic keyword hits (stronger)
+    let topHits = 0;
+    for (const t of topicTokens) if (haystack.includes(t)) topHits++;
+    if (topicTokens.length) {
+      const s = topHits / topicTokens.length;
+      score += s * 0.45;
+      if (s > 0) signals.topic_kw = Number(s.toFixed(2));
+    }
+
+    // Grade match
+    if (detectedGrade && row.grade === detectedGrade) {
+      score += 0.2;
+      signals.grade_match = true;
+    } else if (a.gradeHint && row.grade !== a.gradeHint) {
+      score -= 0.15;
+    }
+
+    // Subject hint exact match
+    if (a.subjectHint && row.subject?.toLowerCase() === a.subjectHint.toLowerCase()) {
+      score += 0.25;
+      signals.subject_hint = true;
+    }
+
+    return { row, score: Math.max(0, Math.min(1, score)), signals };
+  });
+
+  // Pick rows above threshold; if nothing crosses, fall back to top-1 from hint if present.
+  const THRESHOLD = 0.35;
+  let kept = scored.filter((s) => s.score >= THRESHOLD);
+  if (kept.length === 0 && (a.gradeHint || a.subjectHint)) {
+    const fallback = scored
+      .filter((s) =>
+        (!a.gradeHint || s.row.grade === a.gradeHint) &&
+        (!a.subjectHint || s.row.subject?.toLowerCase() === a.subjectHint.toLowerCase()))
+      .sort((x, y) => y.score - x.score)
+      .slice(0, 1);
+    kept = fallback.map((s) => ({ ...s, score: Math.max(s.score, 0.4) }));
+  }
+
+  // Cap to top 6 to avoid noise.
+  kept.sort((x, y) => y.score - x.score);
+  kept = kept.slice(0, 6);
+
+  return kept.map((s) => ({
+    document_id: a.docId,
+    chunk_index: null,
+    country: a.country,
+    curriculum: a.curriculum,
+    grade: s.row.grade,
+    subject: s.row.subject,
+    topic: s.row.topic ?? null,
+    subtopic: s.row.subtopic ?? null,
+    confidence: Number(s.score.toFixed(3)),
+    signals: s.signals,
+    source: "auto",
+  }));
 }
 
 async function stageTranslate(job: any): Promise<AdvanceResult> {
