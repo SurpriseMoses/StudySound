@@ -742,9 +742,53 @@ function CoverageDashboard() {
           )}
         </CardContent>
       </Card>
+
+      <Card className="border-primary/40">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" /> Recommended next imports
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Uncovered subjects ranked by grade weight, subject importance, and student demand.
+          </p>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr className="text-left">
+                <th className="py-1 pr-3">#</th>
+                <th className="py-1 pr-3">Grade</th>
+                <th className="py-1 pr-3">Subject</th>
+                <th className="py-1 pr-3">Uncovered topics</th>
+                <th className="py-1 pr-3">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.recommendations.slice(0, 15).map((r, i) => (
+                <tr key={`${r.grade}-${r.subject}`} className="border-t">
+                  <td className="py-1 pr-3 text-muted-foreground">{i + 1}</td>
+                  <td className="py-1 pr-3">Grade {r.grade}</td>
+                  <td className="py-1 pr-3 font-medium">
+                    {r.subject}
+                    {SUBJECT_PRIORITY.has(r.subject) && (
+                      <Badge variant="secondary" className="ml-2 text-[10px]">priority</Badge>
+                    )}
+                  </td>
+                  <td className="py-1 pr-3">{r.uncovered} / {r.total}</td>
+                  <td className="py-1 pr-3 text-muted-foreground">{Math.round(r.score)}</td>
+                </tr>
+              ))}
+              {stats.recommendations.length === 0 && (
+                <tr><td colSpan={5} className="py-3 text-muted-foreground">All subjects covered.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
+
 
 function VerifBadge({ v }: { v: Source["verification_status"] }) {
   const variant = v === "verified" ? "default" : v === "blocked" ? "destructive" : "secondary";
