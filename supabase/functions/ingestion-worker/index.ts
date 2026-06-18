@@ -281,10 +281,12 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
       subjectHint: job.subject ?? null,
     });
     if (mappings.length) {
-      await admin.from("content_topic_mapping").upsert(mappings, {
-        onConflict: "document_id,chunk_index,country,curriculum,grade,subject,topic,subtopic",
-        ignoreDuplicates: false,
-      });
+      await admin.from("content_topic_mapping")
+        .delete()
+        .eq("document_id", docId)
+        .eq("source", "auto");
+      const { error: mapErr } = await admin.from("content_topic_mapping").insert(mappings);
+      if (mapErr) throw mapErr;
     }
     return { state: "chunking", document_id: docId, message: `document ${docId}; ${mappings.length} CAPS mappings` };
   } catch (e) {
