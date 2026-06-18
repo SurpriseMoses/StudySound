@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Play, Plus, RefreshCw, ShieldCheck, ShieldOff } from "lucide-react";
+import { Loader2, Play, Plus, RefreshCw, ShieldCheck, ShieldOff, Download, TrendingUp, Sparkles } from "lucide-react";
 
 type Source = {
   id: string;
