@@ -386,87 +386,107 @@ function StateBadge({ state }: { state: string }) {
 type TaxRow = { grade: string; subject: string; topic: string | null };
 type TagRow = { grade: string | null; subject: string | null; topic: string | null; document_id: string };
 
+type CoverageRow = {
+  grade: string;
+  subject: string;
+  topic: string | null;
+  resources: number;
+  resources_any: number;
+  best_confidence: number;
+};
+
+const SUBJECT_PRIORITY = new Set([
+  "Mathematics", "Physical Sciences", "English Home Language",
+  "English First Additional Language", "Life Sciences", "Accounting",
+]);
+
 function CoverageDashboard() {
-  const [tax, setTax] = useState<TaxRow[]>([]);
-  const [tags, setTags] = useState<TagRow[]>([]);
+  const [rows, setRows] = useState<CoverageRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [drillGrade, setDrillGrade] = useState<string>("all");
+  const [drillSubject, setDrillSubject] = useState<string>("all");
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("v_caps_coverage" as any)
+      .select("grade,subject,topic,resources,resources_any,best_confidence")
+      .eq("country", "ZA").eq("curriculum", "CAPS");
+    setRows((data ?? []) as CoverageRow[]);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    (async () => {
-      const [t, g] = await Promise.all([
-        supabase.from("curriculum_taxonomy").select("grade,subject,topic").eq("country", "ZA").eq("curriculum", "CAPS"),
-        supabase.from("curriculum_tags").select("grade,subject,topic,document_id").eq("country", "ZA").eq("curriculum", "CAPS"),
-      ]);
-      setTax((t.data ?? []) as TaxRow[]);
-      setTags((g.data ?? []) as TagRow[]);
-      setLoading(false);
-    })();
+    load();
+    // Auto-refresh whenever new mappings are inserted.
+    const ch = supabase
+      .channel("content-topic-mapping-coverage")
+      .on("postgres_changes", { event: "*", schema: "public", table: "content_topic_mapping" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, []);
 
   const stats = useMemo(() => {
-    // Count resources per (grade|subject|topic)
-    const resByKey = new Map<string, Set<string>>();
-    const resBySubject = new Map<string, Set<string>>();
-    const resByGrade = new Map<string, Set<string>>();
-    for (const r of tags) {
-      const k = `${r.grade ?? ""}|${r.subject ?? ""}|${r.topic ?? ""}`;
-      if (!resByKey.has(k)) resByKey.set(k, new Set());
-      resByKey.get(k)!.add(r.document_id);
-      const sk = `${r.grade ?? ""}|${r.subject ?? ""}`;
-      if (!resBySubject.has(sk)) resBySubject.set(sk, new Set());
-      resBySubject.get(sk)!.add(r.document_id);
-      const gk = `${r.grade ?? ""}`;
-      if (!resByGrade.has(gk)) resByGrade.set(gk, new Set());
-      resByGrade.get(gk)!.add(r.document_id);
-    }
+    const totalTopics = rows.length;
+    const coveredTopics = rows.filter((r) => r.resources > 0).length;
 
-    const totalTopics = tax.length;
-    const coveredTopics = tax.filter((t) => {
-      const k = `${t.grade}|${t.subject}|${t.topic ?? ""}`;
-      return (resByKey.get(k)?.size ?? 0) > 0;
-    }).length;
-
-    // Subject-level rollup
     const subjMap = new Map<string, { grade: string; subject: string; total: number; covered: number; resources: number }>();
-    for (const t of tax) {
-      const key = `${t.grade}|${t.subject}`;
-      if (!subjMap.has(key)) subjMap.set(key, { grade: t.grade, subject: t.subject, total: 0, covered: 0, resources: 0 });
-      const e = subjMap.get(key)!;
+    for (const r of rows) {
+      const k = `${r.grade}|${r.subject}`;
+      if (!subjMap.has(k)) subjMap.set(k, { grade: r.grade, subject: r.subject, total: 0, covered: 0, resources: 0 });
+      const e = subjMap.get(k)!;
       e.total += 1;
-      const rk = `${t.grade}|${t.subject}|${t.topic ?? ""}`;
-      if ((resByKey.get(rk)?.size ?? 0) > 0) e.covered += 1;
-      e.resources = resBySubject.get(key)?.size ?? 0;
+      if (r.resources > 0) e.covered += 1;
+      e.resources += r.resources;
     }
-    const subjects = Array.from(subjMap.values()).sort(
+    const subjects = [...subjMap.values()].sort(
       (a, b) => Number(a.grade) - Number(b.grade) || a.subject.localeCompare(b.subject),
     );
 
-    // Grade rollup
     const gradeMap = new Map<string, { grade: string; total: number; covered: number; resources: number; subjects: number }>();
     for (const s of subjects) {
       if (!gradeMap.has(s.grade)) gradeMap.set(s.grade, { grade: s.grade, total: 0, covered: 0, resources: 0, subjects: 0 });
       const e = gradeMap.get(s.grade)!;
-      e.total += s.total;
-      e.covered += s.covered;
-      e.subjects += 1;
-      e.resources = resByGrade.get(s.grade)?.size ?? 0;
+      e.total += s.total; e.covered += s.covered; e.resources += s.resources; e.subjects += 1;
     }
-    const grades = Array.from(gradeMap.values()).sort((a, b) => Number(a.grade) - Number(b.grade));
+    const grades = [...gradeMap.values()].sort((a, b) => Number(a.grade) - Number(b.grade));
 
-    return { totalTopics, coveredTopics, uncovered: totalTopics - coveredTopics, subjects, grades };
-  }, [tax, tags]);
+    // Gaps ranked by priority: missing high-priority subjects first, then by grade.
+    const gaps = rows
+      .filter((r) => r.resources === 0)
+      .map((r) => ({
+        ...r,
+        priority: (SUBJECT_PRIORITY.has(r.subject) ? 2 : 1) + (Number(r.grade) >= 11 ? 1 : 0),
+      }))
+      .sort((a, b) => b.priority - a.priority || Number(a.grade) - Number(b.grade) || a.subject.localeCompare(b.subject));
+
+    return { totalTopics, coveredTopics, subjects, grades, gaps };
+  }, [rows]);
 
   if (loading) return <Loader2 className="animate-spin mt-4" />;
 
   const pct = stats.totalTopics ? Math.round((stats.coveredTopics / stats.totalTopics) * 100) : 0;
   const lowSubjects = stats.subjects.filter((s) => s.total > 0 && (s.covered / s.total) * 100 < 80);
 
+  const gradeOptions = ["all", ...stats.grades.map((g) => g.grade)];
+  const subjectOptions = ["all", ...Array.from(new Set(
+    stats.subjects.filter((s) => drillGrade === "all" || s.grade === drillGrade).map((s) => s.subject),
+  ))];
+  const drillRows = rows.filter((r) =>
+    (drillGrade === "all" || r.grade === drillGrade) &&
+    (drillSubject === "all" || r.subject === drillSubject),
+  ).sort((a, b) =>
+    Number(a.grade) - Number(b.grade) ||
+    a.subject.localeCompare(b.subject) ||
+    (a.topic ?? "").localeCompare(b.topic ?? ""),
+  );
+
   return (
     <div className="space-y-6 mt-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Total CAPS topics" value={stats.totalTopics} />
         <Stat label="Topics with content" value={stats.coveredTopics} />
-        <Stat label="Topics without content" value={stats.uncovered} />
+        <Stat label="Topics without content" value={stats.totalTopics - stats.coveredTopics} />
         <Card>
           <CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground font-normal">Coverage</CardTitle></CardHeader>
           <CardContent className="space-y-1">
@@ -497,12 +517,9 @@ function CoverageDashboard() {
           <table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr className="text-left">
-                <th className="py-1 pr-3">Grade</th>
-                <th className="py-1 pr-3">Subjects</th>
-                <th className="py-1 pr-3">Topics</th>
-                <th className="py-1 pr-3">Covered</th>
-                <th className="py-1 pr-3">Resources</th>
-                <th className="py-1 pr-3">Coverage</th>
+                <th className="py-1 pr-3">Grade</th><th className="py-1 pr-3">Subjects</th>
+                <th className="py-1 pr-3">Topics</th><th className="py-1 pr-3">Covered</th>
+                <th className="py-1 pr-3">Resources</th><th className="py-1 pr-3">Coverage</th>
               </tr>
             </thead>
             <tbody>
@@ -530,41 +547,78 @@ function CoverageDashboard() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">By Subject</CardTitle></CardHeader>
+        <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+          <CardTitle className="text-sm">Drill-down: topics per grade & subject</CardTitle>
+          <div className="flex gap-2">
+            <Select value={drillGrade} onValueChange={(v) => { setDrillGrade(v); setDrillSubject("all"); }}>
+              <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {gradeOptions.map((g) => (
+                  <SelectItem key={g} value={g}>{g === "all" ? "All grades" : `Grade ${g}`}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={drillSubject} onValueChange={setDrillSubject}>
+              <SelectTrigger className="w-[180px] h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {subjectOptions.map((s) => (
+                  <SelectItem key={s} value={s}>{s === "all" ? "All subjects" : s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr className="text-left">
-                <th className="py-1 pr-3">Grade</th>
-                <th className="py-1 pr-3">Subject</th>
-                <th className="py-1 pr-3">Topics</th>
-                <th className="py-1 pr-3">Covered</th>
-                <th className="py-1 pr-3">Resources</th>
-                <th className="py-1 pr-3">Coverage</th>
+                <th className="py-1 pr-3">Grade</th><th className="py-1 pr-3">Subject</th>
+                <th className="py-1 pr-3">Topic</th><th className="py-1 pr-3">Status</th>
+                <th className="py-1 pr-3">Resources</th><th className="py-1 pr-3">Confidence</th>
               </tr>
             </thead>
             <tbody>
-              {stats.subjects.map((s) => {
-                const p = s.total ? Math.round((s.covered / s.total) * 100) : 0;
-                const low = p < 80;
-                return (
-                  <tr key={`${s.grade}-${s.subject}`} className={`border-t ${low ? "bg-destructive/5" : ""}`}>
-                    <td className="py-1 pr-3">G{s.grade}</td>
-                    <td className="py-1 pr-3 font-medium">{s.subject}</td>
-                    <td className="py-1 pr-3">{s.total}</td>
-                    <td className="py-1 pr-3">{s.covered}</td>
-                    <td className="py-1 pr-3">{s.resources}</td>
-                    <td className="py-1 pr-3">
-                      <div className="flex items-center gap-2">
-                        <Progress value={p} className="h-1.5 w-20" />
-                        <span className={low ? "text-destructive font-medium" : ""}>{p}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {drillRows.map((r, i) => (
+                <tr key={i} className={`border-t ${r.resources === 0 ? "bg-destructive/5" : ""}`}>
+                  <td className="py-1 pr-3">G{r.grade}</td>
+                  <td className="py-1 pr-3">{r.subject}</td>
+                  <td className="py-1 pr-3">{r.topic ?? <span className="text-muted-foreground italic">(subject-level)</span>}</td>
+                  <td className="py-1 pr-3">
+                    {r.resources > 0
+                      ? <Badge variant="default">Covered</Badge>
+                      : <Badge variant="destructive">Gap</Badge>}
+                  </td>
+                  <td className="py-1 pr-3">{r.resources}</td>
+                  <td className="py-1 pr-3 text-muted-foreground">{r.best_confidence > 0 ? r.best_confidence.toFixed(2) : "—"}</td>
+                </tr>
+              ))}
+              {drillRows.length === 0 && (
+                <tr><td className="py-3 text-muted-foreground" colSpan={6}>No topics match the current filter.</td></tr>
+              )}
             </tbody>
           </table>
+        </CardContent>
+      </Card>
+
+      <Card className="border-amber-500/40">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Content Gaps ({stats.gaps.length}) — prioritised</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1 max-h-96 overflow-y-auto">
+          {stats.gaps.slice(0, 100).map((g, i) => (
+            <div key={i} className="flex items-center justify-between text-sm border-b py-1 last:border-0">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">G{g.grade}</Badge>
+                <span className="font-medium">{g.subject}</span>
+                {g.topic && <span className="text-muted-foreground">· {g.topic}</span>}
+              </div>
+              {SUBJECT_PRIORITY.has(g.subject) && <Badge variant="secondary">High priority</Badge>}
+            </div>
+          ))}
+          {stats.gaps.length === 0 && <p className="text-muted-foreground text-sm">No gaps — full CAPS coverage 🎉</p>}
+          {stats.gaps.length > 100 && (
+            <p className="text-xs text-muted-foreground pt-2">Showing top 100 of {stats.gaps.length} gaps.</p>
+          )}
         </CardContent>
       </Card>
     </div>
