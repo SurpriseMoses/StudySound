@@ -197,6 +197,65 @@ export type Database = {
         }
         Relationships: []
       }
+      content_topic_mapping: {
+        Row: {
+          chunk_index: number | null
+          confidence: number
+          country: string
+          created_at: string
+          curriculum: string
+          document_id: string
+          grade: string
+          id: string
+          signals: Json
+          source: string
+          subject: string
+          subtopic: string | null
+          topic: string | null
+          updated_at: string
+        }
+        Insert: {
+          chunk_index?: number | null
+          confidence?: number
+          country?: string
+          created_at?: string
+          curriculum?: string
+          document_id: string
+          grade: string
+          id?: string
+          signals?: Json
+          source?: string
+          subject: string
+          subtopic?: string | null
+          topic?: string | null
+          updated_at?: string
+        }
+        Update: {
+          chunk_index?: number | null
+          confidence?: number
+          country?: string
+          created_at?: string
+          curriculum?: string
+          document_id?: string
+          grade?: string
+          id?: string
+          signals?: Json
+          source?: string
+          subject?: string
+          subtopic?: string | null
+          topic?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_topic_mapping_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       credit_transactions: {
         Row: {
           amount: number
@@ -1766,7 +1825,19 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_caps_coverage: {
+        Row: {
+          best_confidence: number | null
+          country: string | null
+          curriculum: string | null
+          grade: string | null
+          resources: number | null
+          resources_any: number | null
+          subject: string | null
+          topic: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       admin_abuse_candidates: {
