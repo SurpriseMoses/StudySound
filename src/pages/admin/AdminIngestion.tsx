@@ -412,7 +412,7 @@ function CoverageDashboard() {
       .from("v_caps_coverage" as any)
       .select("grade,subject,topic,resources,resources_any,best_confidence")
       .eq("country", "ZA").eq("curriculum", "CAPS");
-    setRows((data ?? []) as CoverageRow[]);
+    setRows(((data ?? []) as unknown) as CoverageRow[]);
     setLoading(false);
   };
 
