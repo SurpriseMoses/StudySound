@@ -117,7 +117,7 @@ function scheduleNext(userId: string, force: boolean) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "apikey": ANON,
+      "apikey": SERVICE_ROLE,
       "Authorization": `Bearer ${SERVICE_ROLE}`,
     },
     body: JSON.stringify({ next: true, chained_user: userId, force }),
@@ -184,7 +184,7 @@ async function processOne(admin: any, s: any, userId: string, force: boolean) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "apikey": ANON,
+          "apikey": SERVICE_ROLE,
           "Authorization": `Bearer ${SERVICE_ROLE}`,
         },
         body: JSON.stringify({ job_id: job.id, max_steps: 12 }),
