@@ -411,6 +411,19 @@ const SUBJECT_PRIORITY = new Set([
   "English First Additional Language", "Life Sciences", "Accounting",
 ]);
 
+// Importance score for ranking next imports.
+const SUBJECT_RANK: Record<string, number> = {
+  "Mathematics": 100,
+  "Mathematical Literacy": 70,
+  "Physical Sciences": 90,
+  "Life Sciences": 80,
+  "Accounting": 70,
+  "Geography": 60,
+  "English Home Language": 55,
+  "English First Additional Language": 55,
+};
+
+
 function CoverageDashboard() {
   const [rows, setRows] = useState<CoverageRow[]>([]);
   const [loading, setLoading] = useState(true);
