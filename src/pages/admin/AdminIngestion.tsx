@@ -124,6 +124,16 @@ export default function AdminIngestion() {
     setTimeout(refresh, 1000);
   };
 
+  const [backfilling, setBackfilling] = useState(false);
+  const runBackfill = async () => {
+    setBackfilling(true);
+    const { data, error } = await supabase.functions.invoke("backfill-pipeline", { body: { limit: 3 } });
+    setBackfilling(false);
+    if (error) toast({ title: error.message, variant: "destructive" });
+    else toast({ title: `Backfill: ${data?.processed ?? 0} docs`, description: JSON.stringify(data?.results ?? []).slice(0, 200) });
+    setTimeout(refresh, 1000);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -133,6 +143,10 @@ export default function AdminIngestion() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={kickWorker}><Play className="w-4 h-4 mr-1" /> Kick worker</Button>
+          <Button variant="outline" size="sm" onClick={runBackfill} disabled={backfilling}>
+            {backfilling ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
+            Backfill pipeline
+          </Button>
           <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="w-4 h-4 mr-1" /> Refresh</Button>
         </div>
       </div>
