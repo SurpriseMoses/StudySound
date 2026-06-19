@@ -523,6 +523,50 @@ export type Database = {
         }
         Relationships: []
       }
+      document_chunks: {
+        Row: {
+          char_count: number
+          chunk_index: number
+          content_hash: string
+          created_at: string
+          document_id: string
+          embedding: string | null
+          embedding_model: string | null
+          id: string
+          text: string
+        }
+        Insert: {
+          char_count: number
+          chunk_index: number
+          content_hash: string
+          created_at?: string
+          document_id: string
+          embedding?: string | null
+          embedding_model?: string | null
+          id?: string
+          text: string
+        }
+        Update: {
+          char_count?: number
+          chunk_index?: number
+          content_hash?: string
+          created_at?: string
+          document_id?: string
+          embedding?: string | null
+          embedding_model?: string | null
+          id?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           char_count: number
@@ -534,6 +578,7 @@ export type Database = {
           current_chunk_index: number | null
           curriculum: string | null
           doc_type: string | null
+          embeddings_status: string | null
           grade_level: string | null
           id: string
           import_job_id: string | null
@@ -543,6 +588,7 @@ export type Database = {
           last_error: string | null
           license_type: Database["public"]["Enums"]["license_type"] | null
           page_count: number | null
+          published_at: string | null
           raw_text: string | null
           seed_audio: boolean
           seed_audio_error: string | null
@@ -567,6 +613,7 @@ export type Database = {
           current_chunk_index?: number | null
           curriculum?: string | null
           doc_type?: string | null
+          embeddings_status?: string | null
           grade_level?: string | null
           id?: string
           import_job_id?: string | null
@@ -576,6 +623,7 @@ export type Database = {
           last_error?: string | null
           license_type?: Database["public"]["Enums"]["license_type"] | null
           page_count?: number | null
+          published_at?: string | null
           raw_text?: string | null
           seed_audio?: boolean
           seed_audio_error?: string | null
@@ -600,6 +648,7 @@ export type Database = {
           current_chunk_index?: number | null
           curriculum?: string | null
           doc_type?: string | null
+          embeddings_status?: string | null
           grade_level?: string | null
           id?: string
           import_job_id?: string | null
@@ -609,6 +658,7 @@ export type Database = {
           last_error?: string | null
           license_type?: Database["public"]["Enums"]["license_type"] | null
           page_count?: number | null
+          published_at?: string | null
           raw_text?: string | null
           seed_audio?: boolean
           seed_audio_error?: string | null
@@ -1278,6 +1328,8 @@ export type Database = {
           chunk_index: number
           created_at: string
           document_id: string
+          embedding: string | null
+          embedding_model: string | null
           english_leak_detected: boolean
           id: string
           source_language: string
@@ -1291,6 +1343,8 @@ export type Database = {
           chunk_index: number
           created_at?: string
           document_id: string
+          embedding?: string | null
+          embedding_model?: string | null
           english_leak_detected?: boolean
           id?: string
           source_language?: string
@@ -1304,6 +1358,8 @@ export type Database = {
           chunk_index?: number
           created_at?: string
           document_id?: string
+          embedding?: string | null
+          embedding_model?: string | null
           english_leak_detected?: boolean
           id?: string
           source_language?: string
