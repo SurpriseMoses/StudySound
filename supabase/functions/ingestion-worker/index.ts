@@ -11,8 +11,7 @@
 //   chunking       → embedding_en      (split into document_chunks + embed English)
 //   embedding_en   → translating       (enable translation seeding)
 //   translating    → embedding_tr      (waits for translation_status='done')
-//   embedding_tr   → audio_seeding     (enable audio seeding)
-//   audio_seeding  → publishing        (set published_at, embeddings_status)
+//   embedding_tr   → publishing        (skip auto audio seeding)
 //   publishing     → coverage          (refresh coverage_snapshots)
 //   coverage       → completed
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
