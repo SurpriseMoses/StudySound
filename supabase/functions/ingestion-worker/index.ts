@@ -312,6 +312,10 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
     }).eq("id", job.source_id);
   }
 
+  // Materialize chunk-level English rows (idempotent, no embeddings yet).
+  await ensureChunks(docId!, text);
+
+
   // Curriculum tag row (legacy index — kept for back-compat)
   if (job.grade || job.subject) {
     await admin.from("curriculum_tags").insert({
