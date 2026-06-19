@@ -2,28 +2,37 @@
 // Called by pg_cron every minute and on-demand by the orchestrator.
 //
 // Stages:
-//   pending     → downloading
-//   downloading → parsing
-//   parsing     → structuring
-//   structuring → tagging
-//   tagging     → cleaning
-//   cleaning    → chunking
-//   chunking    → translating
-//   translating → audio_seeding
-//   audio_seeding → completed
+//   pending        → downloading
+//   downloading    → parsing
+//   parsing        → structuring
+//   structuring    → tagging
+//   tagging        → cleaning
+//   cleaning       → chunking
+//   chunking       → embedding_en      (split into document_chunks + embed English)
+//   embedding_en   → translating       (enable translation seeding)
+//   translating    → embedding_tr      (waits for translation_status='done')
+//   embedding_tr   → audio_seeding     (enable audio seeding)
+//   audio_seeding  → publishing        (set published_at, embeddings_status)
+//   publishing     → coverage          (refresh coverage_snapshots)
+//   coverage       → completed
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
+const EMBED_MODEL = "openai/text-embedding-3-small"; // 1536 dims, cost-efficient
+const CHUNK_SIZE = 1200;
+const CHUNK_OVERLAP = 150;
+const EMBED_BATCH = 32;
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 // Stage → progress %
 const PROGRESS: Record<string, number> = {
-  pending: 0, downloading: 10, parsing: 25, structuring: 35, tagging: 45,
-  cleaning: 60, chunking: 75, translating: 85, audio_seeding: 95, completed: 100,
+  pending: 0, downloading: 8, parsing: 18, structuring: 25, tagging: 32,
+  cleaning: 42, chunking: 52, embedding_en: 62, translating: 72,
+  embedding_tr: 82, audio_seeding: 90, publishing: 95, coverage: 98, completed: 100,
 };
 
 Deno.serve(async (req) => {
