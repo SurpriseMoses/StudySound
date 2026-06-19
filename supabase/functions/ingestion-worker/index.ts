@@ -228,10 +228,37 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
   let docId = existing?.id ?? null;
 
   if (!docId) {
-    const title = job.title_hint
+    const { data: src } = await admin.from("content_sources").select("license_type,name,publisher").eq("id", job.source_id).maybeSingle();
+    const publisher = (src as any)?.publisher
+      ?? (src?.name ? String(src.name).split(" ")[0] : null); // e.g. "Siyavula"
+    const baseTitle = job.title_hint
       ?? (job.input_url ? new URL(job.input_url).pathname.split("/").filter(Boolean).pop() : null)
       ?? "Imported document";
-    const { data: src } = await admin.from("content_sources").select("license_type,name").eq("id", job.source_id).maybeSingle();
+    // Ensure a distinct, learner-friendly title: "<Publisher> <Subject> Grade <N>"
+    const titleBits = [
+      publisher,
+      job.subject ?? null,
+      job.grade ? `Grade ${job.grade}` : null,
+    ].filter(Boolean);
+    const title = titleBits.length >= 2 ? titleBits.join(" ") : baseTitle;
+
+    // Map free-form subject → subject_type enum (novel/history/science/other)
+    const s = String(job.subject ?? "").toLowerCase();
+    const subjectType =
+      /physic|chem|biolog|life scien|natural scien|science/.test(s) ? "science"
+      : /history|geograph|social/.test(s) ? "history"
+      : /literature|english|novel|story/.test(s) ? "novel"
+      : "other";
+
+    const tags = {
+      publisher: publisher ?? null,
+      subject: job.subject ?? null,
+      grade: job.grade ?? null,
+      curriculum: job.curriculum ?? "CAPS",
+      country: job.country ?? "ZA",
+      source: src?.name ?? null,
+    };
+
     const { data: doc, error } = await admin.from("documents").insert({
       content_hash: hash,
       title,
@@ -241,6 +268,8 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
       language: "en",
       grade_level: job.grade ?? null,
       doc_type: job.subject ?? null,
+      subject_type: subjectType,
+      tags,
       is_seeded: true,
       source_id: job.source_id,
       source_url: job.input_url ?? null,
