@@ -2,28 +2,37 @@
 // Called by pg_cron every minute and on-demand by the orchestrator.
 //
 // Stages:
-//   pending     → downloading
-//   downloading → parsing
-//   parsing     → structuring
-//   structuring → tagging
-//   tagging     → cleaning
-//   cleaning    → chunking
-//   chunking    → translating
-//   translating → audio_seeding
-//   audio_seeding → completed
+//   pending        → downloading
+//   downloading    → parsing
+//   parsing        → structuring
+//   structuring    → tagging
+//   tagging        → cleaning
+//   cleaning       → chunking
+//   chunking       → embedding_en      (split into document_chunks + embed English)
+//   embedding_en   → translating       (enable translation seeding)
+//   translating    → embedding_tr      (waits for translation_status='done')
+//   embedding_tr   → audio_seeding     (enable audio seeding)
+//   audio_seeding  → publishing        (set published_at, embeddings_status)
+//   publishing     → coverage          (refresh coverage_snapshots)
+//   coverage       → completed
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
+const EMBED_MODEL = "openai/text-embedding-3-small"; // 1536 dims, cost-efficient
+const CHUNK_SIZE = 1200;
+const CHUNK_OVERLAP = 150;
+const EMBED_BATCH = 32;
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 // Stage → progress %
 const PROGRESS: Record<string, number> = {
-  pending: 0, downloading: 10, parsing: 25, structuring: 35, tagging: 45,
-  cleaning: 60, chunking: 75, translating: 85, audio_seeding: 95, completed: 100,
+  pending: 0, downloading: 8, parsing: 18, structuring: 25, tagging: 32,
+  cleaning: 42, chunking: 52, embedding_en: 62, translating: 72,
+  embedding_tr: 82, audio_seeding: 90, publishing: 95, coverage: 98, completed: 100,
 };
 
 Deno.serve(async (req) => {
@@ -95,15 +104,19 @@ interface AdvanceResult { state: string; document_id?: string; message?: string 
 
 async function advance(job: any): Promise<AdvanceResult> {
   switch (job.state) {
-    case "pending":      return await stageDownload(job);
-    case "downloading":  return await stageParse(job);
-    case "parsing":      return await stageStructure(job);
-    case "structuring":  return await stageTag(job);
-    case "tagging":      return await stageClean(job);
-    case "cleaning":     return await stageChunk(job);
-    case "chunking":     return await stageTranslate(job);
-    case "translating":  return await stageAudio(job);
-    case "audio_seeding":return await stageComplete(job);
+    case "pending":       return await stageDownload(job);
+    case "downloading":   return await stageParse(job);
+    case "parsing":       return await stageStructure(job);
+    case "structuring":   return await stageTag(job);
+    case "tagging":       return await stageClean(job);
+    case "cleaning":      return await stageChunk(job);
+    case "chunking":      return await stageEmbedEnglish(job);
+    case "embedding_en":  return await stageTranslate(job);
+    case "translating":   return await stageEmbedTranslations(job);
+    case "embedding_tr":  return await stageAudio(job);
+    case "audio_seeding": return await stagePublish(job);
+    case "publishing":    return await stageCoverage(job);
+    case "coverage":      return await stageComplete(job);
     default: return { state: job.state, message: "noop" };
   }
 }
@@ -299,6 +312,10 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
     }).eq("id", job.source_id);
   }
 
+  // Materialize chunk-level English rows (idempotent, no embeddings yet).
+  await ensureChunks(docId!, text);
+
+
   // Curriculum tag row (legacy index — kept for back-compat)
   if (job.grade || job.subject) {
     await admin.from("curriculum_tags").insert({
@@ -444,16 +461,150 @@ async function inferCapsMappings(a: InferArgs) {
   }));
 }
 
+async function stageEmbedEnglish(job: any): Promise<AdvanceResult> {
+  if (!job.document_id) throw new Error("no document_id");
+  const { data: rows, error } = await admin
+    .from("document_chunks")
+    .select("id,text")
+    .eq("document_id", job.document_id)
+    .is("embedding", null)
+    .order("chunk_index", { ascending: true })
+    .limit(EMBED_BATCH);
+  if (error) throw error;
+
+  if (!rows || rows.length === 0) {
+    return { state: "embedding_en", message: "english embeddings ready" };
+  }
+  if (!LOVABLE_API_KEY) {
+    // No key — skip embeddings gracefully but still advance.
+    return { state: "embedding_en", message: "no LOVABLE_API_KEY; skipping embeddings" };
+  }
+
+  const vectors = await embedBatch(rows.map((r: any) => r.text));
+  for (let i = 0; i < rows.length; i++) {
+    await admin.from("document_chunks").update({
+      embedding: vectors[i] as any,
+      embedding_model: EMBED_MODEL,
+    }).eq("id", rows[i].id);
+  }
+  // Stay on `cleaning` -> `embedding_en` transition only after first batch; subsequent
+  // ticks re-enter with state='embedding_en' (handled below).
+  return { state: "embedding_en", message: `embedded ${rows.length} english chunks` };
+}
+
 async function stageTranslate(job: any): Promise<AdvanceResult> {
   if (!job.document_id) throw new Error("no document_id");
-  await admin.from("documents").update({ seed_translation: true, translation_status: "pending" }).eq("id", job.document_id);
+  // Make sure all English chunks are embedded before flipping to translation.
+  const { count } = await admin
+    .from("document_chunks")
+    .select("id", { count: "exact", head: true })
+    .eq("document_id", job.document_id)
+    .is("embedding", null);
+  if ((count ?? 0) > 0) {
+    // Re-run embedding on the same tick path: process another batch, stay in embedding_en.
+    return await stageEmbedEnglish(job);
+  }
+  await admin.from("documents").update({
+    seed_translation: true,
+    translation_status: "pending",
+  }).eq("id", job.document_id);
   return { state: "translating", message: "translation seeding enabled" };
+}
+
+async function stageEmbedTranslations(job: any): Promise<AdvanceResult> {
+  if (!job.document_id) throw new Error("no document_id");
+  // Wait until the translation pipeline has finished.
+  const { data: doc } = await admin
+    .from("documents")
+    .select("translation_status")
+    .eq("id", job.document_id)
+    .maybeSingle();
+  if (doc?.translation_status !== "done") {
+    return { state: "translating", message: `waiting on translations (${doc?.translation_status ?? "unknown"})` };
+  }
+
+  const { data: rows, error } = await admin
+    .from("translation_assets")
+    .select("id,translated_text")
+    .eq("document_id", job.document_id)
+    .is("embedding", null)
+    .limit(EMBED_BATCH);
+  if (error) throw error;
+
+  if (!rows || rows.length === 0) {
+    return { state: "embedding_tr", message: "translated embeddings ready" };
+  }
+  if (!LOVABLE_API_KEY) {
+    return { state: "embedding_tr", message: "no LOVABLE_API_KEY; skipping translation embeddings" };
+  }
+
+  const vectors = await embedBatch(rows.map((r: any) => r.translated_text ?? ""));
+  for (let i = 0; i < rows.length; i++) {
+    await admin.from("translation_assets").update({
+      embedding: vectors[i] as any,
+      embedding_model: EMBED_MODEL,
+    }).eq("id", rows[i].id);
+  }
+  return { state: "embedding_tr", message: `embedded ${rows.length} translated chunks` };
 }
 
 async function stageAudio(job: any): Promise<AdvanceResult> {
   if (!job.document_id) throw new Error("no document_id");
-  await admin.from("documents").update({ seed_audio: true, seed_audio_status: "pending" }).eq("id", job.document_id);
+  // Drain any remaining translation embeddings before moving on.
+  const { count } = await admin
+    .from("translation_assets")
+    .select("id", { count: "exact", head: true })
+    .eq("document_id", job.document_id)
+    .is("embedding", null);
+  if ((count ?? 0) > 0) {
+    return await stageEmbedTranslations(job);
+  }
+  await admin.from("documents").update({
+    seed_audio: true,
+    seed_audio_status: "pending",
+  }).eq("id", job.document_id);
   return { state: "audio_seeding", message: "audio seeding enabled" };
+}
+
+async function stagePublish(job: any): Promise<AdvanceResult> {
+  if (!job.document_id) throw new Error("no document_id");
+  await admin.from("documents").update({
+    published_at: new Date().toISOString(),
+    embeddings_status: "complete",
+  }).eq("id", job.document_id);
+  return { state: "publishing", message: "document published" };
+}
+
+async function stageCoverage(job: any): Promise<AdvanceResult> {
+  // Refresh coverage_snapshots for this curriculum/country.
+  try {
+    const country = job.country ?? "ZA";
+    const curriculum = job.curriculum ?? "CAPS";
+    const { data: tax } = await admin
+      .from("curriculum_taxonomy")
+      .select("topic")
+      .eq("country", country).eq("curriculum", curriculum);
+    const total = tax?.length ?? 0;
+    const { data: covered } = await admin
+      .from("content_topic_mapping")
+      .select("topic")
+      .eq("country", country).eq("curriculum", curriculum)
+      .not("topic", "is", null);
+    const coveredSet = new Set((covered ?? []).map((r: any) => r.topic));
+    const { count: resourcesCount } = await admin
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("country", country).eq("curriculum", curriculum);
+    await admin.from("coverage_snapshots").insert({
+      country, curriculum,
+      total_topics: total,
+      covered_topics: coveredSet.size,
+      resources: resourcesCount ?? 0,
+      source_id: job.source_id ?? null,
+      note: `auto-refresh after job ${job.id}`,
+    });
+  } catch (_) { /* non-fatal */ }
+  return { state: "coverage", message: "coverage snapshot updated" };
 }
 
 async function stageComplete(job: any): Promise<AdvanceResult> {
@@ -470,6 +621,71 @@ async function stageComplete(job: any): Promise<AdvanceResult> {
     });
   }
   return { state: "completed", message: "done" };
+}
+
+// ----- chunking + embedding helpers ----------------------------------------
+
+function splitIntoChunks(text: string): string[] {
+  const chunks: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    let end = Math.min(i + CHUNK_SIZE, text.length);
+    if (end < text.length) {
+      // Try to break on paragraph or sentence boundary.
+      const slice = text.slice(i, end);
+      const lastPara = slice.lastIndexOf("\n\n");
+      const lastSent = slice.lastIndexOf(". ");
+      const cut = lastPara > CHUNK_SIZE * 0.5 ? lastPara
+        : lastSent > CHUNK_SIZE * 0.5 ? lastSent + 1
+        : -1;
+      if (cut > 0) end = i + cut;
+    }
+    const piece = text.slice(i, end).trim();
+    if (piece.length > 0) chunks.push(piece);
+    if (end >= text.length) break;
+    i = Math.max(end - CHUNK_OVERLAP, i + 1);
+  }
+  return chunks;
+}
+
+async function ensureChunks(docId: string, fullText: string): Promise<void> {
+  const { count } = await admin
+    .from("document_chunks")
+    .select("id", { count: "exact", head: true })
+    .eq("document_id", docId);
+  if ((count ?? 0) > 0) return;
+  const pieces = splitIntoChunks(fullText);
+  if (pieces.length === 0) return;
+  const rows = await Promise.all(pieces.map(async (text, idx) => ({
+    document_id: docId,
+    chunk_index: idx,
+    text,
+    char_count: text.length,
+    content_hash: await sha256(text),
+  })));
+  // Insert in batches of 100 to avoid request-size limits.
+  for (let i = 0; i < rows.length; i += 100) {
+    const slice = rows.slice(i, i + 100);
+    const { error } = await admin.from("document_chunks").insert(slice);
+    if (error) throw error;
+  }
+}
+
+async function embedBatch(inputs: string[]): Promise<number[][]> {
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+    },
+    body: JSON.stringify({ model: EMBED_MODEL, input: inputs }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`embedding failed ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const j = await res.json();
+  return (j.data ?? []).map((d: any) => d.embedding as number[]);
 }
 
 // ----- helpers -------------------------------------------------------------
