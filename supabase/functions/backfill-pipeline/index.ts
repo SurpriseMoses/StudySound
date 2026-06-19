@@ -245,13 +245,6 @@ async function backfillDoc(
   }
   out.stages.push({ embed_tr: embeddedTr });
 
-  if (!doc.seed_audio) {
-    await admin.from("documents").update({
-      seed_audio: true, seed_audio_status: "pending",
-    }).eq("id", doc.id);
-    out.stages.push({ queue_audio: "enabled" });
-  }
-
   // 13 Publish
   const { count: pendingEn } = await admin.from("document_chunks")
     .select("id", { count: "exact", head: true }).eq("document_id", doc.id).is("embedding", null);
