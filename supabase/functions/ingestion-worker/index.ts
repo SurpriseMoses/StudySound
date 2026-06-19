@@ -38,7 +38,7 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 const PROGRESS: Record<string, number> = {
   pending: 0, downloading: 8, parsing: 18, structuring: 25, tagging: 32,
   cleaning: 42, chunking: 52, embedding_en: 62, translating: 72,
-  embedding_tr: 82, audio_seeding: 90, publishing: 95, coverage: 98, completed: 100,
+  embedding_tr: 82, publishing: 95, coverage: 98, completed: 100,
 };
 
 Deno.serve(async (req) => {
