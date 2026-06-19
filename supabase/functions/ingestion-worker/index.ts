@@ -250,19 +250,29 @@ async function stageTag(job: any): Promise<AdvanceResult> {
 
 async function stageClean(job: any): Promise<AdvanceResult> {
   const text: string = job.input_raw_text ?? "";
-  const cleaned = text
-    .replace(/\r\n/g, "\n")
-    .replace(/_{2,}/g, " ")
-    .replace(/\.{4,}/g, " ")
-    .replace(/^\s*\d{1,4}\s*$/gm, "")               // page numbers
-    .replace(/^\s*(table\s+of\s+contents?)\s*$/gim, "")
-    .replace(/^(.+)\n\1$/gm, "$1")                  // duplicate adjacent lines
-    .replace(/\b(exit|exeunt|enter)\b\.?/gi, "")    // stage cues
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  // Decide cleaner: textbooks (science/maths/etc.) preserve TOC + headings;
+  // literature/novels use the line-noise stripper.
+  const subjectLow = String(job.subject ?? "").toLowerCase();
+  const isTextbook = /math|physic|chem|biolog|life scien|natural scien|science|geograph|history|economics|account|business/.test(subjectLow);
+
+  let cleaned: string;
+  if (isTextbook) {
+    cleaned = cleanTextbookPreservingTOC(text);
+  } else {
+    cleaned = text
+      .replace(/\r\n/g, "\n")
+      .replace(/_{2,}/g, " ")
+      .replace(/\.{4,}/g, " ")
+      .replace(/^\s*\d{1,4}\s*$/gm, "")
+      .replace(/^\s*(table\s+of\s+contents?)\s*$/gim, "")
+      .replace(/^(.+)\n\1$/gm, "$1")
+      .replace(/\b(exit|exeunt|enter)\b\.?/gi, "")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
   await admin.from("ingestion_jobs").update({ input_raw_text: cleaned }).eq("id", job.id);
-  return { state: "cleaning", message: `cleaned to ${cleaned.length} chars` };
+  return { state: "cleaning", message: `cleaned to ${cleaned.length} chars (${isTextbook ? "textbook" : "literature"})` };
 }
 
 async function stageChunk(job: any): Promise<AdvanceResult> {
