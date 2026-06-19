@@ -17,6 +17,13 @@
 //   coverage       → completed
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  deepCrawlFromIndex,
+  validateTextbook,
+  cleanTextbookPreservingTOC,
+  MIN_TEXTBOOK_CHARS,
+  MIN_CHAPTERS,
+} from "../_shared/deep-crawl.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -145,6 +152,7 @@ async function stageDownload(job: any): Promise<AdvanceResult> {
 async function stageParse(job: any): Promise<AdvanceResult> {
   // Pull bytes; if HTML strip tags; if text keep as-is; if PDF store raw text best-effort.
   let text = job.input_raw_text ?? "";
+  let sourceHtml = "";
   if (!text && job.input_upload_path) {
     const { data } = await admin.storage.from("uploads").download(job.input_upload_path);
     if (data) {
@@ -152,10 +160,9 @@ async function stageParse(job: any): Promise<AdvanceResult> {
       const sniff = new TextDecoder("utf-8", { fatal: false }).decode(bytes.slice(0, 2048));
       const looksHtml = /<html|<body|<!doctype html/i.test(sniff);
       if (looksHtml) {
-        const html = new TextDecoder().decode(bytes);
-        text = htmlToText(html);
+        sourceHtml = new TextDecoder().decode(bytes);
+        text = htmlToText(sourceHtml);
       } else if (sniff.startsWith("%PDF")) {
-        // Naive PDF: extract printable ASCII as a placeholder; admins can re-run via extract-document if needed.
         text = Array.from(bytes).map((b) => (b >= 32 && b < 127) || b === 10 ? String.fromCharCode(b) : "").join("");
       } else {
         text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
@@ -164,8 +171,35 @@ async function stageParse(job: any): Promise<AdvanceResult> {
   }
   text = text.replace(/\u0000/g, "").trim();
   if (text.length < 200) throw new Error("extracted text too short");
+
+  // Deep-crawl for TOC/landing pages (e.g. Siyavula chapter indexes).
+  // If the index page itself is small (likely just a TOC), follow chapter links
+  // and concatenate their bodies so we get the full textbook content.
+  const shouldDeepCrawl =
+    sourceHtml &&
+    job.input_url &&
+    text.length < MIN_TEXTBOOK_CHARS &&
+    /siyavula|openstax|wikibooks|cnx\.org/i.test(job.input_url);
+  if (shouldDeepCrawl) {
+    try {
+      const crawl = await deepCrawlFromIndex(job.input_url, sourceHtml, { maxPages: 80 });
+      if (crawl.text.length > text.length) {
+        text = crawl.text;
+        await admin.from("ingestion_stage_logs").insert({
+          job_id: job.id, stage: "parsing", status: "info",
+          message: `deep-crawled ${crawl.pagesFetched} chapter pages (${crawl.text.length} chars)`,
+        });
+      }
+    } catch (e: any) {
+      await admin.from("ingestion_stage_logs").insert({
+        job_id: job.id, stage: "parsing", status: "warn",
+        message: `deep-crawl failed: ${String(e?.message ?? e)}`,
+      });
+    }
+  }
+
   // Cache raw_text on the job for later stages.
-  await admin.from("ingestion_jobs").update({ input_raw_text: text.slice(0, 1_500_000) }).eq("id", job.id);
+  await admin.from("ingestion_jobs").update({ input_raw_text: text.slice(0, 4_000_000) }).eq("id", job.id);
   return { state: "parsing", message: `extracted ${text.length} chars` };
 }
 
@@ -216,24 +250,49 @@ async function stageTag(job: any): Promise<AdvanceResult> {
 
 async function stageClean(job: any): Promise<AdvanceResult> {
   const text: string = job.input_raw_text ?? "";
-  const cleaned = text
-    .replace(/\r\n/g, "\n")
-    .replace(/_{2,}/g, " ")
-    .replace(/\.{4,}/g, " ")
-    .replace(/^\s*\d{1,4}\s*$/gm, "")               // page numbers
-    .replace(/^\s*(table\s+of\s+contents?)\s*$/gim, "")
-    .replace(/^(.+)\n\1$/gm, "$1")                  // duplicate adjacent lines
-    .replace(/\b(exit|exeunt|enter)\b\.?/gi, "")    // stage cues
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  // Decide cleaner: textbooks (science/maths/etc.) preserve TOC + headings;
+  // literature/novels use the line-noise stripper.
+  const subjectLow = String(job.subject ?? "").toLowerCase();
+  const isTextbook = /math|physic|chem|biolog|life scien|natural scien|science|geograph|history|economics|account|business/.test(subjectLow);
+
+  let cleaned: string;
+  if (isTextbook) {
+    cleaned = cleanTextbookPreservingTOC(text);
+  } else {
+    cleaned = text
+      .replace(/\r\n/g, "\n")
+      .replace(/_{2,}/g, " ")
+      .replace(/\.{4,}/g, " ")
+      .replace(/^\s*\d{1,4}\s*$/gm, "")
+      .replace(/^\s*(table\s+of\s+contents?)\s*$/gim, "")
+      .replace(/^(.+)\n\1$/gm, "$1")
+      .replace(/\b(exit|exeunt|enter)\b\.?/gi, "")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
   await admin.from("ingestion_jobs").update({ input_raw_text: cleaned }).eq("id", job.id);
-  return { state: "cleaning", message: `cleaned to ${cleaned.length} chars` };
+  return { state: "cleaning", message: `cleaned to ${cleaned.length} chars (${isTextbook ? "textbook" : "literature"})` };
 }
 
 async function stageChunk(job: any): Promise<AdvanceResult> {
   const text: string = job.input_raw_text ?? "";
   if (!text || text.length < 200) throw new Error("no text after cleaning");
+
+  // Validation gate: refuse to publish broken imports.
+  // A "real" textbook either has >100k chars OR >5 chapter-like headings.
+  const subjectLow = String(job.subject ?? "").toLowerCase();
+  const isLiterature = /literature|english|novel|story|play|shakespeare/.test(subjectLow);
+  if (!isLiterature) {
+    const v = validateTextbook(text);
+    if (!v.ok) {
+      throw new Error(
+        `Only TOC page imported (chars=${v.chars}, chapters=${v.chapters}; ` +
+        `need >${MIN_TEXTBOOK_CHARS} chars OR >${MIN_CHAPTERS} chapters)`,
+      );
+    }
+  }
+
   const hash = await sha256(text);
 
   // Duplicate detection — reuse existing document if same hash, OR if a document
