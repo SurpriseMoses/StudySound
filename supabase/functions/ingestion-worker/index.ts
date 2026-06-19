@@ -104,15 +104,19 @@ interface AdvanceResult { state: string; document_id?: string; message?: string 
 
 async function advance(job: any): Promise<AdvanceResult> {
   switch (job.state) {
-    case "pending":      return await stageDownload(job);
-    case "downloading":  return await stageParse(job);
-    case "parsing":      return await stageStructure(job);
-    case "structuring":  return await stageTag(job);
-    case "tagging":      return await stageClean(job);
-    case "cleaning":     return await stageChunk(job);
-    case "chunking":     return await stageTranslate(job);
-    case "translating":  return await stageAudio(job);
-    case "audio_seeding":return await stageComplete(job);
+    case "pending":       return await stageDownload(job);
+    case "downloading":   return await stageParse(job);
+    case "parsing":       return await stageStructure(job);
+    case "structuring":   return await stageTag(job);
+    case "tagging":       return await stageClean(job);
+    case "cleaning":      return await stageChunk(job);
+    case "chunking":      return await stageEmbedEnglish(job);
+    case "embedding_en":  return await stageTranslate(job);
+    case "translating":   return await stageEmbedTranslations(job);
+    case "embedding_tr":  return await stageAudio(job);
+    case "audio_seeding": return await stagePublish(job);
+    case "publishing":    return await stageCoverage(job);
+    case "coverage":      return await stageComplete(job);
     default: return { state: job.state, message: "noop" };
   }
 }
