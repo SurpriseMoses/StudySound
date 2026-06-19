@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
     const reclean = body.reclean ?? true;
     const publishWithoutTr = body.publish_without_translations ?? true;
 
-    const sel = "id, title, doc_type, subject_type, clean_text, raw_text, cleaning_version, country, curriculum, source_id, published_at, embeddings_status, seed_translation, translation_status, seed_audio";
+    const sel = "id, title, doc_type, subject_type, clean_text, raw_text, cleaning_version, country, curriculum, source_id, source_url, published_at, embeddings_status, seed_translation, translation_status, seed_audio, tags";
 
     let targets: any[] = [];
     if (body.document_id) {
