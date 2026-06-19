@@ -17,6 +17,13 @@
 //   coverage       → completed
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  deepCrawlFromIndex,
+  validateTextbook,
+  cleanTextbookPreservingTOC,
+  MIN_TEXTBOOK_CHARS,
+  MIN_CHAPTERS,
+} from "../_shared/deep-crawl.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
