@@ -152,6 +152,7 @@ async function stageDownload(job: any): Promise<AdvanceResult> {
 async function stageParse(job: any): Promise<AdvanceResult> {
   // Pull bytes; if HTML strip tags; if text keep as-is; if PDF store raw text best-effort.
   let text = job.input_raw_text ?? "";
+  let sourceHtml = "";
   if (!text && job.input_upload_path) {
     const { data } = await admin.storage.from("uploads").download(job.input_upload_path);
     if (data) {
@@ -159,10 +160,9 @@ async function stageParse(job: any): Promise<AdvanceResult> {
       const sniff = new TextDecoder("utf-8", { fatal: false }).decode(bytes.slice(0, 2048));
       const looksHtml = /<html|<body|<!doctype html/i.test(sniff);
       if (looksHtml) {
-        const html = new TextDecoder().decode(bytes);
-        text = htmlToText(html);
+        sourceHtml = new TextDecoder().decode(bytes);
+        text = htmlToText(sourceHtml);
       } else if (sniff.startsWith("%PDF")) {
-        // Naive PDF: extract printable ASCII as a placeholder; admins can re-run via extract-document if needed.
         text = Array.from(bytes).map((b) => (b >= 32 && b < 127) || b === 10 ? String.fromCharCode(b) : "").join("");
       } else {
         text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
@@ -171,8 +171,35 @@ async function stageParse(job: any): Promise<AdvanceResult> {
   }
   text = text.replace(/\u0000/g, "").trim();
   if (text.length < 200) throw new Error("extracted text too short");
+
+  // Deep-crawl for TOC/landing pages (e.g. Siyavula chapter indexes).
+  // If the index page itself is small (likely just a TOC), follow chapter links
+  // and concatenate their bodies so we get the full textbook content.
+  const shouldDeepCrawl =
+    sourceHtml &&
+    job.input_url &&
+    text.length < MIN_TEXTBOOK_CHARS &&
+    /siyavula|openstax|wikibooks|cnx\.org/i.test(job.input_url);
+  if (shouldDeepCrawl) {
+    try {
+      const crawl = await deepCrawlFromIndex(job.input_url, sourceHtml, { maxPages: 80 });
+      if (crawl.text.length > text.length) {
+        text = crawl.text;
+        await admin.from("ingestion_stage_logs").insert({
+          job_id: job.id, stage: "parsing", status: "info",
+          message: `deep-crawled ${crawl.pagesFetched} chapter pages (${crawl.text.length} chars)`,
+        });
+      }
+    } catch (e: any) {
+      await admin.from("ingestion_stage_logs").insert({
+        job_id: job.id, stage: "parsing", status: "warn",
+        message: `deep-crawl failed: ${String(e?.message ?? e)}`,
+      });
+    }
+  }
+
   // Cache raw_text on the job for later stages.
-  await admin.from("ingestion_jobs").update({ input_raw_text: text.slice(0, 1_500_000) }).eq("id", job.id);
+  await admin.from("ingestion_jobs").update({ input_raw_text: text.slice(0, 4_000_000) }).eq("id", job.id);
   return { state: "parsing", message: `extracted ${text.length} chars` };
 }
 
