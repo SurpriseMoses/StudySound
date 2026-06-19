@@ -119,8 +119,8 @@ async function advance(job: any): Promise<AdvanceResult> {
     case "chunking":      return await stageEmbedEnglish(job);
     case "embedding_en":  return await stageTranslate(job);
     case "translating":   return await stageEmbedTranslations(job);
-    case "embedding_tr":  return await stageAudio(job);
-    case "audio_seeding": return await stagePublish(job);
+    case "embedding_tr":  return await stagePublish(job);
+    case "audio_seeding": return await stagePublish(job); // passthrough for stuck legacy jobs
     case "publishing":    return await stageCoverage(job);
     case "coverage":      return await stageComplete(job);
     default: return { state: job.state, message: "noop" };
