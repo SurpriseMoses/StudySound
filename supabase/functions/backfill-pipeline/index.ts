@@ -1,31 +1,37 @@
-// Backfill pipeline: applies the new ingestion steps (chunk → cache → embed → publish → coverage)
+// Backfill pipeline: applies the new ingestion steps (re-clean → chunk → cache → embed → publish → coverage)
 // to documents that were imported before those stages existed.
 //
-// Steps applied per document (Import/Validate/Extract/Clean already done):
-//   5  Chunk          — split documents.clean_text into ~1200-char pieces
-//   6  Cache English  — insert into public.document_chunks
-//   7  CAPS auto-map  — skipped (already done at original ingestion time)
+// Steps applied per document:
+//   4  Re-clean       — re-run cleanRawText() on documents.raw_text and rewrite clean_text
+//                       For navigation/TOC docs (e.g. Siyavula landing pages) we use a
+//                       TOC-preserving cleaner so the contents list is NOT dropped.
+//   5  Chunk          — split clean_text into 1800-char pieces (matches generate-audio CHUNK_SIZE)
+//   6  Cache English  — insert into public.document_chunks (wiped first if cleaning changed)
 //   8  Embed English  — openai/text-embedding-3-small via Lovable AI Gateway
-//   9  Queue translations    — flip documents.seed_translation = true (if not already)
-//   10 Translate chunk       — handled async by seed-translation-worker
-//   11 Cache translated      — already in translation_assets
-//   12 Embed translations    — embed translation_assets rows that have no embedding yet
+//   9  Queue translations  — flip documents.seed_translation = true
+//   12 Embed translations  — embed translation_assets rows that have no embedding yet
 //   13 Publish               — set published_at + embeddings_status='complete'
 //   14 Coverage              — append a row to coverage_snapshots
 //
-// POST body: { document_id?: string, limit?: number (default 3, max 10), publish_without_translations?: boolean }
+// POST body:
+//   { document_id?: string, limit?: number (default 5, max 10),
+//     reclean?: boolean (default true),
+//     publish_without_translations?: boolean (default true) }
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { cleanRawText, type DocKind } from "../_shared/clean-text.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
 const EMBED_MODEL = "openai/text-embedding-3-small";
-const CHUNK_SIZE = 1200;
+// Match generate-audio's CHUNK_SIZE so cached chunks line up 1:1 with the
+// sections the lesson player produces at runtime.
+const CHUNK_SIZE = 1800;
 const CHUNK_OVERLAP = 150;
 const EMBED_BATCH = 32;
-const DEADLINE_MS = 50_000;
+const DEADLINE_MS = 55_000;
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
@@ -33,22 +39,27 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const startedAt = Date.now();
   try {
-    let body: { document_id?: string; limit?: number; publish_without_translations?: boolean } = {};
+    let body: {
+      document_id?: string;
+      limit?: number;
+      reclean?: boolean;
+      publish_without_translations?: boolean;
+    } = {};
     try { body = await req.json(); } catch { /* allow empty */ }
 
-    const limit = Math.max(1, Math.min(Number(body.limit ?? 3) || 3, 10));
+    const limit = Math.max(1, Math.min(Number(body.limit ?? 5) || 5, 10));
+    const reclean = body.reclean ?? true;
     const publishWithoutTr = body.publish_without_translations ?? true;
 
-    // Pick targets
+    const sel = "id, title, doc_type, subject_type, clean_text, raw_text, cleaning_version, country, curriculum, source_id, published_at, embeddings_status, seed_translation, translation_status, seed_audio";
+
     let targets: any[] = [];
     if (body.document_id) {
-      const { data } = await admin.from("documents")
-        .select("id, clean_text, raw_text, country, curriculum, source_id, published_at, embeddings_status, seed_translation, translation_status, seed_audio")
-        .eq("id", body.document_id).maybeSingle();
+      const { data } = await admin.from("documents").select(sel).eq("id", body.document_id).maybeSingle();
       if (data) targets = [data];
     } else {
       const { data } = await admin.from("documents")
-        .select("id, clean_text, raw_text, country, curriculum, source_id, published_at, embeddings_status, seed_translation, translation_status, seed_audio")
+        .select(sel)
         .or("published_at.is.null,embeddings_status.neq.complete")
         .order("created_at", { ascending: true })
         .limit(limit);
@@ -67,11 +78,10 @@ Deno.serve(async (req) => {
         results.push({ document_id: doc.id, skipped: "deadline" });
         break;
       }
-      const r = await backfillDoc(doc, publishWithoutTr, startedAt);
+      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt });
       results.push(r);
-      // Refresh coverage at most once per invocation
       if (!didCoverage && r.published) {
-        try { await refreshCoverage(doc); didCoverage = true; } catch (_) { /* non-fatal */ }
+        try { await refreshCoverage(doc); didCoverage = true; } catch { /* non-fatal */ }
       }
     }
 
@@ -81,20 +91,51 @@ Deno.serve(async (req) => {
   }
 });
 
-async function backfillDoc(doc: any, publishWithoutTr: boolean, startedAt: number) {
-  const out: any = { document_id: doc.id, stages: [] };
-  const fullText: string = doc.clean_text ?? doc.raw_text ?? "";
-  if (!fullText || fullText.length < 50) {
-    return { ...out, error: "no clean_text available" };
+// ---------- per-document ----------
+
+async function backfillDoc(
+  doc: any,
+  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number },
+) {
+  const out: any = { document_id: doc.id, title: doc.title, stages: [] };
+  const raw: string = doc.raw_text ?? doc.clean_text ?? "";
+  if (!raw || raw.length < 50) {
+    return { ...out, error: "no raw_text/clean_text available" };
   }
 
-  // 5+6 Chunk + cache English
-  const chunksInserted = await ensureChunks(doc.id, fullText);
+  // 4 Re-clean
+  let cleanText: string = doc.clean_text ?? "";
+  let cleaningChanged = false;
+  if (opts.reclean) {
+    const kind = detectKind(doc);
+    const cleaned = kind === "toc"
+      ? cleanTocDoc(raw)
+      : cleanRawText(raw, kind).text;
+    if (cleaned && cleaned.length >= Math.max(200, Math.floor((doc.clean_text?.length ?? 0) * 0.5))) {
+      if (cleaned !== doc.clean_text) {
+        await admin.from("documents").update({ clean_text: cleaned }).eq("id", doc.id);
+        cleaningChanged = true;
+      }
+      cleanText = cleaned;
+      out.stages.push({ reclean: { kind, before: doc.clean_text?.length ?? 0, after: cleaned.length, changed: cleaningChanged } });
+    } else {
+      out.stages.push({ reclean: `skipped (cleaner output too short: ${cleaned?.length ?? 0})` });
+    }
+  }
+  if (!cleanText || cleanText.length < 50) {
+    return { ...out, error: "clean_text empty after re-clean" };
+  }
+
+  // 5+6 Chunk + cache English (wipe & re-insert when cleaning changed)
+  if (cleaningChanged) {
+    await admin.from("document_chunks").delete().eq("document_id", doc.id);
+  }
+  const chunksInserted = await ensureChunks(doc.id, cleanText);
   out.stages.push({ chunk_cache: chunksInserted });
 
-  // 8 Embed English (loop until done or deadline)
+  // 8 Embed English
   let embedded = 0;
-  while (Date.now() - startedAt < DEADLINE_MS) {
+  while (Date.now() - opts.startedAt < DEADLINE_MS) {
     const { data: rows } = await admin.from("document_chunks")
       .select("id,text").eq("document_id", doc.id).is("embedding", null)
       .order("chunk_index", { ascending: true }).limit(EMBED_BATCH);
@@ -110,7 +151,7 @@ async function backfillDoc(doc: any, publishWithoutTr: boolean, startedAt: numbe
   }
   out.stages.push({ embed_en: embedded });
 
-  // 9 Queue translations (idempotent — only flip if not already enabled)
+  // 9 Queue translations
   if (!doc.seed_translation) {
     await admin.from("documents").update({
       seed_translation: true, translation_status: "pending",
@@ -120,9 +161,9 @@ async function backfillDoc(doc: any, publishWithoutTr: boolean, startedAt: numbe
     out.stages.push({ queue_translations: `already (${doc.translation_status ?? "?"})` });
   }
 
-  // 12 Embed translations that already exist (don't wait for new ones)
+  // 12 Embed translations that already exist
   let embeddedTr = 0;
-  while (Date.now() - startedAt < DEADLINE_MS) {
+  while (Date.now() - opts.startedAt < DEADLINE_MS) {
     const { data: rows } = await admin.from("translation_assets")
       .select("id,translated_text").eq("document_id", doc.id)
       .not("translated_text", "is", null).is("embedding", null).limit(EMBED_BATCH);
@@ -138,7 +179,6 @@ async function backfillDoc(doc: any, publishWithoutTr: boolean, startedAt: numbe
   }
   out.stages.push({ embed_tr: embeddedTr });
 
-  // Enable audio seeding if not already on
   if (!doc.seed_audio) {
     await admin.from("documents").update({
       seed_audio: true, seed_audio_status: "pending",
@@ -146,11 +186,11 @@ async function backfillDoc(doc: any, publishWithoutTr: boolean, startedAt: numbe
     out.stages.push({ queue_audio: "enabled" });
   }
 
-  // 13 Publish — only if English embeddings exist and (translations done OR publishWithoutTr=true)
+  // 13 Publish
   const { count: pendingEn } = await admin.from("document_chunks")
     .select("id", { count: "exact", head: true }).eq("document_id", doc.id).is("embedding", null);
   const englishReady = (pendingEn ?? 0) === 0;
-  if (englishReady && (publishWithoutTr || doc.translation_status === "done")) {
+  if (englishReady && (opts.publishWithoutTr || doc.translation_status === "done")) {
     await admin.from("documents").update({
       published_at: new Date().toISOString(),
       embeddings_status: "complete",
@@ -163,6 +203,60 @@ async function backfillDoc(doc: any, publishWithoutTr: boolean, startedAt: numbe
 
   return out;
 }
+
+// ---------- kind detection & TOC-preserving cleaner ----------
+
+function detectKind(doc: any): DocKind | "toc" {
+  const title = String(doc.title ?? "").toLowerCase();
+  const raw = String(doc.raw_text ?? "");
+  const head = raw.slice(0, 4000).toLowerCase();
+  // Siyavula and similar source-website landing pages — the "content" IS the
+  // table of contents / navigation. Don't strip it.
+  if (
+    title.includes("siyavula") ||
+    head.includes("table of contents") ||
+    /\bsiyavula\b|\bdbe\b\s+workbook|openstax/i.test(raw.slice(0, 2000))
+  ) {
+    // Only treat as TOC when it's clearly not a full novel/play (short text)
+    if (raw.length < 60_000) return "toc";
+  }
+  if (/\bACT\s+(?:I|1|THE\s+FIRST)\b/i.test(raw.slice(0, 8000)) &&
+      /\b(SCENE|DRAMATIS\s+PERSONAE)\b/i.test(raw.slice(0, 8000))) return "play";
+  return "novel";
+}
+
+// Minimal cleaner for navigation/TOC documents. Preserves the table of contents
+// (chapter list, topic headings) as the document's narratable body. We only
+// strip site-chrome noise: nav blocks, copyright tails, social/legal links.
+function cleanTocDoc(raw: string): string {
+  let text = raw.replace(/\r\n/g, "\n").replace(/\u00a0/g, " ");
+  // Drop massive runs of blank/whitespace-only lines
+  text = text.split("\n").map((l) => l.replace(/[ \t]+/g, " ").trimEnd()).join("\n");
+  text = text.replace(/\n{3,}/g, "\n\n");
+
+  // Trim site footer: Creative Commons / Terms / Privacy boilerplate
+  const footerRx = /(All\s+\w+\s+textbook\s+content\s+made\s+available|Creative\s+Commons\s+Attribution\s+License|Terms\s+and\s+Conditions|Privacy\s+Policy)/i;
+  const footerMatch = text.match(footerRx);
+  if (footerMatch && footerMatch.index !== undefined && footerMatch.index > 200) {
+    text = text.slice(0, footerMatch.index).trimEnd();
+  }
+
+  // Drop nav-chrome lines (Home / Practice / For teachers / Past papers ...)
+  const NAV_LINES = new Set([
+    "home", "practice", "past papers", "textbooks", "for teachers and schools",
+    "for learners and parents", "log in", "sign up", "menu",
+  ]);
+  const lines = text.split("\n").filter((l) => {
+    const t = l.trim().toLowerCase();
+    if (!t) return true;
+    if (NAV_LINES.has(t)) return false;
+    return true;
+  });
+  text = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return text;
+}
+
+// ---------- coverage ----------
 
 async function refreshCoverage(doc: any) {
   const country = doc.country ?? "ZA";
