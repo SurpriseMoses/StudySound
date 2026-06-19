@@ -278,6 +278,21 @@ async function stageClean(job: any): Promise<AdvanceResult> {
 async function stageChunk(job: any): Promise<AdvanceResult> {
   const text: string = job.input_raw_text ?? "";
   if (!text || text.length < 200) throw new Error("no text after cleaning");
+
+  // Validation gate: refuse to publish broken imports.
+  // A "real" textbook either has >100k chars OR >5 chapter-like headings.
+  const subjectLow = String(job.subject ?? "").toLowerCase();
+  const isLiterature = /literature|english|novel|story|play|shakespeare/.test(subjectLow);
+  if (!isLiterature) {
+    const v = validateTextbook(text);
+    if (!v.ok) {
+      throw new Error(
+        `Only TOC page imported (chars=${v.chars}, chapters=${v.chapters}; ` +
+        `need >${MIN_TEXTBOOK_CHARS} chars OR >${MIN_CHAPTERS} chapters)`,
+      );
+    }
+  }
+
   const hash = await sha256(text);
 
   // Duplicate detection — reuse existing document if same hash, OR if a document
