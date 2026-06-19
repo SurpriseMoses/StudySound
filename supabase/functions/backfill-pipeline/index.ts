@@ -106,26 +106,84 @@ async function backfillDoc(
   opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number },
 ) {
   const out: any = { document_id: doc.id, title: doc.title, stages: [] };
-  const raw: string = doc.raw_text ?? doc.clean_text ?? "";
+  let raw: string = doc.raw_text ?? doc.clean_text ?? "";
   if (!raw || raw.length < 50) {
     return { ...out, error: "no raw_text/clean_text available" };
   }
 
-  // 4 Re-clean
+  // 0  Deep-crawl: if this is a Siyavula/OpenStax/etc. landing page that was
+  //    only ingested as TOC (raw_text < 100k), fetch chapter pages and rebuild
+  //    raw_text from the full body.
+  const subjectStr = String(doc.tags?.subject ?? doc.doc_type ?? "").toLowerCase();
+  const isLiterature = /literature|english|novel|story|play|shakespeare/.test(subjectStr);
+  if (
+    !isLiterature &&
+    doc.source_url &&
+    raw.length < MIN_TEXTBOOK_CHARS &&
+    /siyavula|openstax|wikibooks|cnx\.org/i.test(doc.source_url)
+  ) {
+    try {
+      const res = await fetch(doc.source_url, {
+        headers: { "User-Agent": "StudySoundBot/1.0 (+backfill)" },
+        redirect: "follow",
+      });
+      if (res.ok) {
+        const html = await res.text();
+        const crawl = await deepCrawlFromIndex(doc.source_url, html, { maxPages: 80 });
+        if (crawl.text.length > raw.length) {
+          raw = crawl.text;
+          await admin.from("documents").update({
+            raw_text: raw.slice(0, 4_000_000),
+          }).eq("id", doc.id);
+          out.stages.push({ deep_crawl: { pages: crawl.pagesFetched, chars: crawl.text.length } });
+        } else {
+          out.stages.push({ deep_crawl: `no improvement (pages=${crawl.pagesFetched})` });
+        }
+      } else {
+        out.stages.push({ deep_crawl: `fetch failed ${res.status}` });
+      }
+    } catch (e: any) {
+      out.stages.push({ deep_crawl: `error: ${String(e?.message ?? e)}` });
+    }
+  }
+
+  // 2  Validation gate: refuse to publish broken / TOC-only imports.
+  if (!isLiterature) {
+    const v = validateTextbook(raw);
+    if (!v.ok) {
+      await admin.from("documents").update({
+        embeddings_status: "import_failed",
+      }).eq("id", doc.id);
+      return {
+        ...out,
+        error: "Only TOC page imported",
+        validation: { chars: v.chars, chapters: v.chapters },
+      };
+    }
+    out.stages.push({ validation: "passed" });
+  }
+
+  // 4  Re-clean
   let cleanText: string = doc.clean_text ?? "";
   let cleaningChanged = false;
   if (opts.reclean) {
     const kind = detectKind(doc);
-    const cleaned = kind === "toc"
-      ? cleanTocDoc(raw)
-      : cleanRawText(raw, kind).text;
+    let cleaned: string;
+    if (!isLiterature) {
+      // Textbooks: preserve TOC + chapter/section headings + numbering.
+      cleaned = cleanTextbookPreservingTOC(raw);
+    } else if (kind === "toc") {
+      cleaned = cleanTocDoc(raw);
+    } else {
+      cleaned = cleanRawText(raw, kind).text;
+    }
     if (cleaned && cleaned.length >= Math.max(200, Math.floor((doc.clean_text?.length ?? 0) * 0.5))) {
       if (cleaned !== doc.clean_text) {
         await admin.from("documents").update({ clean_text: cleaned }).eq("id", doc.id);
         cleaningChanged = true;
       }
       cleanText = cleaned;
-      out.stages.push({ reclean: { kind, before: doc.clean_text?.length ?? 0, after: cleaned.length, changed: cleaningChanged } });
+      out.stages.push({ reclean: { kind: isLiterature ? kind : "textbook", before: doc.clean_text?.length ?? 0, after: cleaned.length, changed: cleaningChanged } });
     } else {
       out.stages.push({ reclean: `skipped (cleaner output too short: ${cleaned?.length ?? 0})` });
     }
