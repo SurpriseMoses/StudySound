@@ -147,12 +147,37 @@ async function processOne(admin: any, s: any, userId: string, force: boolean) {
 
     const hash = html ? await sha256(html) : null;
     const activeJob = await findActiveJob(admin, s);
+
+    // Skip re-import: if a document already exists for this source and the user
+    // didn't force a re-sync, treat as no-op so the same textbook isn't ingested twice.
+    if (!force && !activeJob) {
+      const { data: existingDoc } = await admin
+        .from("documents")
+        .select("id,title")
+        .eq("source_id", s.id)
+        .limit(1)
+        .maybeSingle();
+      if (existingDoc?.id) {
+        await mark(admin, s.id, {
+          sync_status: "completed",
+          last_sync_at: new Date().toISOString(),
+          last_sync_hash: hash ?? s.last_sync_hash,
+          last_sync_error: null,
+        });
+        await log(admin, s.id, "already_imported", "info",
+          `Skipped — textbook already imported as document ${existingDoc.id} (${existingDoc.title ?? "untitled"}). Use Force re-sync to re-import.`,
+          { document_id: existingDoc.id });
+        return { source_id: s.id, status: "already_imported", document_id: existingDoc.id };
+      }
+    }
+
     const unchanged = !force && !activeJob && hash && hash === s.last_sync_hash;
     if (unchanged) {
       await mark(admin, s.id, { sync_status: "completed", last_sync_at: new Date().toISOString() });
       await log(admin, s.id, "no_change", "info", "No updates detected (hash match)");
       return { source_id: s.id, status: "no_change" };
     }
+
 
     await log(admin, s.id, "update_detected", "info",
       hash ? "Content hash changed — creating ingestion job" : "Creating ingestion job (no pre-fetch)");
