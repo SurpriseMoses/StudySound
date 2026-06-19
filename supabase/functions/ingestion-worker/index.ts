@@ -11,8 +11,7 @@
 //   chunking       → embedding_en      (split into document_chunks + embed English)
 //   embedding_en   → translating       (enable translation seeding)
 //   translating    → embedding_tr      (waits for translation_status='done')
-//   embedding_tr   → audio_seeding     (enable audio seeding)
-//   audio_seeding  → publishing        (set published_at, embeddings_status)
+//   embedding_tr   → publishing        (skip auto audio seeding)
 //   publishing     → coverage          (refresh coverage_snapshots)
 //   coverage       → completed
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
@@ -39,7 +38,7 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 const PROGRESS: Record<string, number> = {
   pending: 0, downloading: 8, parsing: 18, structuring: 25, tagging: 32,
   cleaning: 42, chunking: 52, embedding_en: 62, translating: 72,
-  embedding_tr: 82, audio_seeding: 90, publishing: 95, coverage: 98, completed: 100,
+  embedding_tr: 82, publishing: 95, coverage: 98, completed: 100,
 };
 
 Deno.serve(async (req) => {
@@ -120,8 +119,8 @@ async function advance(job: any): Promise<AdvanceResult> {
     case "chunking":      return await stageEmbedEnglish(job);
     case "embedding_en":  return await stageTranslate(job);
     case "translating":   return await stageEmbedTranslations(job);
-    case "embedding_tr":  return await stageAudio(job);
-    case "audio_seeding": return await stagePublish(job);
+    case "embedding_tr":  return await stagePublish(job);
+    case "audio_seeding": return await stagePublish(job); // passthrough for stuck legacy jobs
     case "publishing":    return await stageCoverage(job);
     case "coverage":      return await stageComplete(job);
     default: return { state: job.state, message: "noop" };
