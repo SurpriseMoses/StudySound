@@ -223,9 +223,21 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
   if (!text || text.length < 200) throw new Error("no text after cleaning");
   const hash = await sha256(text);
 
-  // Duplicate detection — reuse existing document if same hash.
+  // Duplicate detection — reuse existing document if same hash, OR if a document
+  // already exists for this source (prevents importing the same textbook twice
+  // when the publisher tweaks the HTML and the content hash shifts).
   const { data: existing } = await admin.from("documents").select("id").eq("content_hash", hash).maybeSingle();
   let docId = existing?.id ?? null;
+  if (!docId && job.source_id) {
+    const { data: bySource } = await admin
+      .from("documents")
+      .select("id")
+      .eq("source_id", job.source_id)
+      .limit(1)
+      .maybeSingle();
+    docId = bySource?.id ?? null;
+  }
+
 
   if (!docId) {
     const { data: src } = await admin.from("content_sources").select("license_type,name,publisher").eq("id", job.source_id).maybeSingle();
