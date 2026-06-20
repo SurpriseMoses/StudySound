@@ -125,9 +125,14 @@ export default function AdminIngestion() {
   };
 
   const [backfilling, setBackfilling] = useState(false);
+  const [backfillDocId, setBackfillDocId] = useState("");
   const runBackfill = async () => {
     setBackfilling(true);
-    const { data, error } = await supabase.functions.invoke("backfill-pipeline", { body: { limit: 3, reclean: true, skip_pdf: true, max_embed_batches: 1 } });
+    const trimmed = backfillDocId.trim();
+    const body: Record<string, unknown> = trimmed
+      ? { document_id: trimmed, reclean: true, max_embed_batches: 2 }
+      : { limit: 3, reclean: true, skip_pdf: true, max_embed_batches: 1 };
+    const { data, error } = await supabase.functions.invoke("backfill-pipeline", { body });
     setBackfilling(false);
     if (error) toast({ title: "Backfill failed", description: error.message, variant: "destructive" });
     else toast({ title: `Backfill: ${data?.processed ?? 0} docs`, description: JSON.stringify(data?.results ?? []).slice(0, 200) });
@@ -141,14 +146,21 @@ export default function AdminIngestion() {
           <h1 className="text-2xl font-display font-bold">Content Ingestion</h1>
           <p className="text-sm text-muted-foreground">Import, validate, clean, chunk, translate and seed educational content.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <Input
+            placeholder="document_id (optional)"
+            value={backfillDocId}
+            onChange={(e) => setBackfillDocId(e.target.value)}
+            className="h-8 w-[220px] text-xs font-mono"
+          />
           <Button variant="outline" size="sm" onClick={kickWorker}><Play className="w-4 h-4 mr-1" /> Kick worker</Button>
           <Button variant="outline" size="sm" onClick={runBackfill} disabled={backfilling}>
             {backfilling ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
-            Backfill pipeline
+            {backfillDocId.trim() ? "Backfill this doc" : "Backfill pipeline"}
           </Button>
           <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="w-4 h-4 mr-1" /> Refresh</Button>
         </div>
+
       </div>
 
       <Tabs defaultValue="jobs">
