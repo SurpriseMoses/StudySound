@@ -127,9 +127,9 @@ export default function AdminIngestion() {
   const [backfilling, setBackfilling] = useState(false);
   const runBackfill = async () => {
     setBackfilling(true);
-    const { data, error } = await supabase.functions.invoke("backfill-pipeline", { body: { limit: 5, reclean: true } });
+    const { data, error } = await supabase.functions.invoke("backfill-pipeline", { body: { limit: 3, reclean: true, skip_pdf: true, max_embed_batches: 1 } });
     setBackfilling(false);
-    if (error) toast({ title: error.message, variant: "destructive" });
+    if (error) toast({ title: "Backfill failed", description: error.message, variant: "destructive" });
     else toast({ title: `Backfill: ${data?.processed ?? 0} docs`, description: JSON.stringify(data?.results ?? []).slice(0, 200) });
     setTimeout(refresh, 1000);
   };

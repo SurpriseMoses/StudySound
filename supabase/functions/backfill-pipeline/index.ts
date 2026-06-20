@@ -14,19 +14,18 @@
 //   14 Coverage              — append a row to coverage_snapshots
 //
 // POST body:
-//   { document_id?: string, limit?: number (default 5, max 10),
+//   { document_id?: string, limit?: number (default 3, max 5),
 //     reclean?: boolean (default true),
-//     publish_without_translations?: boolean (default true) }
+//     publish_without_translations?: boolean (default true),
+//     skip_embeddings?: boolean, max_embed_batches?: number }
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { cleanRawText, type DocKind } from "../_shared/clean-text.ts";
 import {
   deepCrawlFromIndex,
-  tryFetchTextbookPdf,
   validateTextbook,
   cleanTextbookPreservingTOC,
-  htmlToText,
   MIN_TEXTBOOK_CHARS,
   MIN_CHAPTERS,
 } from "../_shared/deep-crawl.ts";
@@ -54,13 +53,18 @@ Deno.serve(async (req) => {
       reclean?: boolean;
       publish_without_translations?: boolean;
       skip_pdf?: boolean;
+      skip_embeddings?: boolean;
+      max_embed_batches?: number;
     } = {};
     try { body = await req.json(); } catch { /* allow empty */ }
 
-    const limit = Math.max(1, Math.min(Number(body.limit ?? 5) || 5, 10));
+    const limit = Math.max(1, Math.min(Number(body.limit ?? 3) || 3, 5));
     const reclean = body.reclean ?? true;
     const publishWithoutTr = body.publish_without_translations ?? true;
-    const skipPdf = body.skip_pdf ?? false;
+    const skipEmbeddings = body.skip_embeddings ?? false;
+    const maxEmbedBatches = Math.max(0, Math.min(Number(body.max_embed_batches ?? 1) || 1, 4));
+    // PDF parsing in Edge is CPU-heavy (unpdf repeatedly hit WORKER_RESOURCE_LIMIT),
+    // so backfill uses HTML crawling only.
 
     const sel = "id, title, doc_type, subject_type, clean_text, raw_text, cleaning_version, country, curriculum, source_id, source_url, published_at, embeddings_status, seed_translation, translation_status, seed_audio, tags";
 
@@ -69,12 +73,51 @@ Deno.serve(async (req) => {
       const { data } = await admin.from("documents").select(sel).eq("id", body.document_id).maybeSingle();
       if (data) targets = [data];
     } else {
-      const { data } = await admin.from("documents")
-        .select(sel)
-        .or("published_at.is.null,embeddings_status.neq.complete")
-        .order("created_at", { ascending: true })
-        .limit(limit);
-      targets = data ?? [];
+      const addTargets = (rows: any[] | null | undefined) => {
+        const seen = new Set(targets.map((t) => t.id));
+        for (const row of rows ?? []) {
+          if (!seen.has(row.id) && targets.length < limit) {
+            targets.push(row);
+            seen.add(row.id);
+          }
+        }
+      };
+
+      // Repair complete literature documents that were accidentally re-chunked
+      // from Gutenberg source text. These are already published, so the normal
+      // "needs backfill" selector above would never pick them up.
+      if (targets.length < limit) {
+        const { data: dirtyClean } = await admin.from("documents")
+          .select(sel)
+          .or("clean_text.ilike.%Project Gutenberg%,clean_text.ilike.%Gutenberg License%,clean_text.ilike.%www.gutenberg.org%")
+          .order("updated_at", { ascending: true })
+          .limit(limit - targets.length);
+        addTargets(dirtyClean);
+      }
+
+      if (targets.length < limit) {
+        const { data: dirtyChunks } = await admin.from("document_chunks")
+          .select("document_id")
+          .or("text.ilike.%Project Gutenberg%,text.ilike.%Gutenberg License%,text.ilike.%www.gutenberg.org%")
+          .limit((limit - targets.length) * 20);
+        const ids = Array.from(new Set((dirtyChunks ?? []).map((r: any) => r.document_id).filter(Boolean)));
+        if (ids.length > 0) {
+          const { data: dirtyChunkDocs } = await admin.from("documents")
+            .select(sel)
+            .in("id", ids)
+            .limit(limit - targets.length);
+          addTargets(dirtyChunkDocs);
+        }
+      }
+
+      if (targets.length < limit) {
+        const { data } = await admin.from("documents")
+          .select(sel)
+          .or("published_at.is.null,embeddings_status.neq.complete")
+          .order("created_at", { ascending: true })
+          .limit(limit - targets.length);
+        addTargets(data);
+      }
     }
 
     if (targets.length === 0) {
@@ -83,20 +126,12 @@ Deno.serve(async (req) => {
 
     const results: any[] = [];
     let didCoverage = false;
-    // PDF extraction via unpdf is CPU-heavy and a single large textbook PDF
-    // can blow the Edge Function's 2s CPU budget. Cap PDF parsing to ONE
-    // document per invocation; subsequent docs in this batch skip PDF and
-    // only run light stages (re-clean / chunk / embed).
-    let pdfBudget = skipPdf ? 0 : 1;
-
     for (const doc of targets) {
       if (Date.now() - startedAt > DEADLINE_MS) {
         results.push({ document_id: doc.id, skipped: "deadline" });
         break;
       }
-      const allowPdf = pdfBudget > 0;
-      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt, allowPdf });
-      if (r?.pdf_used) pdfBudget = 0;
+      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt, skipEmbeddings, maxEmbedBatches });
       results.push(r);
       if (!didCoverage && r.published) {
         try { await refreshCoverage(doc); didCoverage = true; } catch { /* non-fatal */ }
@@ -113,7 +148,7 @@ Deno.serve(async (req) => {
 
 async function backfillDoc(
   doc: any,
-  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number; allowPdf: boolean },
+  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number; skipEmbeddings: boolean; maxEmbedBatches: number },
 ) {
   const out: any = { document_id: doc.id, title: doc.title, stages: [] };
   let raw: string = doc.raw_text ?? doc.clean_text ?? "";
@@ -124,8 +159,7 @@ async function backfillDoc(
   // 0  Deep-crawl: if this is a Siyavula/OpenStax/etc. landing page that was
   //    only ingested as TOC (raw_text < 100k), fetch chapter pages and rebuild
   //    raw_text from the full body.
-  const subjectStr = String(doc.tags?.subject ?? doc.subject_type ?? doc.doc_type ?? "").toLowerCase();
-  const isLiterature = /literature|english|novel|story|play|shakespeare/.test(subjectStr);
+  const isLiterature = isLiteratureDoc(doc);
   if (
     !isLiterature &&
     doc.source_url &&
@@ -140,34 +174,11 @@ async function backfillDoc(
       if (res.ok) {
         const html = await res.text();
 
-        // Preferred path: a single, downloadable Learner English PDF that
-        // contains the whole textbook. Siyavula chapter pages are JS-rendered
-        // SPAs so deep-crawling them yields only nav chrome — the PDF is the
-        // real source of truth.
-        let usedPdf = false;
-        if (!opts.allowPdf) {
-          out.stages.push({ pdf_download: "skipped (pdf budget exhausted this invocation)" });
-        } else {
-          try {
-            // Smaller cap (12MB) to keep PDF parsing inside the 2s CPU budget.
-            const pdf = await tryFetchTextbookPdf(doc.source_url, html, { maxBytes: 12 * 1024 * 1024 });
-            if (pdf && pdf.text.length > raw.length) {
-              raw = pdf.text;
-              await admin.from("documents").update({
-                raw_text: raw.slice(0, 8_000_000),
-              }).eq("id", doc.id);
-              out.stages.push({ pdf_download: { url: pdf.pdfUrl, pages: pdf.pageCount, chars: pdf.text.length, bytes: pdf.bytes } });
-              usedPdf = true;
-              out.pdf_used = true;
-            }
-          } catch (e: any) {
-            out.stages.push({ pdf_download: `error: ${String(e?.message ?? e)}` });
-          }
-        }
+        out.stages.push({ pdf_download: "disabled (avoids Edge CPU limit)" });
 
-        // Fallback: walk the chapter index.
-        if (!usedPdf) {
-          const crawl = await deepCrawlFromIndex(doc.source_url, html, { maxPages: 120 });
+        // Walk the chapter index and extract only main textbook content.
+        {
+          const crawl = await deepCrawlFromIndex(doc.source_url, html, { maxPages: 40, totalByteCap: 6 * 1024 * 1024, timeoutMs: 8_000 });
           const d = crawl.diagnostics;
           console.log(`[backfill] deep_crawl doc=${doc.id} pages=${crawl.pagesFetched} ` +
             `rawHtml=${d.rawHtmlBytes} extracted=${d.extractedChars} discarded=${d.discardedHtmlBytes}`);
@@ -229,14 +240,14 @@ async function backfillDoc(
   //   that newly deep-crawled / PDF-extracted raw_text is structured.
   let cleanText: string = doc.clean_text ?? "";
   let cleaningChanged = false;
+  let chunkCacheChanged = false;
   if (opts.reclean) {
     const kind = detectKind(doc);
     const existingLen = doc.clean_text?.length ?? 0;
-    const existingHead = String(doc.clean_text ?? "").slice(0, 8_000);
-    const hasGutenbergBoilerplate = /project\s+gutenberg|\*{3,}\s*START OF (?:THE|THIS) PROJECT GUTENBERG|\blicen[sc]e included with this ebook\b|\bwww\.gutenberg\.org\b/i
-      .test(existingHead);
+    const hasGutenbergBoilerplate = hasGutenbergNoise(doc.clean_text ?? "");
+    const hasDirtyLiteratureChunks = isLiterature ? await hasGutenbergNoiseChunks(doc.id) : false;
     const skipLiteratureReclean =
-      isLiterature && existingLen >= 20_000 && !hasGutenbergBoilerplate; // healthy literature clean already
+      isLiterature && existingLen >= 20_000 && !hasGutenbergBoilerplate && !hasDirtyLiteratureChunks; // healthy literature clean already
 
     if (skipLiteratureReclean) {
       out.stages.push({ reclean: `preserved (literature clean_text=${existingLen})` });
@@ -261,7 +272,8 @@ async function backfillDoc(
           cleaningChanged = true;
         }
         cleanText = cleaned;
-        out.stages.push({ reclean: { kind: isLiterature ? kind : "textbook", before: existingLen, after: cleaned.length, changed: cleaningChanged, forced: hasGutenbergBoilerplate || undefined } });
+        if (hasDirtyLiteratureChunks) chunkCacheChanged = true;
+        out.stages.push({ reclean: { kind: isLiterature ? kind : "textbook", before: existingLen, after: cleaned.length, changed: cleaningChanged, rebuilt_dirty_chunks: hasDirtyLiteratureChunks || undefined, forced: hasGutenbergBoilerplate || undefined } });
       } else {
         out.stages.push({ reclean: `skipped (output ${cleaned?.length ?? 0} vs existing ${existingLen})` });
       }
@@ -272,7 +284,7 @@ async function backfillDoc(
   }
 
   // 5+6 Chunk + cache English (wipe & re-insert when cleaning changed)
-  if (cleaningChanged) {
+  if (cleaningChanged || chunkCacheChanged) {
     await admin.from("document_chunks").delete().eq("document_id", doc.id);
   }
   const chunksInserted = await ensureChunks(doc.id, cleanText);
@@ -280,7 +292,8 @@ async function backfillDoc(
 
   // 8 Embed English
   let embedded = 0;
-  while (Date.now() - opts.startedAt < DEADLINE_MS) {
+  let embedBatches = 0;
+  while (!opts.skipEmbeddings && embedBatches < opts.maxEmbedBatches && Date.now() - opts.startedAt < DEADLINE_MS) {
     const { data: rows } = await admin.from("document_chunks")
       .select("id,text").eq("document_id", doc.id).is("embedding", null)
       .order("chunk_index", { ascending: true }).limit(EMBED_BATCH);
@@ -293,6 +306,7 @@ async function backfillDoc(
       }).eq("id", rows[i].id);
     }
     embedded += rows.length;
+    embedBatches++;
   }
   out.stages.push({ embed_en: embedded });
 
@@ -308,7 +322,8 @@ async function backfillDoc(
 
   // 12 Embed translations that already exist
   let embeddedTr = 0;
-  while (Date.now() - opts.startedAt < DEADLINE_MS) {
+  let embedTrBatches = 0;
+  while (!opts.skipEmbeddings && embedTrBatches < 1 && Date.now() - opts.startedAt < DEADLINE_MS) {
     const { data: rows } = await admin.from("translation_assets")
       .select("id,translated_text").eq("document_id", doc.id)
       .not("translated_text", "is", null).is("embedding", null).limit(EMBED_BATCH);
@@ -321,6 +336,7 @@ async function backfillDoc(
       }).eq("id", rows[i].id);
     }
     embeddedTr += rows.length;
+    embedTrBatches++;
   }
   out.stages.push({ embed_tr: embeddedTr });
 
@@ -343,6 +359,35 @@ async function backfillDoc(
 }
 
 // ---------- kind detection & TOC-preserving cleaner ----------
+
+function docSubjectText(doc: any): string {
+  return String([
+    doc.tags?.subject,
+    doc.subject_type,
+    doc.doc_type,
+    doc.title,
+  ].filter(Boolean).join(" ")).toLowerCase();
+}
+
+function isLiteratureDoc(doc: any): boolean {
+  return /literature|english|novel|story|play|shakespeare|macbeth|othello|romeo|frankenstein|sherlock|jekyll|hyde|treasure island|great expectations|tale of two cities/.test(docSubjectText(doc));
+}
+
+function hasGutenbergNoise(text: string): boolean {
+  if (!text) return false;
+  const sample = text.length > 120_000
+    ? `${text.slice(0, 60_000)}\n${text.slice(-60_000)}`
+    : text;
+  return /project\s+gutenberg|\*{3,}\s*(?:START|END) OF (?:THE|THIS) PROJECT GUTENBERG|\bgutenberg license\b|\bwww\.gutenberg\.org\b|full project gutenberg license/i.test(sample);
+}
+
+async function hasGutenbergNoiseChunks(documentId: string): Promise<boolean> {
+  const { count } = await admin.from("document_chunks")
+    .select("id", { count: "exact", head: true })
+    .eq("document_id", documentId)
+    .or("text.ilike.%Project Gutenberg%,text.ilike.%Gutenberg License%,text.ilike.%www.gutenberg.org%,text.ilike.%FULL PROJECT GUTENBERG%");
+  return (count ?? 0) > 0;
+}
 
 function detectKind(doc: any): DocKind | "toc" {
   const title = String(doc.title ?? "").toLowerCase();
