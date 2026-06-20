@@ -4,8 +4,6 @@
 //
 // Used by both the live `ingestion-worker` and the `backfill-pipeline`.
 
-import { extractText, getDocumentProxy } from "https://esm.sh/unpdf@0.12.1";
-
 export const MIN_TEXTBOOK_CHARS = 100_000;
 export const MIN_CHAPTERS = 5;
 
@@ -315,6 +313,10 @@ export async function tryFetchTextbookPdf(
   }
   candidates.sort((a, b) => b.score - a.score);
   if (candidates.length === 0) return null;
+
+  // Lazy-load PDF parsing only when an explicit caller asks for it. Backfill
+  // intentionally avoids this path because unpdf can exceed Edge CPU limits.
+  const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
 
   for (const c of candidates.slice(0, 3)) {
     try {
