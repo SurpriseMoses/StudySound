@@ -174,34 +174,11 @@ async function backfillDoc(
       if (res.ok) {
         const html = await res.text();
 
-        // Preferred path: a single, downloadable Learner English PDF that
-        // contains the whole textbook. Siyavula chapter pages are JS-rendered
-        // SPAs so deep-crawling them yields only nav chrome — the PDF is the
-        // real source of truth.
-        let usedPdf = false;
-        if (!opts.allowPdf) {
-          out.stages.push({ pdf_download: "skipped (pdf budget exhausted this invocation)" });
-        } else {
-          try {
-            // Smaller cap (12MB) to keep PDF parsing inside the 2s CPU budget.
-            const pdf = await tryFetchTextbookPdf(doc.source_url, html, { maxBytes: 12 * 1024 * 1024 });
-            if (pdf && pdf.text.length > raw.length) {
-              raw = pdf.text;
-              await admin.from("documents").update({
-                raw_text: raw.slice(0, 8_000_000),
-              }).eq("id", doc.id);
-              out.stages.push({ pdf_download: { url: pdf.pdfUrl, pages: pdf.pageCount, chars: pdf.text.length, bytes: pdf.bytes } });
-              usedPdf = true;
-              out.pdf_used = true;
-            }
-          } catch (e: any) {
-            out.stages.push({ pdf_download: `error: ${String(e?.message ?? e)}` });
-          }
-        }
+        out.stages.push({ pdf_download: "disabled (avoids Edge CPU limit)" });
 
-        // Fallback: walk the chapter index.
-        if (!usedPdf) {
-          const crawl = await deepCrawlFromIndex(doc.source_url, html, { maxPages: 120 });
+        // Walk the chapter index and extract only main textbook content.
+        {
+          const crawl = await deepCrawlFromIndex(doc.source_url, html, { maxPages: 40, totalByteCap: 6 * 1024 * 1024, timeoutMs: 8_000 });
           const d = crawl.diagnostics;
           console.log(`[backfill] deep_crawl doc=${doc.id} pages=${crawl.pagesFetched} ` +
             `rawHtml=${d.rawHtmlBytes} extracted=${d.extractedChars} discarded=${d.discardedHtmlBytes}`);
