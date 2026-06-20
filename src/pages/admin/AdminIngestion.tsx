@@ -146,14 +146,21 @@ export default function AdminIngestion() {
           <h1 className="text-2xl font-display font-bold">Content Ingestion</h1>
           <p className="text-sm text-muted-foreground">Import, validate, clean, chunk, translate and seed educational content.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <Input
+            placeholder="document_id (optional)"
+            value={backfillDocId}
+            onChange={(e) => setBackfillDocId(e.target.value)}
+            className="h-8 w-[220px] text-xs font-mono"
+          />
           <Button variant="outline" size="sm" onClick={kickWorker}><Play className="w-4 h-4 mr-1" /> Kick worker</Button>
           <Button variant="outline" size="sm" onClick={runBackfill} disabled={backfilling}>
             {backfilling ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
-            Backfill pipeline
+            {backfillDocId.trim() ? "Backfill this doc" : "Backfill pipeline"}
           </Button>
           <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="w-4 h-4 mr-1" /> Refresh</Button>
         </div>
+
       </div>
 
       <Tabs defaultValue="jobs">
