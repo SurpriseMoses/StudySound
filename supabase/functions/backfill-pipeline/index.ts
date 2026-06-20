@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
         results.push({ document_id: doc.id, skipped: "deadline" });
         break;
       }
-      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt, allowPdf: !skipPdf });
+      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt });
       results.push(r);
       if (!didCoverage && r.published) {
         try { await refreshCoverage(doc); didCoverage = true; } catch { /* non-fatal */ }
