@@ -218,8 +218,11 @@ async function backfillDoc(
   if (opts.reclean) {
     const kind = detectKind(doc);
     const existingLen = doc.clean_text?.length ?? 0;
+    const existingHead = String(doc.clean_text ?? "").slice(0, 8_000);
+    const hasGutenbergBoilerplate = /project\s+gutenberg|\*{3,}\s*START OF (?:THE|THIS) PROJECT GUTENBERG|\blicen[sc]e included with this ebook\b|\bwww\.gutenberg\.org\b/i
+      .test(existingHead);
     const skipLiteratureReclean =
-      isLiterature && existingLen >= 20_000; // healthy literature clean already
+      isLiterature && existingLen >= 20_000 && !hasGutenbergBoilerplate; // healthy literature clean already
 
     if (skipLiteratureReclean) {
       out.stages.push({ reclean: `preserved (literature clean_text=${existingLen})` });
@@ -240,11 +243,11 @@ async function backfillDoc(
         && (existingLen === 0 || cleaned.length <= existingLen * 1.5 || !isLiterature);
       if (ok) {
         if (cleaned !== doc.clean_text) {
-          await admin.from("documents").update({ clean_text: cleaned }).eq("id", doc.id);
+          await admin.from("documents").update({ clean_text: cleaned, char_count: cleaned.length }).eq("id", doc.id);
           cleaningChanged = true;
         }
         cleanText = cleaned;
-        out.stages.push({ reclean: { kind: isLiterature ? kind : "textbook", before: existingLen, after: cleaned.length, changed: cleaningChanged } });
+        out.stages.push({ reclean: { kind: isLiterature ? kind : "textbook", before: existingLen, after: cleaned.length, changed: cleaningChanged, forced: hasGutenbergBoilerplate || undefined } });
       } else {
         out.stages.push({ reclean: `skipped (output ${cleaned?.length ?? 0} vs existing ${existingLen})` });
       }
