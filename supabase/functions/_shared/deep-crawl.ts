@@ -75,24 +75,28 @@ export function extractMainContent(html: string, pageUrl?: string): {
     "sv-cell--pricing",
     "sv-cell--social",
     "sv-section--notice-available",
+    "sv-section--notice",
     "sv-section--lead",
     "sv-books", // related-textbook grid on catalogue pages
   ];
-  for (const cls of SIY_CHROME_CLASSES) {
-    // Match <tag class="... cls ..."> ... </tag>  on the same tag (greedy across same tag only).
-    const rx = new RegExp(
-      `<(\\w+)\\b[^>]*class=\"[^\"]*\\b${cls}\\b[^\"]*\"[\\s\\S]*?<\\/\\1>`,
-      "gi",
-    );
-    pre = pre.replace(rx, " ");
-  }
+  const stripSiyChrome = (s: string): string => {
+    let r = s;
+    for (const cls of SIY_CHROME_CLASSES) {
+      const rx = new RegExp(
+        `<(\\w+)\\b[^>]*class=\"[^\"]*\\b${cls}\\b[^\"]*\"[\\s\\S]*?<\\/\\1>`,
+        "gi",
+      );
+      r = r.replace(rx, " ");
+    }
+    return r;
+  };
+  pre = stripSiyChrome(pre);
 
   // Try strongest container first (Siyavula lesson body), then chapter-TOC,
   // then generic <main> / <article>, then <body>.
   const CANDIDATES: Array<{ name: string; rx: RegExp }> = [
-    { name: "sv-book-section-view", rx: /<div\b[^>]*class=\"[^\"]*\bsv-book-section-view\b[^\"]*\"[\s\S]*?<\/div>\s*<\/div>\s*<\/main>/i },
-    { name: "sv-book-section-view-loose", rx: /<div\b[^>]*class=\"[^\"]*\bsv-book-section-view\b[^\"]*\"([\s\S]*?)<\/main>/i },
-    { name: "toc-container", rx: /<div\b[^>]*class=\"[^\"]*\btoc-container\b[^\"]*\"[\s\S]*?<\/div>\s*<\/main>/i },
+    { name: "sv-book-section-view", rx: /<div\b[^>]*class=\"[^\"]*\bsv-book-section-view\b[^\"]*\"([\s\S]*?)<\/main>/i },
+    { name: "toc-container", rx: /<div\b[^>]*class=\"[^\"]*\btoc-container\b[^\"]*\"([\s\S]*?)<\/main>/i },
     { name: "main", rx: /<main\b[\s\S]*?<\/main>/i },
     { name: "article", rx: /<article\b[\s\S]*?<\/article>/i },
     { name: "body", rx: /<body\b[\s\S]*?<\/body>/i },
@@ -110,15 +114,14 @@ export function extractMainContent(html: string, pageUrl?: string): {
   }
   if (!chosen) chosen = pre;
 
-  // After picking container, run the same chrome strip again (covers any
-  // chrome injected inside <main>) and drop common boilerplate links.
-  chosen = chosen
+  // After picking container, re-strip chrome (covers anything injected inside
+  // <main>) and drop common boilerplate links.
+  chosen = stripSiyChrome(chosen)
     .replace(/<header\b[\s\S]*?<\/header>/gi, " ")
     .replace(/<footer\b[\s\S]*?<\/footer>/gi, " ")
     .replace(/<nav\b[\s\S]*?<\/nav>/gi, " ")
     .replace(/<aside\b[\s\S]*?<\/aside>/gi, " ")
     .replace(/<table\b[^>]*class=\"[^\"]*\bnav-buttons\b[^\"]*\"[\s\S]*?<\/table>/gi, " ")
-    // grade-selector / curriculum-selector lists used on catalogue pages
     .replace(/<ul\b[^>]*class=\"[^\"]*\bsv-book__(grades|languages|options|urls)\b[^\"]*\"[\s\S]*?<\/ul>/gi, " ")
     .replace(/<a\b[^>]*>\s*(log\s*in|sign\s*up|register|login|menu|search|share|download|previous|next|back to top)\s*<\/a>/gi, " ");
 
