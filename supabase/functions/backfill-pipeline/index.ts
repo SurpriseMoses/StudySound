@@ -23,6 +23,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { cleanRawText, type DocKind } from "../_shared/clean-text.ts";
 import {
   deepCrawlFromIndex,
+  tryFetchTextbookPdf,
   validateTextbook,
   cleanTextbookPreservingTOC,
   htmlToText,
