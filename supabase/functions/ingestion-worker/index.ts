@@ -181,12 +181,18 @@ async function stageParse(job: any): Promise<AdvanceResult> {
     /siyavula|openstax|wikibooks|cnx\.org/i.test(job.input_url);
   if (shouldDeepCrawl) {
     try {
-      const crawl = await deepCrawlFromIndex(job.input_url, sourceHtml, { maxPages: 80 });
+      const crawl = await deepCrawlFromIndex(job.input_url, sourceHtml, { maxPages: 120 });
+      const d = crawl.diagnostics;
+      console.log(`[ingest] deep_crawl job=${job.id} pages=${crawl.pagesFetched} ` +
+        `rawHtml=${d.rawHtmlBytes} extracted=${d.extractedChars} discarded=${d.discardedHtmlBytes}`);
+      if (d.sampleChapter) {
+        console.log(`[ingest] sample chapter url=${d.sampleChapter.url}\n--- BEGIN SAMPLE ---\n${d.sampleChapter.preview}\n--- END SAMPLE ---`);
+      }
       if (crawl.text.length > text.length) {
         text = crawl.text;
         await admin.from("ingestion_stage_logs").insert({
           job_id: job.id, stage: "parsing", status: "info",
-          message: `deep-crawled ${crawl.pagesFetched} chapter pages (${crawl.text.length} chars)`,
+          message: `deep-crawled ${crawl.pagesFetched} pages: extracted=${d.extractedChars} discarded=${d.discardedHtmlBytes} sample=${d.sampleChapter?.url ?? "n/a"}`,
         });
       }
     } catch (e: any) {
