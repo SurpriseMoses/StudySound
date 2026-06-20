@@ -23,10 +23,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { cleanRawText, type DocKind } from "../_shared/clean-text.ts";
 import {
   deepCrawlFromIndex,
-  tryFetchTextbookPdf,
   validateTextbook,
   cleanTextbookPreservingTOC,
-  htmlToText,
   MIN_TEXTBOOK_CHARS,
   MIN_CHAPTERS,
 } from "../_shared/deep-crawl.ts";
@@ -57,10 +55,13 @@ Deno.serve(async (req) => {
     } = {};
     try { body = await req.json(); } catch { /* allow empty */ }
 
-    const limit = Math.max(1, Math.min(Number(body.limit ?? 5) || 5, 10));
+    const limit = Math.max(1, Math.min(Number(body.limit ?? 3) || 3, 5));
     const reclean = body.reclean ?? true;
     const publishWithoutTr = body.publish_without_translations ?? true;
-    const skipPdf = body.skip_pdf ?? false;
+    // PDF parsing in Edge is CPU-heavy (unpdf repeatedly hit WORKER_RESOURCE_LIMIT).
+    // Backfill now uses HTML crawling only; full-PDF extraction must run in a
+    // separate/offline worker, not this request path.
+    const skipPdf = true;
 
     const sel = "id, title, doc_type, subject_type, clean_text, raw_text, cleaning_version, country, curriculum, source_id, source_url, published_at, embeddings_status, seed_translation, translation_status, seed_audio, tags";
 
@@ -69,12 +70,49 @@ Deno.serve(async (req) => {
       const { data } = await admin.from("documents").select(sel).eq("id", body.document_id).maybeSingle();
       if (data) targets = [data];
     } else {
+      const addTargets = (rows: any[] | null | undefined) => {
+        const seen = new Set(targets.map((t) => t.id));
+        for (const row of rows ?? []) {
+          if (!seen.has(row.id) && targets.length < limit) {
+            targets.push(row);
+            seen.add(row.id);
+          }
+        }
+      };
+
       const { data } = await admin.from("documents")
         .select(sel)
         .or("published_at.is.null,embeddings_status.neq.complete")
         .order("created_at", { ascending: true })
         .limit(limit);
-      targets = data ?? [];
+      addTargets(data);
+
+      // Repair complete literature documents that were accidentally re-chunked
+      // from Gutenberg source text. These are already published, so the normal
+      // "needs backfill" selector above would never pick them up.
+      if (targets.length < limit) {
+        const { data: dirtyClean } = await admin.from("documents")
+          .select(sel)
+          .or("clean_text.ilike.%Project Gutenberg%,clean_text.ilike.%Gutenberg License%,clean_text.ilike.%www.gutenberg.org%")
+          .order("updated_at", { ascending: true })
+          .limit(limit - targets.length);
+        addTargets(dirtyClean);
+      }
+
+      if (targets.length < limit) {
+        const { data: dirtyChunks } = await admin.from("document_chunks")
+          .select("document_id")
+          .or("text.ilike.%Project Gutenberg%,text.ilike.%Gutenberg License%,text.ilike.%www.gutenberg.org%")
+          .limit((limit - targets.length) * 20);
+        const ids = Array.from(new Set((dirtyChunks ?? []).map((r: any) => r.document_id).filter(Boolean)));
+        if (ids.length > 0) {
+          const { data: dirtyChunkDocs } = await admin.from("documents")
+            .select(sel)
+            .in("id", ids)
+            .limit(limit - targets.length);
+          addTargets(dirtyChunkDocs);
+        }
+      }
     }
 
     if (targets.length === 0) {
@@ -87,16 +125,12 @@ Deno.serve(async (req) => {
     // can blow the Edge Function's 2s CPU budget. Cap PDF parsing to ONE
     // document per invocation; subsequent docs in this batch skip PDF and
     // only run light stages (re-clean / chunk / embed).
-    let pdfBudget = skipPdf ? 0 : 1;
-
     for (const doc of targets) {
       if (Date.now() - startedAt > DEADLINE_MS) {
         results.push({ document_id: doc.id, skipped: "deadline" });
         break;
       }
-      const allowPdf = pdfBudget > 0;
-      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt, allowPdf });
-      if (r?.pdf_used) pdfBudget = 0;
+      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt, allowPdf: !skipPdf });
       results.push(r);
       if (!didCoverage && r.published) {
         try { await refreshCoverage(doc); didCoverage = true; } catch { /* non-fatal */ }
