@@ -4,6 +4,8 @@
 //
 // Used by both the live `ingestion-worker` and the `backfill-pipeline`.
 
+import { extractText, getDocumentProxy } from "https://esm.sh/unpdf@0.12.1";
+
 export const MIN_TEXTBOOK_CHARS = 100_000;
 export const MIN_CHAPTERS = 5;
 
@@ -131,6 +133,78 @@ export async function deepCrawlFromIndex(
   // Collapse excessive blank lines.
   const text = parts.join("\n\n").replace(/\n{4,}/g, "\n\n\n").trim();
   return { text, pagesFetched, chapterLinks: links, bytes };
+}
+
+/**
+ * Many open-textbook sites (Siyavula, OpenStax, DBE) publish the entire book
+ * as a single downloadable PDF linked from the TOC/landing page. That is the
+ * single fastest and most reliable way to get full-text content — the chapter
+ * pages themselves are usually JS-rendered SPAs that yield only site chrome
+ * when fetched plain.
+ *
+ * Looks for a Learner / English PDF in the index HTML, downloads it, and runs
+ * `unpdf` to extract narratable text. Returns null when no suitable PDF link
+ * is found or extraction fails.
+ */
+export async function tryFetchTextbookPdf(
+  indexUrl: string,
+  indexHtml: string,
+  opts: { timeoutMs?: number; maxBytes?: number; userAgent?: string } = {},
+): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number } | null> {
+  const timeoutMs = opts.timeoutMs ?? 45_000;
+  const maxBytes = opts.maxBytes ?? 40 * 1024 * 1024; // 40 MB
+  const ua = opts.userAgent ?? "Mozilla/5.0 (compatible; StudySoundBot/1.0)";
+
+  const base = new URL(indexUrl);
+  const seen = new Set<string>();
+  const candidates: { url: string; score: number }[] = [];
+  const rx = /href\s*=\s*["']([^"']+\.pdf)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = rx.exec(indexHtml)) !== null) {
+    let abs: URL;
+    try { abs = new URL(m[1], base); } catch { continue; }
+    const u = abs.toString();
+    if (seen.has(u)) continue;
+    seen.add(u);
+    const p = abs.pathname.toLowerCase();
+    if (!/\/downloads?\/|\/books?\/|learner|textbook|grade/i.test(p)) continue;
+    // Score: prefer English Learner editions, deprioritise Teacher/Afr.
+    let score = 0;
+    if (/_eng(\b|[_.\/])|english/i.test(p)) score += 10;
+    if (/learner/i.test(p)) score += 8;
+    if (/_v\d+\.pdf$/i.test(p)) score += 2; // latest revision
+    if (/teacher|afr|_nd|practical/i.test(p)) score -= 6;
+    candidates.push({ url: u, score });
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  if (candidates.length === 0) return null;
+
+  for (const c of candidates.slice(0, 3)) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), timeoutMs);
+      const res = await fetch(c.url, {
+        headers: { "User-Agent": ua, "Accept": "application/pdf,*/*" },
+        redirect: "follow",
+        signal: ctrl.signal,
+      }).finally(() => clearTimeout(t));
+      if (!res.ok) continue;
+      const ct = res.headers.get("content-type") ?? "";
+      const cl = Number(res.headers.get("content-length") ?? "0");
+      if (cl > maxBytes) continue;
+      if (!/pdf/i.test(ct) && !c.url.toLowerCase().endsWith(".pdf")) continue;
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (buf.byteLength === 0 || buf.byteLength > maxBytes) continue;
+      const pdf = await getDocumentProxy(buf);
+      const { text, totalPages } = await extractText(pdf, { mergePages: true });
+      const merged = Array.isArray(text) ? text.join("\n\n") : text;
+      if (!merged || merged.length < 5_000) continue;
+      return { text: merged, pageCount: totalPages, pdfUrl: c.url, bytes: buf.byteLength };
+    } catch (_) {
+      // try next candidate
+    }
+  }
+  return null;
 }
 
 function headingFromUrl(url: string): string {
