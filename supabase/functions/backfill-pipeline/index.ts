@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
 
 async function backfillDoc(
   doc: any,
-  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number; allowPdf: boolean },
+  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number; allowPdf?: boolean },
 ) {
   const out: any = { document_id: doc.id, title: doc.title, stages: [] };
   let raw: string = doc.raw_text ?? doc.clean_text ?? "";
@@ -355,6 +355,35 @@ async function backfillDoc(
 }
 
 // ---------- kind detection & TOC-preserving cleaner ----------
+
+function docSubjectText(doc: any): string {
+  return String([
+    doc.tags?.subject,
+    doc.subject_type,
+    doc.doc_type,
+    doc.title,
+  ].filter(Boolean).join(" ")).toLowerCase();
+}
+
+function isLiteratureDoc(doc: any): boolean {
+  return /literature|english|novel|story|play|shakespeare|macbeth|othello|romeo|frankenstein|sherlock|jekyll|hyde|treasure island|great expectations|tale of two cities/.test(docSubjectText(doc));
+}
+
+function hasGutenbergNoise(text: string): boolean {
+  if (!text) return false;
+  const sample = text.length > 120_000
+    ? `${text.slice(0, 60_000)}\n${text.slice(-60_000)}`
+    : text;
+  return /project\s+gutenberg|\*{3,}\s*(?:START|END) OF (?:THE|THIS) PROJECT GUTENBERG|\bgutenberg license\b|\bwww\.gutenberg\.org\b|full project gutenberg license/i.test(sample);
+}
+
+async function hasGutenbergNoiseChunks(documentId: string): Promise<boolean> {
+  const { count } = await admin.from("document_chunks")
+    .select("id", { count: "exact", head: true })
+    .eq("document_id", documentId)
+    .or("text.ilike.%Project Gutenberg%,text.ilike.%Gutenberg License%,text.ilike.%www.gutenberg.org%,text.ilike.%FULL PROJECT GUTENBERG%");
+  return (count ?? 0) > 0;
+}
 
 function detectKind(doc: any): DocKind | "toc" {
   const title = String(doc.title ?? "").toLowerCase();
