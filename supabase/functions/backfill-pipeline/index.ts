@@ -14,9 +14,10 @@
 //   14 Coverage              — append a row to coverage_snapshots
 //
 // POST body:
-//   { document_id?: string, limit?: number (default 5, max 10),
+//   { document_id?: string, limit?: number (default 3, max 5),
 //     reclean?: boolean (default true),
-//     publish_without_translations?: boolean (default true) }
+//     publish_without_translations?: boolean (default true),
+//     skip_embeddings?: boolean, max_embed_batches?: number }
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -53,6 +54,7 @@ Deno.serve(async (req) => {
       publish_without_translations?: boolean;
       skip_pdf?: boolean;
       skip_embeddings?: boolean;
+      max_embed_batches?: number;
     } = {};
     try { body = await req.json(); } catch { /* allow empty */ }
 
@@ -60,6 +62,7 @@ Deno.serve(async (req) => {
     const reclean = body.reclean ?? true;
     const publishWithoutTr = body.publish_without_translations ?? true;
     const skipEmbeddings = body.skip_embeddings ?? false;
+    const maxEmbedBatches = Math.max(0, Math.min(Number(body.max_embed_batches ?? 1) || 1, 4));
     // PDF parsing in Edge is CPU-heavy (unpdf repeatedly hit WORKER_RESOURCE_LIMIT),
     // so backfill uses HTML crawling only.
 
@@ -79,13 +82,6 @@ Deno.serve(async (req) => {
           }
         }
       };
-
-      const { data } = await admin.from("documents")
-        .select(sel)
-        .or("published_at.is.null,embeddings_status.neq.complete")
-        .order("created_at", { ascending: true })
-        .limit(limit);
-      addTargets(data);
 
       // Repair complete literature documents that were accidentally re-chunked
       // from Gutenberg source text. These are already published, so the normal
@@ -113,6 +109,15 @@ Deno.serve(async (req) => {
           addTargets(dirtyChunkDocs);
         }
       }
+
+      if (targets.length < limit) {
+        const { data } = await admin.from("documents")
+          .select(sel)
+          .or("published_at.is.null,embeddings_status.neq.complete")
+          .order("created_at", { ascending: true })
+          .limit(limit - targets.length);
+        addTargets(data);
+      }
     }
 
     if (targets.length === 0) {
@@ -126,7 +131,7 @@ Deno.serve(async (req) => {
         results.push({ document_id: doc.id, skipped: "deadline" });
         break;
       }
-      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt, skipEmbeddings });
+      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt, skipEmbeddings, maxEmbedBatches });
       results.push(r);
       if (!didCoverage && r.published) {
         try { await refreshCoverage(doc); didCoverage = true; } catch { /* non-fatal */ }
@@ -143,7 +148,7 @@ Deno.serve(async (req) => {
 
 async function backfillDoc(
   doc: any,
-  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number; skipEmbeddings: boolean },
+  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number; skipEmbeddings: boolean; maxEmbedBatches: number },
 ) {
   const out: any = { document_id: doc.id, title: doc.title, stages: [] };
   let raw: string = doc.raw_text ?? doc.clean_text ?? "";
