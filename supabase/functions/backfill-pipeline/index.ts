@@ -58,10 +58,8 @@ Deno.serve(async (req) => {
     const limit = Math.max(1, Math.min(Number(body.limit ?? 3) || 3, 5));
     const reclean = body.reclean ?? true;
     const publishWithoutTr = body.publish_without_translations ?? true;
-    // PDF parsing in Edge is CPU-heavy (unpdf repeatedly hit WORKER_RESOURCE_LIMIT).
-    // Backfill now uses HTML crawling only; full-PDF extraction must run in a
-    // separate/offline worker, not this request path.
-    const skipPdf = true;
+    // PDF parsing in Edge is CPU-heavy (unpdf repeatedly hit WORKER_RESOURCE_LIMIT),
+    // so backfill uses HTML crawling only.
 
     const sel = "id, title, doc_type, subject_type, clean_text, raw_text, cleaning_version, country, curriculum, source_id, source_url, published_at, embeddings_status, seed_translation, translation_status, seed_audio, tags";
 
@@ -121,10 +119,6 @@ Deno.serve(async (req) => {
 
     const results: any[] = [];
     let didCoverage = false;
-    // PDF extraction via unpdf is CPU-heavy and a single large textbook PDF
-    // can blow the Edge Function's 2s CPU budget. Cap PDF parsing to ONE
-    // document per invocation; subsequent docs in this batch skip PDF and
-    // only run light stages (re-clean / chunk / embed).
     for (const doc of targets) {
       if (Date.now() - startedAt > DEADLINE_MS) {
         results.push({ document_id: doc.id, skipped: "deadline" });
@@ -158,7 +152,6 @@ async function backfillDoc(
   // 0  Deep-crawl: if this is a Siyavula/OpenStax/etc. landing page that was
   //    only ingested as TOC (raw_text < 100k), fetch chapter pages and rebuild
   //    raw_text from the full body.
-  const subjectStr = docSubjectText(doc);
   const isLiterature = isLiteratureDoc(doc);
   if (
     !isLiterature &&
