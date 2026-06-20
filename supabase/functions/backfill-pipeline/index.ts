@@ -53,12 +53,14 @@ Deno.serve(async (req) => {
       limit?: number;
       reclean?: boolean;
       publish_without_translations?: boolean;
+      skip_pdf?: boolean;
     } = {};
     try { body = await req.json(); } catch { /* allow empty */ }
 
     const limit = Math.max(1, Math.min(Number(body.limit ?? 5) || 5, 10));
     const reclean = body.reclean ?? true;
     const publishWithoutTr = body.publish_without_translations ?? true;
+    const skipPdf = body.skip_pdf ?? false;
 
     const sel = "id, title, doc_type, subject_type, clean_text, raw_text, cleaning_version, country, curriculum, source_id, source_url, published_at, embeddings_status, seed_translation, translation_status, seed_audio, tags";
 
@@ -81,13 +83,20 @@ Deno.serve(async (req) => {
 
     const results: any[] = [];
     let didCoverage = false;
+    // PDF extraction via unpdf is CPU-heavy and a single large textbook PDF
+    // can blow the Edge Function's 2s CPU budget. Cap PDF parsing to ONE
+    // document per invocation; subsequent docs in this batch skip PDF and
+    // only run light stages (re-clean / chunk / embed).
+    let pdfBudget = skipPdf ? 0 : 1;
 
     for (const doc of targets) {
       if (Date.now() - startedAt > DEADLINE_MS) {
         results.push({ document_id: doc.id, skipped: "deadline" });
         break;
       }
-      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt });
+      const allowPdf = pdfBudget > 0;
+      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt, allowPdf });
+      if (r?.pdf_used) pdfBudget = 0;
       results.push(r);
       if (!didCoverage && r.published) {
         try { await refreshCoverage(doc); didCoverage = true; } catch { /* non-fatal */ }
@@ -104,7 +113,7 @@ Deno.serve(async (req) => {
 
 async function backfillDoc(
   doc: any,
-  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number },
+  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number; allowPdf: boolean },
 ) {
   const out: any = { document_id: doc.id, title: doc.title, stages: [] };
   let raw: string = doc.raw_text ?? doc.clean_text ?? "";
@@ -136,18 +145,24 @@ async function backfillDoc(
         // SPAs so deep-crawling them yields only nav chrome — the PDF is the
         // real source of truth.
         let usedPdf = false;
-        try {
-          const pdf = await tryFetchTextbookPdf(doc.source_url, html, { maxBytes: 40 * 1024 * 1024 });
-          if (pdf && pdf.text.length > raw.length) {
-            raw = pdf.text;
-            await admin.from("documents").update({
-              raw_text: raw.slice(0, 8_000_000),
-            }).eq("id", doc.id);
-            out.stages.push({ pdf_download: { url: pdf.pdfUrl, pages: pdf.pageCount, chars: pdf.text.length, bytes: pdf.bytes } });
-            usedPdf = true;
+        if (!opts.allowPdf) {
+          out.stages.push({ pdf_download: "skipped (pdf budget exhausted this invocation)" });
+        } else {
+          try {
+            // Smaller cap (12MB) to keep PDF parsing inside the 2s CPU budget.
+            const pdf = await tryFetchTextbookPdf(doc.source_url, html, { maxBytes: 12 * 1024 * 1024 });
+            if (pdf && pdf.text.length > raw.length) {
+              raw = pdf.text;
+              await admin.from("documents").update({
+                raw_text: raw.slice(0, 8_000_000),
+              }).eq("id", doc.id);
+              out.stages.push({ pdf_download: { url: pdf.pdfUrl, pages: pdf.pageCount, chars: pdf.text.length, bytes: pdf.bytes } });
+              usedPdf = true;
+              out.pdf_used = true;
+            }
+          } catch (e: any) {
+            out.stages.push({ pdf_download: `error: ${String(e?.message ?? e)}` });
           }
-        } catch (e: any) {
-          out.stages.push({ pdf_download: `error: ${String(e?.message ?? e)}` });
         }
 
         // Fallback: walk the chapter index.
