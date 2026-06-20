@@ -167,15 +167,29 @@ async function backfillDoc(
 
         // Fallback: walk the chapter index.
         if (!usedPdf) {
-          const crawl = await deepCrawlFromIndex(doc.source_url, html, { maxPages: 80 });
+          const crawl = await deepCrawlFromIndex(doc.source_url, html, { maxPages: 120 });
+          const d = crawl.diagnostics;
+          console.log(`[backfill] deep_crawl doc=${doc.id} pages=${crawl.pagesFetched} ` +
+            `rawHtml=${d.rawHtmlBytes} extracted=${d.extractedChars} discarded=${d.discardedHtmlBytes}`);
+          if (d.sampleChapter) {
+            console.log(`[backfill] sample chapter url=${d.sampleChapter.url}\n--- BEGIN SAMPLE ---\n${d.sampleChapter.preview}\n--- END SAMPLE ---`);
+          }
           if (crawl.text.length > raw.length) {
             raw = crawl.text;
             await admin.from("documents").update({
               raw_text: raw.slice(0, 4_000_000),
             }).eq("id", doc.id);
-            out.stages.push({ deep_crawl: { pages: crawl.pagesFetched, chars: crawl.text.length } });
+            out.stages.push({ deep_crawl: {
+              pages: crawl.pagesFetched,
+              chars: crawl.text.length,
+              raw_html_bytes: d.rawHtmlBytes,
+              extracted_chars: d.extractedChars,
+              discarded_html_bytes: d.discardedHtmlBytes,
+              sample_url: d.sampleChapter?.url,
+              sample_preview: d.sampleChapter?.preview?.slice(0, 300),
+            } });
           } else {
-            out.stages.push({ deep_crawl: `no improvement (pages=${crawl.pagesFetched})` });
+            out.stages.push({ deep_crawl: `no improvement (pages=${crawl.pagesFetched}, extracted=${d.extractedChars})` });
           }
         }
       } else {
