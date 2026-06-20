@@ -416,6 +416,30 @@ export function extractChapterLinks(html: string, indexUrl: string): string[] {
 export function cleanTextbookPreservingTOC(raw: string): string {
   let text = raw.replace(/\r\n/g, "\n").replace(/\u00a0/g, " ");
 
+  // --- Excise Siyavula site-chrome phrases that survive HTML stripping ----
+  // The crawler concatenates text into long lines, so per-line filters don't
+  // catch noise embedded mid-paragraph. These regexes remove known global
+  // chrome (top nav, textbook catalogue, region banner, footer/sponsor block).
+  const SIY_PHRASE_PATTERNS: RegExp[] = [
+    // Top nav strip
+    /\b(?:Home\s+)?Practice\s+For\s+learners\s+and\s+parents\s+For\s+teachers\s+and\s+schools\s+Past\s+papers\s+Textbooks\b/gi,
+    // Full Siyavula catalogue listing (subjects × grades), bounded chain
+    /\b(?:Mathematics|Mathematical\s+Literacy|Physical\s+Sciences|Natural\s+Sciences|Life\s+Sciences|CAT|IT)(?:\s+Grade\s+\d+)?(?:\s+(?:Mathematics|Mathematical\s+Literacy|Physical\s+Sciences|Natural\s+Sciences|Life\s+Sciences|CAT|IT)(?:\s+Grade\s+\d+)?){2,}\b/gi,
+    // Leaderboards / catalogue tail
+    /\bFull\s+catalogue\s+Leaderboards[\s\S]{0,400}?Learner\s+opportunities\b/gi,
+    /\bPricing\s+Support\s+Help\s+centre\s+Contact\s+us\s+Sign\s+up\s+Log\s+in(?:\s+Log\s+in)?\b/gi,
+    // Region/curriculum banner
+    /\bWe\s+think\s+you\s+are\s+located\s+in[\s\S]{0,500}?needs\s+of\s+our\s+users\.?/gi,
+    // Repeated book title + region (e.g. "Life Sciences Grade 10 South Africa Life Sciences Grade 10")
+    /\b([A-Z][\w ]{3,40}Grade\s+\d+)\s+South\s+Africa\s+\1\b/g,
+    // Footer sponsor + downloads block (everything from these markers to EOF)
+    /\bList\s+of\s+image\s+attributions\s+Sponsored\s+By[\s\S]*$/i,
+    /\bSponsored\s+By\s+Downloads[\s\S]*$/i,
+    /\bAbout\s+Siyavula\s+PRODUCTS[\s\S]*$/i,
+    /\bFollow\s+Siyavula:[\s\S]*$/i,
+  ];
+  for (const rx of SIY_PHRASE_PATTERNS) text = text.replace(rx, " ");
+
   const footerRx = /(All\s+\w+\s+textbook\s+content\s+made\s+available|Creative\s+Commons\s+Attribution\s+License|Terms\s+and\s+Conditions|Privacy\s+Policy|©\s*\d{4})/i;
   const footerMatch = text.match(footerRx);
   if (footerMatch && footerMatch.index !== undefined && footerMatch.index > 500) {
@@ -427,6 +451,9 @@ export function cleanTextbookPreservingTOC(raw: string): string {
     "for learners and parents", "log in", "sign up", "menu", "search",
     "next", "previous", "back to top", "share", "download",
     "south africa", "read online", "afrikaans", "english",
+    "help centre", "contact us", "pricing", "support", "sponsored by",
+    "downloads", "leaderboards", "learner opportunities", "full catalogue",
+    "about siyavula", "follow siyavula", "products",
   ]);
 
   const lines = text.split("\n").map((l) => l.replace(/[ \t]+/g, " ").trimEnd());
@@ -437,7 +464,7 @@ export function cleanTextbookPreservingTOC(raw: string): string {
     const low = t.toLowerCase();
     if (NAV_LINES.has(low)) continue;
     if (/^\d{1,4}$/.test(t)) continue;
-    kept.push(line.replace(/\.{4,}/g, " "));
+    kept.push(line.replace(/\.{4,}/g, " ").replace(/[ \t]{2,}/g, " "));
   }
 
   return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
