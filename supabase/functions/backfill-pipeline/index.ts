@@ -158,8 +158,8 @@ async function backfillDoc(
   // 0  Deep-crawl: if this is a Siyavula/OpenStax/etc. landing page that was
   //    only ingested as TOC (raw_text < 100k), fetch chapter pages and rebuild
   //    raw_text from the full body.
-  const subjectStr = String(doc.tags?.subject ?? doc.subject_type ?? doc.doc_type ?? "").toLowerCase();
-  const isLiterature = /literature|english|novel|story|play|shakespeare/.test(subjectStr);
+  const subjectStr = docSubjectText(doc);
+  const isLiterature = isLiteratureDoc(doc);
   if (
     !isLiterature &&
     doc.source_url &&
@@ -240,14 +240,14 @@ async function backfillDoc(
   //   that newly deep-crawled / PDF-extracted raw_text is structured.
   let cleanText: string = doc.clean_text ?? "";
   let cleaningChanged = false;
+  let chunkCacheChanged = false;
   if (opts.reclean) {
     const kind = detectKind(doc);
     const existingLen = doc.clean_text?.length ?? 0;
-    const existingHead = String(doc.clean_text ?? "").slice(0, 8_000);
-    const hasGutenbergBoilerplate = /project\s+gutenberg|\*{3,}\s*START OF (?:THE|THIS) PROJECT GUTENBERG|\blicen[sc]e included with this ebook\b|\bwww\.gutenberg\.org\b/i
-      .test(existingHead);
+    const hasGutenbergBoilerplate = hasGutenbergNoise(doc.clean_text ?? "");
+    const hasDirtyLiteratureChunks = isLiterature ? await hasGutenbergNoiseChunks(doc.id) : false;
     const skipLiteratureReclean =
-      isLiterature && existingLen >= 20_000 && !hasGutenbergBoilerplate; // healthy literature clean already
+      isLiterature && existingLen >= 20_000 && !hasGutenbergBoilerplate && !hasDirtyLiteratureChunks; // healthy literature clean already
 
     if (skipLiteratureReclean) {
       out.stages.push({ reclean: `preserved (literature clean_text=${existingLen})` });
@@ -272,7 +272,8 @@ async function backfillDoc(
           cleaningChanged = true;
         }
         cleanText = cleaned;
-        out.stages.push({ reclean: { kind: isLiterature ? kind : "textbook", before: existingLen, after: cleaned.length, changed: cleaningChanged, forced: hasGutenbergBoilerplate || undefined } });
+        if (hasDirtyLiteratureChunks) chunkCacheChanged = true;
+        out.stages.push({ reclean: { kind: isLiterature ? kind : "textbook", before: existingLen, after: cleaned.length, changed: cleaningChanged, rebuilt_dirty_chunks: hasDirtyLiteratureChunks || undefined, forced: hasGutenbergBoilerplate || undefined } });
       } else {
         out.stages.push({ reclean: `skipped (output ${cleaned?.length ?? 0} vs existing ${existingLen})` });
       }
@@ -283,7 +284,7 @@ async function backfillDoc(
   }
 
   // 5+6 Chunk + cache English (wipe & re-insert when cleaning changed)
-  if (cleaningChanged) {
+  if (cleaningChanged || chunkCacheChanged) {
     await admin.from("document_chunks").delete().eq("document_id", doc.id);
   }
   const chunksInserted = await ensureChunks(doc.id, cleanText);
