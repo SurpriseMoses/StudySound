@@ -124,7 +124,7 @@ async function backfillDoc(
   // 0  Deep-crawl: if this is a Siyavula/OpenStax/etc. landing page that was
   //    only ingested as TOC (raw_text < 100k), fetch chapter pages and rebuild
   //    raw_text from the full body.
-  const subjectStr = String(doc.tags?.subject ?? doc.doc_type ?? "").toLowerCase();
+  const subjectStr = String(doc.tags?.subject ?? doc.subject_type ?? doc.doc_type ?? "").toLowerCase();
   const isLiterature = /literature|english|novel|story|play|shakespeare/.test(subjectStr);
   if (
     !isLiterature &&
