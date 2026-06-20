@@ -77,7 +77,8 @@ export function extractMainContent(html: string, pageUrl?: string): {
     "sv-section--notice-available",
     "sv-section--notice",
     "sv-section--lead",
-    "sv-books", // related-textbook grid on catalogue pages
+    "sv-book-banner",
+    "sv-view--textbook-catalogue",
   ];
   const stripSiyChrome = (s: string): string => {
     let r = s;
