@@ -4,6 +4,8 @@
 //
 // Used by both the live `ingestion-worker` and the `backfill-pipeline`.
 
+import { extractText, getDocumentProxy } from "https://esm.sh/unpdf@0.12.1";
+
 export const MIN_TEXTBOOK_CHARS = 100_000;
 export const MIN_CHAPTERS = 5;
 
