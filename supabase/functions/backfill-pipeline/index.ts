@@ -188,28 +188,51 @@ async function backfillDoc(
   }
 
   // 4  Re-clean
+  //   For LITERATURE we preserve the existing clean_text whenever it looks
+  //   healthy. The original seeding pipeline already ran Gutenberg-boilerplate
+  //   stripping + speaker normalisation + stage-direction removal on these
+  //   books (Sherlock Holmes, Frankenstein, Macbeth, etc.) and re-cleaning
+  //   from raw_text risks re-introducing front-matter / licence text that the
+  //   original cleaner removed. Only re-clean literature when clean_text is
+  //   missing or clearly truncated.
+  //
+  //   For TEXTBOOKS we always re-clean using the TOC-preserving cleaner so
+  //   that newly deep-crawled / PDF-extracted raw_text is structured.
   let cleanText: string = doc.clean_text ?? "";
   let cleaningChanged = false;
   if (opts.reclean) {
     const kind = detectKind(doc);
-    let cleaned: string;
-    if (!isLiterature) {
-      // Textbooks: preserve TOC + chapter/section headings + numbering.
-      cleaned = cleanTextbookPreservingTOC(raw);
-    } else if (kind === "toc") {
-      cleaned = cleanTocDoc(raw);
+    const existingLen = doc.clean_text?.length ?? 0;
+    const skipLiteratureReclean =
+      isLiterature && existingLen >= 20_000; // healthy literature clean already
+
+    if (skipLiteratureReclean) {
+      out.stages.push({ reclean: `preserved (literature clean_text=${existingLen})` });
     } else {
-      cleaned = cleanRawText(raw, kind).text;
-    }
-    if (cleaned && cleaned.length >= Math.max(200, Math.floor((doc.clean_text?.length ?? 0) * 0.5))) {
-      if (cleaned !== doc.clean_text) {
-        await admin.from("documents").update({ clean_text: cleaned }).eq("id", doc.id);
-        cleaningChanged = true;
+      let cleaned: string;
+      if (!isLiterature) {
+        // Textbooks: preserve TOC + chapter/section headings + numbering.
+        cleaned = cleanTextbookPreservingTOC(raw);
+      } else if (kind === "toc") {
+        cleaned = cleanTocDoc(raw);
+      } else {
+        cleaned = cleanRawText(raw, kind).text;
       }
-      cleanText = cleaned;
-      out.stages.push({ reclean: { kind: isLiterature ? kind : "textbook", before: doc.clean_text?.length ?? 0, after: cleaned.length, changed: cleaningChanged } });
-    } else {
-      out.stages.push({ reclean: `skipped (cleaner output too short: ${cleaned?.length ?? 0})` });
+      // Never replace a longer existing clean_text with a shorter one OR a
+      // suspiciously longer one (likely re-introducing boilerplate).
+      const ok = cleaned
+        && cleaned.length >= Math.max(200, Math.floor(existingLen * 0.5))
+        && (existingLen === 0 || cleaned.length <= existingLen * 1.5 || !isLiterature);
+      if (ok) {
+        if (cleaned !== doc.clean_text) {
+          await admin.from("documents").update({ clean_text: cleaned }).eq("id", doc.id);
+          cleaningChanged = true;
+        }
+        cleanText = cleaned;
+        out.stages.push({ reclean: { kind: isLiterature ? kind : "textbook", before: existingLen, after: cleaned.length, changed: cleaningChanged } });
+      } else {
+        out.stages.push({ reclean: `skipped (output ${cleaned?.length ?? 0} vs existing ${existingLen})` });
+      }
     }
   }
   if (!cleanText || cleanText.length < 50) {
