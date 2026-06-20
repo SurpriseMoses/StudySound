@@ -292,7 +292,8 @@ async function backfillDoc(
 
   // 8 Embed English
   let embedded = 0;
-  while (!opts.skipEmbeddings && Date.now() - opts.startedAt < DEADLINE_MS) {
+  let embedBatches = 0;
+  while (!opts.skipEmbeddings && embedBatches < opts.maxEmbedBatches && Date.now() - opts.startedAt < DEADLINE_MS) {
     const { data: rows } = await admin.from("document_chunks")
       .select("id,text").eq("document_id", doc.id).is("embedding", null)
       .order("chunk_index", { ascending: true }).limit(EMBED_BATCH);
@@ -305,6 +306,7 @@ async function backfillDoc(
       }).eq("id", rows[i].id);
     }
     embedded += rows.length;
+    embedBatches++;
   }
   out.stages.push({ embed_en: embedded });
 
@@ -320,7 +322,8 @@ async function backfillDoc(
 
   // 12 Embed translations that already exist
   let embeddedTr = 0;
-  while (!opts.skipEmbeddings && Date.now() - opts.startedAt < DEADLINE_MS) {
+  let embedTrBatches = 0;
+  while (!opts.skipEmbeddings && embedTrBatches < 1 && Date.now() - opts.startedAt < DEADLINE_MS) {
     const { data: rows } = await admin.from("translation_assets")
       .select("id,translated_text").eq("document_id", doc.id)
       .not("translated_text", "is", null).is("embedding", null).limit(EMBED_BATCH);
@@ -333,6 +336,7 @@ async function backfillDoc(
       }).eq("id", rows[i].id);
     }
     embeddedTr += rows.length;
+    embedTrBatches++;
   }
   out.stages.push({ embed_tr: embeddedTr });
 
