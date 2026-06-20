@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
 
 async function backfillDoc(
   doc: any,
-  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number; allowPdf?: boolean },
+  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number },
 ) {
   const out: any = { document_id: doc.id, title: doc.title, stages: [] };
   let raw: string = doc.raw_text ?? doc.clean_text ?? "";
