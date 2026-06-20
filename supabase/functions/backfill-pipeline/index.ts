@@ -52,12 +52,14 @@ Deno.serve(async (req) => {
       reclean?: boolean;
       publish_without_translations?: boolean;
       skip_pdf?: boolean;
+      skip_embeddings?: boolean;
     } = {};
     try { body = await req.json(); } catch { /* allow empty */ }
 
     const limit = Math.max(1, Math.min(Number(body.limit ?? 3) || 3, 5));
     const reclean = body.reclean ?? true;
     const publishWithoutTr = body.publish_without_translations ?? true;
+    const skipEmbeddings = body.skip_embeddings ?? false;
     // PDF parsing in Edge is CPU-heavy (unpdf repeatedly hit WORKER_RESOURCE_LIMIT),
     // so backfill uses HTML crawling only.
 
@@ -124,7 +126,7 @@ Deno.serve(async (req) => {
         results.push({ document_id: doc.id, skipped: "deadline" });
         break;
       }
-      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt });
+      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt, skipEmbeddings });
       results.push(r);
       if (!didCoverage && r.published) {
         try { await refreshCoverage(doc); didCoverage = true; } catch { /* non-fatal */ }
@@ -141,7 +143,7 @@ Deno.serve(async (req) => {
 
 async function backfillDoc(
   doc: any,
-  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number },
+  opts: { reclean: boolean; publishWithoutTr: boolean; startedAt: number; skipEmbeddings: boolean },
 ) {
   const out: any = { document_id: doc.id, title: doc.title, stages: [] };
   let raw: string = doc.raw_text ?? doc.clean_text ?? "";
@@ -285,7 +287,7 @@ async function backfillDoc(
 
   // 8 Embed English
   let embedded = 0;
-  while (Date.now() - opts.startedAt < DEADLINE_MS) {
+  while (!opts.skipEmbeddings && Date.now() - opts.startedAt < DEADLINE_MS) {
     const { data: rows } = await admin.from("document_chunks")
       .select("id,text").eq("document_id", doc.id).is("embedding", null)
       .order("chunk_index", { ascending: true }).limit(EMBED_BATCH);
@@ -313,7 +315,7 @@ async function backfillDoc(
 
   // 12 Embed translations that already exist
   let embeddedTr = 0;
-  while (Date.now() - opts.startedAt < DEADLINE_MS) {
+  while (!opts.skipEmbeddings && Date.now() - opts.startedAt < DEADLINE_MS) {
     const { data: rows } = await admin.from("translation_assets")
       .select("id,translated_text").eq("document_id", doc.id)
       .not("translated_text", "is", null).is("embedding", null).limit(EMBED_BATCH);
