@@ -53,12 +53,14 @@ Deno.serve(async (req) => {
       limit?: number;
       reclean?: boolean;
       publish_without_translations?: boolean;
+      skip_pdf?: boolean;
     } = {};
     try { body = await req.json(); } catch { /* allow empty */ }
 
     const limit = Math.max(1, Math.min(Number(body.limit ?? 5) || 5, 10));
     const reclean = body.reclean ?? true;
     const publishWithoutTr = body.publish_without_translations ?? true;
+    const skipPdf = body.skip_pdf ?? false;
 
     const sel = "id, title, doc_type, subject_type, clean_text, raw_text, cleaning_version, country, curriculum, source_id, source_url, published_at, embeddings_status, seed_translation, translation_status, seed_audio, tags";
 
@@ -81,13 +83,20 @@ Deno.serve(async (req) => {
 
     const results: any[] = [];
     let didCoverage = false;
+    // PDF extraction via unpdf is CPU-heavy and a single large textbook PDF
+    // can blow the Edge Function's 2s CPU budget. Cap PDF parsing to ONE
+    // document per invocation; subsequent docs in this batch skip PDF and
+    // only run light stages (re-clean / chunk / embed).
+    let pdfBudget = skipPdf ? 0 : 1;
 
     for (const doc of targets) {
       if (Date.now() - startedAt > DEADLINE_MS) {
         results.push({ document_id: doc.id, skipped: "deadline" });
         break;
       }
-      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt });
+      const allowPdf = pdfBudget > 0;
+      const r = await backfillDoc(doc, { reclean, publishWithoutTr, startedAt, allowPdf });
+      if (r?.pdf_used) pdfBudget = 0;
       results.push(r);
       if (!didCoverage && r.published) {
         try { await refreshCoverage(doc); didCoverage = true; } catch { /* non-fatal */ }
