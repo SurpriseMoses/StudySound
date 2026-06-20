@@ -121,24 +121,47 @@ async function backfillDoc(
     !isLiterature &&
     doc.source_url &&
     raw.length < MIN_TEXTBOOK_CHARS &&
-    /siyavula|openstax|wikibooks|cnx\.org/i.test(doc.source_url)
+    /siyavula|openstax|wikibooks|cnx\.org|dbe|education\.gov/i.test(doc.source_url)
   ) {
     try {
       const res = await fetch(doc.source_url, {
-        headers: { "User-Agent": "StudySoundBot/1.0 (+backfill)" },
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; StudySoundBot/1.0)" },
         redirect: "follow",
       });
       if (res.ok) {
         const html = await res.text();
-        const crawl = await deepCrawlFromIndex(doc.source_url, html, { maxPages: 80 });
-        if (crawl.text.length > raw.length) {
-          raw = crawl.text;
-          await admin.from("documents").update({
-            raw_text: raw.slice(0, 4_000_000),
-          }).eq("id", doc.id);
-          out.stages.push({ deep_crawl: { pages: crawl.pagesFetched, chars: crawl.text.length } });
-        } else {
-          out.stages.push({ deep_crawl: `no improvement (pages=${crawl.pagesFetched})` });
+
+        // Preferred path: a single, downloadable Learner English PDF that
+        // contains the whole textbook. Siyavula chapter pages are JS-rendered
+        // SPAs so deep-crawling them yields only nav chrome — the PDF is the
+        // real source of truth.
+        let usedPdf = false;
+        try {
+          const pdf = await tryFetchTextbookPdf(doc.source_url, html, { maxBytes: 40 * 1024 * 1024 });
+          if (pdf && pdf.text.length > raw.length) {
+            raw = pdf.text;
+            await admin.from("documents").update({
+              raw_text: raw.slice(0, 8_000_000),
+            }).eq("id", doc.id);
+            out.stages.push({ pdf_download: { url: pdf.pdfUrl, pages: pdf.pageCount, chars: pdf.text.length, bytes: pdf.bytes } });
+            usedPdf = true;
+          }
+        } catch (e: any) {
+          out.stages.push({ pdf_download: `error: ${String(e?.message ?? e)}` });
+        }
+
+        // Fallback: walk the chapter index.
+        if (!usedPdf) {
+          const crawl = await deepCrawlFromIndex(doc.source_url, html, { maxPages: 80 });
+          if (crawl.text.length > raw.length) {
+            raw = crawl.text;
+            await admin.from("documents").update({
+              raw_text: raw.slice(0, 4_000_000),
+            }).eq("id", doc.id);
+            out.stages.push({ deep_crawl: { pages: crawl.pagesFetched, chars: crawl.text.length } });
+          } else {
+            out.stages.push({ deep_crawl: `no improvement (pages=${crawl.pagesFetched})` });
+          }
         }
       } else {
         out.stages.push({ deep_crawl: `fetch failed ${res.status}` });
