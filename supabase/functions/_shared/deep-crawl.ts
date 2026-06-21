@@ -432,11 +432,13 @@ export function cleanTextbookPreservingTOC(raw: string): string {
     /\bWe\s+think\s+you\s+are\s+located\s+in[\s\S]{0,500}?needs\s+of\s+our\s+users\.?/gi,
     // Repeated book title + region (e.g. "Life Sciences Grade 10 South Africa Life Sciences Grade 10")
     /\b([A-Z][\w ]{3,40}Grade\s+\d+)\s+South\s+Africa\s+\1\b/g,
-    // Footer sponsor + downloads block (everything from these markers to EOF)
-    /\bList\s+of\s+image\s+attributions\s+Sponsored\s+By[\s\S]*$/i,
-    /\bSponsored\s+By\s+Downloads[\s\S]*$/i,
-    /\bAbout\s+Siyavula\s+PRODUCTS[\s\S]*$/i,
-    /\bFollow\s+Siyavula:[\s\S]*$/i,
+    // Footer/download chrome appears after each crawled Siyavula page. Remove
+    // only that page's chrome, not everything after it, because deep-crawl
+    // concatenates the next lesson with a "# ..." heading.
+    /\bList\s+of\s+image\s+attributions\b[\s\S]*?(?=\n#\s+|$)/gi,
+    /\bSponsored\s+By\s+Downloads\b[\s\S]*?(?=\n#\s+|$)/gi,
+    /\bAbout\s+Siyavula\s+PRODUCTS\b[\s\S]*?(?=\n#\s+|$)/gi,
+    /\bFollow\s+Siyavula:\b[\s\S]*?(?=\n#\s+|$)/gi,
   ];
   for (const rx of SIY_PHRASE_PATTERNS) text = text.replace(rx, " ");
 
