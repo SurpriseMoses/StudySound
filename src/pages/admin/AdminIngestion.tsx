@@ -151,11 +151,24 @@ export default function AdminIngestion() {
         </div>
         <div className="flex flex-wrap gap-2 items-center">
           <Input
-            placeholder="document_id (optional)"
+            list="backfill-doc-list"
+            placeholder="Search document by title or paste id…"
             value={backfillDocId}
-            onChange={(e) => setBackfillDocId(e.target.value)}
-            className="h-8 w-[220px] text-xs font-mono"
+            onChange={(e) => {
+              const v = e.target.value;
+              // If user picked a "Title — <id>" option from the datalist, extract the id
+              const m = v.match(/—\s*([0-9a-f-]{36})\s*$/i);
+              setBackfillDocId(m ? m[1] : v);
+            }}
+            className="h-8 w-[320px] text-xs font-mono"
           />
+          <datalist id="backfill-doc-list">
+            {docOptions.map((d) => (
+              <option key={d.id} value={`${d.title} — ${d.id}`}>
+                {d.embeddings_status ?? "?"}{d.published_at ? " · published" : ""}
+              </option>
+            ))}
+          </datalist>
           <Button variant="outline" size="sm" onClick={kickWorker}><Play className="w-4 h-4 mr-1" /> Kick worker</Button>
           <Button variant="outline" size="sm" onClick={runBackfill} disabled={backfilling}>
             {backfilling ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
