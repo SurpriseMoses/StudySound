@@ -286,6 +286,10 @@ async function backfillDoc(
   // 5+6 Chunk + cache English (wipe & re-insert when cleaning changed)
   if (cleaningChanged || chunkCacheChanged) {
     await admin.from("document_chunks").delete().eq("document_id", doc.id);
+    // Clean text changes invalidate all generated per-section assets. Without
+    // this, the library can still surface the old three cached sections/audio.
+    await admin.from("audio_assets").delete().eq("document_id", doc.id);
+    await admin.from("translation_assets").delete().eq("document_id", doc.id);
   }
   const chunksInserted = await ensureChunks(doc.id, cleanText);
   out.stages.push({ chunk_cache: chunksInserted });
