@@ -57,6 +57,7 @@ export default function AdminIngestion() {
   const { toast } = useToast();
   const [sources, setSources] = useState<Source[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [docOptions, setDocOptions] = useState<{ id: string; title: string; embeddings_status: string | null; published_at: string | null }[]>([]);
   const [totals, setTotals] = useState<{ documents: number; chunks: number; audio: number; translations: number }>({
     documents: 0, chunks: 0, audio: 0, translations: 0,
   });
