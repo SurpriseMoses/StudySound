@@ -66,15 +66,17 @@ export default function AdminIngestion() {
   const [editSource, setEditSource] = useState<Partial<Source> | null>(null);
 
   const refresh = async () => {
-    const [s, j, docs, audio, trans] = await Promise.all([
+    const [s, j, docs, audio, trans, docList] = await Promise.all([
       supabase.from("content_sources").select("*").order("name"),
       supabase.from("ingestion_jobs").select("*").order("created_at", { ascending: false }).limit(50),
       supabase.from("documents").select("id", { count: "exact", head: true }).eq("is_seeded", true),
       supabase.from("audio_assets").select("id", { count: "exact", head: true }),
       supabase.from("translation_assets").select("id", { count: "exact", head: true }),
+      supabase.from("documents").select("id,title,embeddings_status,published_at").order("created_at", { ascending: false }).limit(500),
     ]);
     setSources((s.data ?? []) as Source[]);
     setJobs((j.data ?? []) as Job[]);
+    setDocOptions((docList.data ?? []) as any);
     setTotals({
       documents: docs.count ?? 0,
       chunks: 0,
