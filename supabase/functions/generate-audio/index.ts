@@ -1208,32 +1208,39 @@ Deno.serve(async (req) => {
       const retryAfter = Number(e?.retryAfter) || 30;
       return new Response(
         JSON.stringify({
-          error: "RATE_LIMITED",
-          message: "Audio service is busy. Please try again in a moment.",
+          success: false,
+          rate_limited: true,
+          audio_unavailable: true,
+          error: "Audio service is busy. Please try again in a moment.",
+          code: "RATE_LIMITED",
           retry_after_seconds: retryAfter,
           fallback: true,
         }),
         {
-          status: 503,
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": String(retryAfter) },
         },
       );
     }
     if (described.code === "VOICE_UNSUPPORTED" || /Voice not available for selected language|Azure 400:/i.test(msg)) {
-      return new Response(JSON.stringify({ error: msg, fallback: true, code: described.code ?? "AUDIO_UNAVAILABLE" }), {
+      return new Response(JSON.stringify({ success: false, audio_unavailable: true, error: msg, fallback: true, code: described.code ?? "AUDIO_UNAVAILABLE" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     if (/ElevenLabs 429/i.test(msg) || /concurrent_limit_exceeded/i.test(msg)) {
+      const retryAfter = Number(e?.retryAfter) || 15;
       return new Response(
         JSON.stringify({
-          error: "RATE_LIMITED",
-          message: "Audio service is busy. Please try again in a moment.",
-          retry_after_seconds: Number(e?.retryAfter) || 15,
+          success: false,
+          rate_limited: true,
+          audio_unavailable: true,
+          error: "Audio service is busy. Please try again in a moment.",
+          code: "RATE_LIMITED",
+          retry_after_seconds: retryAfter,
           fallback: true,
         }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": String(retryAfter) } },
       );
     }
     if (/Insufficient credits/i.test(msg)) {
