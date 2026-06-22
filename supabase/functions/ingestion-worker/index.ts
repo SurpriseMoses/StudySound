@@ -623,12 +623,11 @@ async function stageAudio(job: any): Promise<AdvanceResult> {
   if ((count ?? 0) > 0) {
     return await stageEmbedTranslations(job);
   }
-  await admin.from("documents").update({
-    seed_audio: true,
-    seed_audio_status: "pending",
-  }).eq("id", job.document_id);
-  return { state: "audio_seeding", message: "audio seeding enabled" };
+  // Audio seeding is started MANUALLY from Admin > Seed Audio. Do not flip
+  // seed_audio here — just advance the job state.
+  return { state: "audio_seeding", message: "audio seeding skipped (manual)" };
 }
+
 
 async function stagePublish(job: any): Promise<AdvanceResult> {
   if (!job.document_id) throw new Error("no document_id");
