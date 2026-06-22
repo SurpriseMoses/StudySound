@@ -432,7 +432,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div className="space-y-1"><Label className="text-xs">{label}</Label>{children}</div>;
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value }: { label: string; value: number | string }) {
   return (
     <Card><CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground font-normal">{label}</CardTitle></CardHeader>
       <CardContent className="text-2xl font-display font-bold">{value.toLocaleString()}</CardContent></Card>
