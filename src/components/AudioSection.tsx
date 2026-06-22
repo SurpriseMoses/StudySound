@@ -139,8 +139,10 @@ export function AudioSection({
         setAudioUrl(null);
         setIsPlaying(false);
         toast({
-          title: "Audio unavailable",
-          description: data.error ?? "Audio couldn't be generated for this language right now.",
+          title: data.rate_limited ? "Audio service busy" : "Audio unavailable",
+          description: data.rate_limited
+            ? `Too many requests right now. Try again in ${data.retry_after_seconds ?? 15}s.`
+            : (data.error ?? "Audio couldn't be generated for this language right now."),
           variant: "destructive",
         });
         return;
