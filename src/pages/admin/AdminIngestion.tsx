@@ -1138,3 +1138,129 @@ function SyncBadge({ status }: { status: Source["sync_status"] }) {
     status === "syncing" || status === "pending" ? "outline" : "secondary";
   return <Badge variant={variant as any}>{status}</Badge>;
 }
+
+// ---------------------------------------------------------------------------
+// Library import summary — totals + per-book health (chars, chunks, embeddings)
+// ---------------------------------------------------------------------------
+type LibRow = {
+  id: string;
+  title: string;
+  subject_type: string | null;
+  char_count: number | null;
+  embeddings_status: string | null;
+  published_at: string | null;
+  chunks: number;
+  embedded: number;
+};
+
+function LibrarySummaryPanel() {
+  const [rows, setRows] = useState<LibRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    const { data: docs } = await supabase
+      .from("documents")
+      .select("id,title,subject_type,char_count,embeddings_status,published_at")
+      .order("char_count", { ascending: false, nullsFirst: false })
+      .limit(500);
+    const list = (docs ?? []) as any[];
+    const counts = await Promise.all(
+      list.map(async (d) => {
+        const [{ count: total }, { count: emb }] = await Promise.all([
+          supabase.from("document_chunks").select("id", { count: "exact", head: true }).eq("document_id", d.id),
+          supabase.from("document_chunks").select("id", { count: "exact", head: true }).eq("document_id", d.id).not("embedding", "is", null),
+        ]);
+        return { chunks: total ?? 0, embedded: emb ?? 0 };
+      })
+    );
+    setRows(list.map((d, i) => ({ ...d, chunks: counts[i].chunks, embedded: counts[i].embedded })));
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
+
+  const totals = useMemo(() => {
+    return rows.reduce(
+      (a, r) => ({
+        books: a.books + 1,
+        chars: a.chars + (r.char_count ?? 0),
+        chunks: a.chunks + r.chunks,
+        embedded: a.embedded + r.embedded,
+        published: a.published + (r.published_at ? 1 : 0),
+        failed: a.failed + (r.embeddings_status === "import_failed" ? 1 : 0),
+        review: a.review + (((r.char_count ?? 0) < 20000 || r.chunks < 10) ? 1 : 0),
+      }),
+      { books: 0, chars: 0, chunks: 0, embedded: 0, published: 0, failed: 0, review: 0 },
+    );
+  }, [rows]);
+
+  const fmt = (n: number) => n.toLocaleString();
+  const needsReview = (r: LibRow) => (r.char_count ?? 0) < 20000 || r.chunks < 10;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle className="text-base">Library import summary</CardTitle>
+          <div className="text-xs text-muted-foreground">
+            {loading ? "loading…" : `${rows.length} documents · auto-refresh 15s`}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+          <Stat label="Textbooks" value={totals.books} />
+          <Stat label="Published" value={totals.published} />
+          <Stat label="Total chars" value={fmt(totals.chars)} />
+          <Stat label="Chunks" value={fmt(totals.chunks)} />
+          <Stat label="Embedded" value={fmt(totals.embedded)} />
+          <Stat label="Needs review" value={totals.review} />
+          <Stat label="Failed" value={totals.failed} />
+        </div>
+
+        <div className="overflow-x-auto border rounded-md">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/50 text-left">
+              <tr>
+                <th className="px-2 py-2">Title</th>
+                <th className="px-2 py-2">Type</th>
+                <th className="px-2 py-2 text-right">Chars</th>
+                <th className="px-2 py-2 text-right">Chunks</th>
+                <th className="px-2 py-2 text-right">Embedded</th>
+                <th className="px-2 py-2">Status</th>
+                <th className="px-2 py-2">Flag</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const pct = r.chunks > 0 ? Math.round((r.embedded / r.chunks) * 100) : 0;
+                const flag = r.embeddings_status === "import_failed"
+                  ? <Badge variant="destructive">failed</Badge>
+                  : needsReview(r)
+                    ? <Badge variant="outline" className="border-amber-500 text-amber-600">review</Badge>
+                    : r.published_at ? <Badge>published</Badge> : <Badge variant="secondary">pending</Badge>;
+                return (
+                  <tr key={r.id} className="border-t">
+                    <td className="px-2 py-2 max-w-[280px] truncate" title={r.title}>{r.title}</td>
+                    <td className="px-2 py-2 text-muted-foreground">{r.subject_type ?? "—"}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{fmt(r.char_count ?? 0)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{fmt(r.chunks)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {fmt(r.embedded)} <span className="text-muted-foreground">({pct}%)</span>
+                    </td>
+                    <td className="px-2 py-2 text-muted-foreground">{r.embeddings_status ?? "—"}</td>
+                    <td className="px-2 py-2">{flag}</td>
+                  </tr>
+                );
+              })}
+              {rows.length === 0 && !loading && (
+                <tr><td colSpan={7} className="px-2 py-6 text-center text-muted-foreground">No documents yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
