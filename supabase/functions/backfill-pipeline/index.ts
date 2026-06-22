@@ -314,15 +314,10 @@ async function backfillDoc(
   }
   out.stages.push({ embed_en: embedded });
 
-  // 9 Queue translations
-  if (!doc.seed_translation) {
-    await admin.from("documents").update({
-      seed_translation: true, translation_status: "pending",
-    }).eq("id", doc.id);
-    out.stages.push({ queue_translations: "enabled" });
-  } else {
-    out.stages.push({ queue_translations: `already (${doc.translation_status ?? "?"})` });
-  }
+  // 9 Queue translations — DISABLED. Translations are seeded manually via the
+  // Admin > Seed Translations page. Backfill no longer flips seed_translation.
+  out.stages.push({ queue_translations: "skipped (manual)" });
+
 
   // 12 Embed translations that already exist
   let embeddedTr = 0;
