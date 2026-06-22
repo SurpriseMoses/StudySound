@@ -179,7 +179,10 @@ export default function AdminIngestion() {
 
       </div>
 
+      <LibrarySummaryPanel />
+
       <Tabs defaultValue="jobs">
+
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="jobs">Jobs</TabsTrigger>
           <TabsTrigger value="sources">Sources</TabsTrigger>
