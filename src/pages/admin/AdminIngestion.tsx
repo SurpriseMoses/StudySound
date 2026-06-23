@@ -360,7 +360,9 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
   const submit = async () => {
     if (!sourceId) return toast({ title: "Pick a source", variant: "destructive" });
     if (!grade || !subject) return toast({ title: "Pick grade & subject", variant: "destructive" });
-    if (!url && !rawText) return toast({ title: "URL or raw text required", variant: "destructive" });
+    const selectedSource = sources.find((s) => s.id === sourceId);
+    const effectiveUrl = url || selectedSource?.source_url || "";
+    if (!effectiveUrl && !rawText) return toast({ title: "URL or raw text required (source has no default URL)", variant: "destructive" });
     setBusy(true);
     const targetSubjects = subject === "__all__" ? subjects : [subject];
     let okCount = 0;
@@ -370,7 +372,7 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
       const { error, data } = await supabase.functions.invoke("ingestion-orchestrator", {
         body: {
           source_id: sourceId,
-          input_url: url || undefined,
+          input_url: effectiveUrl || undefined,
           input_raw_text: rawText || undefined,
           title_hint: titleHint,
           grade,
@@ -429,7 +431,7 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
           </Field>
         </div>
         <Field label="Title hint"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-        <Field label="URL"><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." /></Field>
+        <Field label="URL (optional — defaults to source URL)"><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={sources.find((s) => s.id === sourceId)?.source_url ?? "https://..."} /></Field>
         <Field label="…or paste raw text"><Textarea rows={4} value={rawText} onChange={(e) => setRawText(e.target.value)} /></Field>
       </div>
       <DialogFooter>
