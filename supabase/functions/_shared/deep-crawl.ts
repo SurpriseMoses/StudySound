@@ -357,11 +357,10 @@ export async function tryFetchTextbookPdf(
   candidates.sort((a, b) => b.score - a.score);
   if (candidates.length === 0) return null;
 
-  // Lazy-load PDF parsing only when an explicit caller asks for it. Backfill
-  // intentionally avoids this path because unpdf can exceed Edge CPU limits.
-  const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
-
   for (const c of candidates.slice(0, 5)) {
+    const scraped = await tryFirecrawlPdf(c.url, minChars);
+    if (scraped) return scraped;
+
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -374,9 +373,16 @@ export async function tryFetchTextbookPdf(
       const ct = res.headers.get("content-type") ?? "";
       const cl = Number(res.headers.get("content-length") ?? "0");
       if (cl && cl > maxBytes) continue;
+      // Avoid parsing very large PDFs inside the Edge worker; that has caused
+      // resource-limit timeouts. Firecrawl is tried above for these files.
+      if (cl && cl > 12 * 1024 * 1024) continue;
       if (!/pdf/i.test(ct) && !/\.pdf(?:[?#]|$)/i.test(c.url)) continue;
       const buf = new Uint8Array(await res.arrayBuffer());
       if (buf.byteLength === 0 || buf.byteLength > maxBytes) continue;
+      if (buf.byteLength > 12 * 1024 * 1024) continue;
+      // Lazy-load PDF parsing only when a small explicit PDF is still worth
+      // local extraction. Backfill intentionally avoids this path.
+      const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
       const pdf = await getDocumentProxy(buf);
       const { text, totalPages } = await extractText(pdf, { mergePages: true });
       const merged = Array.isArray(text) ? text.join("\n\n") : text;
@@ -385,6 +391,29 @@ export async function tryFetchTextbookPdf(
     } catch (_) { /* try next */ }
   }
   return null;
+}
+
+async function tryFirecrawlPdf(
+  url: string,
+  minChars: number,
+): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number } | null> {
+  const fcKey = Deno.env.get("FIRECRAWL_API_KEY");
+  if (!fcKey) return null;
+  try {
+    const res = await fetch("https://api.firecrawl.dev/v2/scrape", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${fcKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: false }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) return null;
+    const doc = data.data ?? data;
+    const text = String(doc.markdown ?? doc.html ?? "").trim();
+    if (text.length < minChars) return null;
+    return { text, pageCount: 0, pdfUrl: url, bytes: text.length };
+  } catch (_) {
+    return null;
+  }
 }
 
 function nearestHeadingBefore(html: string, index: number): string {
