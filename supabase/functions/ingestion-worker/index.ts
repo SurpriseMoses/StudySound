@@ -135,20 +135,43 @@ async function stageDownload(job: any): Promise<AdvanceResult> {
     return { state: "downloading", message: "input already available" };
   }
   if (!job.input_url) throw new Error("no input provided");
+  let buf: Uint8Array;
+  let contentType = "application/octet-stream";
   const res = await fetch(job.input_url, {
     redirect: "follow",
     headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; StudySoundBot/1.0; +https://studysound.app)",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       "Accept": "text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
     },
-  });
-  if (!res.ok) throw new Error(`download failed ${res.status} for ${job.input_url}`);
-  const buf = new Uint8Array(await res.arrayBuffer());
+  }).catch(() => null);
+
+  if (res && res.ok) {
+    buf = new Uint8Array(await res.arrayBuffer());
+    contentType = res.headers.get("content-type") ?? contentType;
+  } else {
+    // Fallback: Firecrawl scrape (handles anti-bot/Cloudflare)
+    const fcKey = Deno.env.get("FIRECRAWL_API_KEY");
+    if (!fcKey) throw new Error(`download failed ${res?.status ?? "network"} for ${job.input_url} (no Firecrawl fallback configured)`);
+    const fcRes = await fetch("https://api.firecrawl.dev/v2/scrape", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${fcKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ url: job.input_url, formats: ["html", "markdown"], onlyMainContent: true }),
+    });
+    const fcData = await fcRes.json().catch(() => null);
+    if (!fcRes.ok || !fcData) throw new Error(`firecrawl fallback failed ${fcRes.status} for ${job.input_url}`);
+    const doc = fcData.data ?? fcData;
+    const html = doc.html ?? "";
+    const md = doc.markdown ?? "";
+    const payload = html || md;
+    if (!payload) throw new Error(`firecrawl returned empty content for ${job.input_url}`);
+    buf = new TextEncoder().encode(payload);
+    contentType = html ? "text/html" : "text/markdown";
+  }
   const path = `ingest/${job.id}/source.bin`;
   const { error } = await admin.storage.from("uploads").upload(path, buf, {
     upsert: true,
-    contentType: res.headers.get("content-type") ?? "application/octet-stream",
+    contentType,
   });
   if (error) throw error;
   await admin.from("ingestion_jobs").update({ input_upload_path: path }).eq("id", job.id);
