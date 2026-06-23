@@ -360,7 +360,8 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
   const isLiterature = /literature|english|novel|story|play|shakespeare/.test(subjectLow);
   if (!isLiterature) {
     const v = validateTextbook(text);
-    if (!v.ok) {
+    const isDbeWorkbook = job.input_url && isDbeWorkbookIndexUrl(job.input_url) && v.chars > 5_000;
+    if (!v.ok && !isDbeWorkbook) {
       throw new Error(
         `Only TOC page imported (chars=${v.chars}, chapters=${v.chapters}; ` +
         `need >${MIN_TEXTBOOK_CHARS} chars OR >${MIN_CHAPTERS} chapters)`,
