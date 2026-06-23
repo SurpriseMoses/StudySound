@@ -311,7 +311,9 @@ export async function tryFetchTextbookPdf(
   let m: RegExpExecArray | null;
   while ((m = anchorRx.exec(indexHtml)) !== null) {
     const href = m[1].trim();
-    const label = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const nearbyHeading = nearestHeadingBefore(indexHtml, m.index);
+    const anchorLabel = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const label = [nearbyHeading, anchorLabel].filter(Boolean).join(" — ");
     let abs: URL;
     try { abs = new URL(href, base); } catch { continue; }
     const u = abs.toString();
@@ -325,18 +327,19 @@ export async function tryFetchTextbookPdf(
     if (!looksPdf) continue;
     seen.add(u);
 
-    const blob = `${lowerHref} ${label.toLowerCase()}`;
+    const labelLower = label.toLowerCase();
+    const blob = `${lowerHref} ${labelLower}`;
     let score = 0;
     if (/_eng(\b|[_.\/])|english/.test(blob)) score += 4;
     if (/learner|workbook|textbook|book/.test(blob)) score += 6;
     if (/teacher|guide|memo|memorandum|exam|paper|practical/.test(blob)) score -= 4;
     if (subj) {
       const subjTokens = subj.split(/[^a-z]+/).filter((s) => s.length >= 4);
-      for (const t of subjTokens) if (blob.includes(t)) score += 8;
+      for (const t of subjTokens) if (labelLower.includes(t)) score += 8;
     }
     if (grade) {
       const gradeRx = new RegExp(`(?:^|[^0-9])(?:grade[\\s_-]*)?${grade}(?:[^0-9]|$)`, "i");
-      if (gradeRx.test(blob)) score += 8;
+      if (gradeRx.test(labelLower)) score += 20;
     }
     candidates.push({ url: u, label, score });
   }
@@ -349,17 +352,16 @@ export async function tryFetchTextbookPdf(
     const u = abs.toString();
     if (seen.has(u)) continue;
     seen.add(u);
-    candidates.push({ url: u, label: "", score: 0 });
+    candidates.push({ url: u, label: nearestHeadingBefore(indexHtml, m.index), score: 0 });
   }
 
   candidates.sort((a, b) => b.score - a.score);
   if (candidates.length === 0) return null;
 
-  // Lazy-load PDF parsing only when an explicit caller asks for it. Backfill
-  // intentionally avoids this path because unpdf can exceed Edge CPU limits.
-  const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
-
   for (const c of candidates.slice(0, 5)) {
+    const scraped = await tryFirecrawlPdf(c.url, minChars);
+    if (scraped) return scraped;
+
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -375,6 +377,14 @@ export async function tryFetchTextbookPdf(
       if (!/pdf/i.test(ct) && !/\.pdf(?:[?#]|$)/i.test(c.url)) continue;
       const buf = new Uint8Array(await res.arrayBuffer());
       if (buf.byteLength === 0 || buf.byteLength > maxBytes) continue;
+      const gemini = await tryGeminiPdfText(c.url, buf, minChars);
+      if (gemini) return gemini;
+      // Avoid parsing very large PDFs inside the Edge worker; that has caused
+      // resource-limit timeouts. Firecrawl/Gemini are tried above for these.
+      if (buf.byteLength > 12 * 1024 * 1024) continue;
+      // Lazy-load PDF parsing only when a small explicit PDF is still worth
+      // local extraction. Backfill intentionally avoids this path.
+      const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
       const pdf = await getDocumentProxy(buf);
       const { text, totalPages } = await extractText(pdf, { mergePages: true });
       const merged = Array.isArray(text) ? text.join("\n\n") : text;
@@ -383,6 +393,116 @@ export async function tryFetchTextbookPdf(
     } catch (_) { /* try next */ }
   }
   return null;
+}
+
+async function tryFirecrawlPdf(
+  url: string,
+  minChars: number,
+): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number } | null> {
+  const fcKey = Deno.env.get("FIRECRAWL_API_KEY");
+  if (!fcKey) return null;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 20_000);
+    const res = await fetch("https://api.firecrawl.dev/v2/scrape", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${fcKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: false }),
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(t));
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) return null;
+    const doc = data.data ?? data;
+    const text = String(doc.markdown ?? doc.html ?? "").trim();
+    if (text.length < minChars) return null;
+    return { text, pageCount: 0, pdfUrl: url, bytes: text.length };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function tryGeminiPdfText(
+  pdfUrl: string,
+  bytes: Uint8Array,
+  minChars: number,
+): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number } | null> {
+  const key = Deno.env.get("Gemini_Secret_Key");
+  if (!key) return null;
+  try {
+    const displayName = `studysound-${crypto.randomUUID()}.pdf`;
+    const start = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${key}`, {
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(bytes.byteLength),
+        "X-Goog-Upload-Header-Content-Type": "application/pdf",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ file: { display_name: displayName } }),
+    });
+    const uploadUrl = start.headers.get("x-goog-upload-url");
+    if (!start.ok || !uploadUrl) return null;
+
+    const upload = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Length": String(bytes.byteLength),
+        "X-Goog-Upload-Offset": "0",
+        "X-Goog-Upload-Command": "upload, finalize",
+      },
+      body: bytes,
+    });
+    const uploaded = await upload.json().catch(() => null);
+    if (!upload.ok || !uploaded?.file?.uri) return null;
+
+    const name = uploaded.file.name as string | undefined;
+    for (let i = 0; i < 10 && name; i++) {
+      const state = await fetch(`https://generativelanguage.googleapis.com/v1beta/${name}?key=${key}`)
+        .then((r) => r.json())
+        .catch(() => null);
+      if (!state?.state || state.state === "ACTIVE") break;
+      if (state.state === "FAILED") return null;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+
+    const gen = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: "Extract all readable learner workbook text from this PDF. Preserve page order, headings, questions, and paragraph breaks. Output only the extracted text." },
+            { file_data: { mime_type: "application/pdf", file_uri: uploaded.file.uri } },
+          ],
+        }],
+        generationConfig: { temperature: 0, maxOutputTokens: 65536 },
+      }),
+    });
+    const out = await gen.json().catch(() => null);
+    const text = (out?.candidates?.[0]?.content?.parts ?? [])
+      .map((p: any) => p.text ?? "")
+      .join("\n")
+      .trim();
+    if (name) {
+      fetch(`https://generativelanguage.googleapis.com/v1beta/${name}?key=${key}`, { method: "DELETE" }).catch(() => {});
+    }
+    if (text.length < minChars) return null;
+    return { text, pageCount: 0, pdfUrl, bytes: bytes.byteLength };
+  } catch (_) {
+    return null;
+  }
+}
+
+function nearestHeadingBefore(html: string, index: number): string {
+  const prefix = html.slice(Math.max(0, index - 8_000), index);
+  const rx = /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi;
+  let m: RegExpExecArray | null;
+  let last = "";
+  while ((m = rx.exec(prefix)) !== null) {
+    last = m[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+  }
+  return last;
 }
 
 function headingFromUrl(url: string): string {
