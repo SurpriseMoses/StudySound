@@ -18,6 +18,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   deepCrawlFromIndex,
+  tryFetchTextbookPdf,
   validateTextbook,
   cleanTextbookPreservingTOC,
   MIN_TEXTBOOK_CHARS,
@@ -156,7 +157,7 @@ async function stageDownload(job: any): Promise<AdvanceResult> {
     const fcRes = await fetch("https://api.firecrawl.dev/v2/scrape", {
       method: "POST",
       headers: { "Authorization": `Bearer ${fcKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ url: job.input_url, formats: ["html", "markdown"], onlyMainContent: true }),
+      body: JSON.stringify({ url: job.input_url, formats: ["html", "markdown"], onlyMainContent: false }),
     });
     const fcData = await fcRes.json().catch(() => null);
     if (!fcRes.ok || !fcData) throw new Error(`firecrawl fallback failed ${fcRes.status} for ${job.input_url}`);
@@ -230,7 +231,31 @@ async function stageParse(job: any): Promise<AdvanceResult> {
         job_id: job.id, stage: "parsing", status: "warn",
         message: `deep-crawl failed: ${String(e?.message ?? e)}`,
       });
+  }
+
+  // PDF fallback: directory/landing pages (e.g. DBE Workbooks, gov.za LTSM)
+  // expose textbooks as PDF links. If our extracted text is still too small,
+  // pick the best-matching PDF for this job's subject+grade and use its text.
+  if (sourceHtml && job.input_url && text.length < MIN_TEXTBOOK_CHARS && /\.pdf/i.test(sourceHtml)) {
+    try {
+      const pdf = await tryFetchTextbookPdf(job.input_url, sourceHtml, {
+        subject: job.subject ?? null,
+        grade: job.grade ?? null,
+      });
+      if (pdf && pdf.text.length > text.length) {
+        text = pdf.text;
+        await admin.from("ingestion_stage_logs").insert({
+          job_id: job.id, stage: "parsing", status: "info",
+          message: `pdf fallback: fetched ${pdf.pageCount}pp from ${pdf.pdfUrl} (${pdf.bytes} bytes)`,
+        });
+      }
+    } catch (e: any) {
+      await admin.from("ingestion_stage_logs").insert({
+        job_id: job.id, stage: "parsing", status: "warn",
+        message: `pdf fallback failed: ${String(e?.message ?? e)}`,
+      });
     }
+  }
   }
 
   // Cache raw_text on the job for later stages.
