@@ -823,6 +823,77 @@ async function embedBatch(inputs: string[]): Promise<number[][]> {
 
 // ----- helpers -------------------------------------------------------------
 
+async function downloadUrl(url: string): Promise<{ buf: Uint8Array; contentType: string; status: number; source: string }> {
+  let contentType = "application/octet-stream";
+  const res = await fetch(url, {
+    redirect: "follow",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+  }).catch(() => null);
+
+  if (res && res.ok) {
+    contentType = res.headers.get("content-type") ?? contentType;
+    return { buf: new Uint8Array(await res.arrayBuffer()), contentType, status: res.status, source: "fetch" };
+  }
+
+  // Fallback: Firecrawl scrape (handles anti-bot/Cloudflare on HTML indexes).
+  const fcKey = Deno.env.get("FIRECRAWL_API_KEY");
+  if (!fcKey) throw new Error(`download failed ${res?.status ?? "network"} for ${url} (no Firecrawl fallback configured)`);
+  const fcRes = await fetch("https://api.firecrawl.dev/v2/scrape", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${fcKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ url, formats: ["html", "markdown"], onlyMainContent: false }),
+  });
+  const fcData = await fcRes.json().catch(() => null);
+  if (!fcRes.ok || !fcData) throw new Error(`firecrawl fallback failed ${fcRes.status} for ${url}`);
+  const doc = fcData.data ?? fcData;
+  const html = doc.html ?? "";
+  const md = doc.markdown ?? "";
+  const payload = html || md;
+  if (!payload) throw new Error(`firecrawl returned empty content for ${url}`);
+  return {
+    buf: new TextEncoder().encode(payload),
+    contentType: html ? "text/html" : "text/markdown",
+    status: fcRes.status,
+    source: "firecrawl",
+  };
+}
+
+function isBlockedHtml(buf: Uint8Array, contentType: string): boolean {
+  if (buf.byteLength < 1_000) {
+    const s = new TextDecoder("utf-8", { fatal: false }).decode(buf).toLowerCase();
+    if (/403 forbidden|forbidden|you don't have permission|not found/.test(s)) return true;
+  }
+  return /html|text\/plain|text\/markdown/i.test(contentType) && buf.byteLength < 1_000;
+}
+
+function isDbeWorkbookIndexUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname.toLowerCase().endsWith("education.gov.za") && /workbooks/i.test(u.pathname);
+  } catch {
+    return /education\.gov\.za[\s\S]*workbooks/i.test(url);
+  }
+}
+
+function normalizeUrl(url: string): string {
+  try { return new URL(url).toString().replace(/\/$/, ""); } catch { return url; }
+}
+
+function usefulHint(value: unknown): string | null {
+  const s = String(value ?? "").trim();
+  if (!s || /^(n\/?a|none|null|undefined|-)$/i.test(s)) return null;
+  return s;
+}
+
+function gradeFromHint(value: unknown): string | null {
+  const m = String(value ?? "").match(/(?:grade|gr|graad)\s*(\d{1,2})\b/i);
+  return m?.[1] ?? null;
+}
+
 function htmlToText(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
