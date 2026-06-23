@@ -311,7 +311,9 @@ export async function tryFetchTextbookPdf(
   let m: RegExpExecArray | null;
   while ((m = anchorRx.exec(indexHtml)) !== null) {
     const href = m[1].trim();
-    const label = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const nearbyHeading = nearestHeadingBefore(indexHtml, m.index);
+    const anchorLabel = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const label = [nearbyHeading, anchorLabel].filter(Boolean).join(" — ");
     let abs: URL;
     try { abs = new URL(href, base); } catch { continue; }
     const u = abs.toString();
@@ -349,7 +351,7 @@ export async function tryFetchTextbookPdf(
     const u = abs.toString();
     if (seen.has(u)) continue;
     seen.add(u);
-    candidates.push({ url: u, label: "", score: 0 });
+    candidates.push({ url: u, label: nearestHeadingBefore(indexHtml, m.index), score: 0 });
   }
 
   candidates.sort((a, b) => b.score - a.score);
@@ -383,6 +385,17 @@ export async function tryFetchTextbookPdf(
     } catch (_) { /* try next */ }
   }
   return null;
+}
+
+function nearestHeadingBefore(html: string, index: number): string {
+  const prefix = html.slice(Math.max(0, index - 8_000), index);
+  const rx = /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi;
+  let m: RegExpExecArray | null;
+  let last = "";
+  while ((m = rx.exec(prefix)) !== null) {
+    last = m[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+  }
+  return last;
 }
 
 function headingFromUrl(url: string): string {
