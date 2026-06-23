@@ -415,12 +415,15 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
           <Field label="Subject">
             <Select value={subject} onValueChange={(v) => { setSubject(v); setTopic(""); }} disabled={!grade}>
               <SelectTrigger><SelectValue placeholder="Subject" /></SelectTrigger>
-              <SelectContent>{subjects.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+              <SelectContent>
+                {subjects.length > 0 && <SelectItem value="__all__">All subjects (Grade {grade})</SelectItem>}
+                {subjects.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
             </Select>
           </Field>
           <Field label="Topic">
-            <Select value={topic} onValueChange={setTopic} disabled={!subject || topics.length === 0}>
-              <SelectTrigger><SelectValue placeholder={topics.length ? "Topic" : "—"} /></SelectTrigger>
+            <Select value={topic} onValueChange={setTopic} disabled={!subject || subject === "__all__" || topics.length === 0}>
+              <SelectTrigger><SelectValue placeholder={subject === "__all__" ? "—" : (topics.length ? "Topic" : "—")} /></SelectTrigger>
               <SelectContent>{topics.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
