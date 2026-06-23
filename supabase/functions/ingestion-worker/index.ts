@@ -33,6 +33,12 @@ const CHUNK_SIZE = 1200;
 const CHUNK_OVERLAP = 150;
 const EMBED_BATCH = 32;
 
+const DBE_WORKBOOK_INDEX_URLS = [
+  "https://www.education.gov.za/Curriculum/LearningandTeachingSupportMaterials(LTSM)/2026Workbooks1.aspx",
+  "https://www.education.gov.za/Curriculum/LearningandTeachingSupportMaterials(LTSM)/2025Workbooks1.aspx",
+  "https://www.education.gov.za/Curriculum/LearningandTeachingSupportMaterials(LTSM)/Workbooks.aspx",
+];
+
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 // Stage → progress %
@@ -136,47 +142,55 @@ async function stageDownload(job: any): Promise<AdvanceResult> {
     return { state: "downloading", message: "input already available" };
   }
   if (!job.input_url) throw new Error("no input provided");
-  let buf: Uint8Array;
-  let contentType = "application/octet-stream";
-  const res = await fetch(job.input_url, {
-    redirect: "follow",
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-      "Accept": "text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-    },
-  }).catch(() => null);
 
-  if (res && res.ok) {
-    buf = new Uint8Array(await res.arrayBuffer());
-    contentType = res.headers.get("content-type") ?? contentType;
-  } else {
-    // Fallback: Firecrawl scrape (handles anti-bot/Cloudflare)
-    const fcKey = Deno.env.get("FIRECRAWL_API_KEY");
-    if (!fcKey) throw new Error(`download failed ${res?.status ?? "network"} for ${job.input_url} (no Firecrawl fallback configured)`);
-    const fcRes = await fetch("https://api.firecrawl.dev/v2/scrape", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${fcKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ url: job.input_url, formats: ["html", "markdown"], onlyMainContent: false }),
-    });
-    const fcData = await fcRes.json().catch(() => null);
-    if (!fcRes.ok || !fcData) throw new Error(`firecrawl fallback failed ${fcRes.status} for ${job.input_url}`);
-    const doc = fcData.data ?? fcData;
-    const html = doc.html ?? "";
-    const md = doc.markdown ?? "";
-    const payload = html || md;
-    if (!payload) throw new Error(`firecrawl returned empty content for ${job.input_url}`);
-    buf = new TextEncoder().encode(payload);
-    contentType = html ? "text/html" : "text/markdown";
+  let effectiveUrl = job.input_url;
+  let downloaded: { buf: Uint8Array; contentType: string; status?: number; source: string } | null = null;
+  try {
+    downloaded = await downloadUrl(job.input_url);
+  } catch (e) {
+    if (!isDbeWorkbookIndexUrl(job.input_url)) throw e;
   }
+
+  // The old DBEWorkbooks.aspx route now returns a tiny 403 page even through
+  // scraping fallbacks. Switch to the current DBE workbook index pages so the
+  // parser can see the real LinkClick PDF rows.
+  if (!downloaded || isBlockedHtml(downloaded.buf, downloaded.contentType)) {
+    if (!isDbeWorkbookIndexUrl(job.input_url)) {
+      throw new Error(`download returned blocked/empty content for ${job.input_url}`);
+    }
+
+    for (const altUrl of DBE_WORKBOOK_INDEX_URLS) {
+      if (normalizeUrl(altUrl) === normalizeUrl(job.input_url)) continue;
+      try {
+        const alt = await downloadUrl(altUrl);
+        if (!isBlockedHtml(alt.buf, alt.contentType)) {
+          downloaded = alt;
+          effectiveUrl = altUrl;
+          break;
+        }
+      } catch (_) { /* try next DBE index */ }
+    }
+  }
+
+  if (!downloaded || isBlockedHtml(downloaded.buf, downloaded.contentType)) {
+    throw new Error(`download failed: DBE workbook index is blocked or empty for ${job.input_url}`);
+  }
+
+  const { buf, contentType } = downloaded;
   const path = `ingest/${job.id}/source.bin`;
   const { error } = await admin.storage.from("uploads").upload(path, buf, {
     upsert: true,
     contentType,
   });
   if (error) throw error;
-  await admin.from("ingestion_jobs").update({ input_upload_path: path }).eq("id", job.id);
-  return { state: "downloading", message: `downloaded ${buf.byteLength} bytes` };
+  await admin.from("ingestion_jobs").update({
+    input_upload_path: path,
+    ...(effectiveUrl !== job.input_url ? { input_url: effectiveUrl } : {}),
+  }).eq("id", job.id);
+  return {
+    state: "downloading",
+    message: `downloaded ${buf.byteLength} bytes${effectiveUrl !== job.input_url ? ` from fallback ${effectiveUrl}` : ""}`,
+  };
 }
 
 async function stageParse(job: any): Promise<AdvanceResult> {
@@ -236,11 +250,12 @@ async function stageParse(job: any): Promise<AdvanceResult> {
   // PDF fallback: directory/landing pages (e.g. DBE Workbooks, gov.za LTSM)
   // expose textbooks as PDF links. If our extracted text is still too small,
   // pick the best-matching PDF for this job's subject+grade and use its text.
-  if (sourceHtml && job.input_url && text.length < MIN_TEXTBOOK_CHARS && /\.pdf/i.test(sourceHtml)) {
+  const hasPdfLinks = /\.pdf(?:[?#"'\s>]|$)|LinkClick\.aspx|fileticket=|forcedownload/i.test(sourceHtml);
+  if (sourceHtml && job.input_url && text.length < MIN_TEXTBOOK_CHARS && hasPdfLinks) {
     try {
       const pdf = await tryFetchTextbookPdf(job.input_url, sourceHtml, {
-        subject: job.subject ?? null,
-        grade: job.grade ?? null,
+        subject: usefulHint(job.subject) ?? usefulHint(job.title_hint) ?? null,
+        grade: usefulHint(job.grade) ?? gradeFromHint(job.title_hint) ?? null,
       });
       if (pdf && pdf.text.length > text.length) {
         text = pdf.text;
