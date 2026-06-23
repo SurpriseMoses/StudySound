@@ -431,7 +431,7 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
           </Field>
         </div>
         <Field label="Title hint"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-        <Field label="URL"><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." /></Field>
+        <Field label="URL (optional — defaults to source URL)"><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={sources.find((s) => s.id === sourceId)?.source_url ?? "https://..."} /></Field>
         <Field label="…or paste raw text"><Textarea rows={4} value={rawText} onChange={(e) => setRawText(e.target.value)} /></Field>
       </div>
       <DialogFooter>
