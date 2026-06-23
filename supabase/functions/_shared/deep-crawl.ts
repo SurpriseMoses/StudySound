@@ -327,18 +327,19 @@ export async function tryFetchTextbookPdf(
     if (!looksPdf) continue;
     seen.add(u);
 
-    const blob = `${lowerHref} ${label.toLowerCase()}`;
+    const labelLower = label.toLowerCase();
+    const blob = `${lowerHref} ${labelLower}`;
     let score = 0;
     if (/_eng(\b|[_.\/])|english/.test(blob)) score += 4;
     if (/learner|workbook|textbook|book/.test(blob)) score += 6;
     if (/teacher|guide|memo|memorandum|exam|paper|practical/.test(blob)) score -= 4;
     if (subj) {
       const subjTokens = subj.split(/[^a-z]+/).filter((s) => s.length >= 4);
-      for (const t of subjTokens) if (blob.includes(t)) score += 8;
+      for (const t of subjTokens) if (labelLower.includes(t)) score += 8;
     }
     if (grade) {
       const gradeRx = new RegExp(`(?:^|[^0-9])(?:grade[\\s_-]*)?${grade}(?:[^0-9]|$)`, "i");
-      if (gradeRx.test(blob)) score += 8;
+      if (gradeRx.test(labelLower)) score += 20;
     }
     candidates.push({ url: u, label, score });
   }
