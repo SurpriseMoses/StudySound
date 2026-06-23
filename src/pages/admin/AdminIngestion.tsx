@@ -407,17 +407,17 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
             <SelectContent>{sources.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
           </Select>
         </Field>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <Field label="Grade">
             <Select value={grade} onValueChange={(v) => { setGrade(v); setSubject(""); setTopic(""); }}>
               <SelectTrigger><SelectValue placeholder="Grade" /></SelectTrigger>
-              <SelectContent>{grades.map((g) => <SelectItem key={g} value={g}>Grade {g}</SelectItem>)}</SelectContent>
+              <SelectContent position="popper" className="z-[60] max-h-64">{grades.map((g) => <SelectItem key={g} value={g}>Grade {g}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
           <Field label="Subject">
-            <Select value={subject} onValueChange={(v) => { setSubject(v); setTopic(""); }} disabled={!grade}>
-              <SelectTrigger><SelectValue placeholder="Subject" /></SelectTrigger>
-              <SelectContent>
+            <Select value={subject} onValueChange={(v) => { setSubject(v); setTopic(""); }} disabled={!grade || subjects.length === 0}>
+              <SelectTrigger><SelectValue placeholder={!grade ? "Pick grade first" : (subjects.length ? "Subject" : "No subjects")} /></SelectTrigger>
+              <SelectContent position="popper" className="z-[60] max-h-64">
                 {subjects.length > 0 && <SelectItem value="__all__">All subjects (Grade {grade})</SelectItem>}
                 {subjects.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
               </SelectContent>
@@ -426,7 +426,7 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
           <Field label="Topic">
             <Select value={topic} onValueChange={setTopic} disabled={!subject || subject === "__all__" || topics.length === 0}>
               <SelectTrigger><SelectValue placeholder={subject === "__all__" ? "—" : (topics.length ? "Topic" : "—")} /></SelectTrigger>
-              <SelectContent>{topics.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+              <SelectContent position="popper" className="z-[60] max-h-64">{topics.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
         </div>
