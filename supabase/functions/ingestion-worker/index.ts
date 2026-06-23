@@ -135,8 +135,15 @@ async function stageDownload(job: any): Promise<AdvanceResult> {
     return { state: "downloading", message: "input already available" };
   }
   if (!job.input_url) throw new Error("no input provided");
-  const res = await fetch(job.input_url, { redirect: "follow" });
-  if (!res.ok) throw new Error(`download failed ${res.status}`);
+  const res = await fetch(job.input_url, {
+    redirect: "follow",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; StudySoundBot/1.0; +https://studysound.app)",
+      "Accept": "text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+  });
+  if (!res.ok) throw new Error(`download failed ${res.status} for ${job.input_url}`);
   const buf = new Uint8Array(await res.arrayBuffer());
   const path = `ingest/${job.id}/source.bin`;
   const { error } = await admin.storage.from("uploads").upload(path, buf, {
