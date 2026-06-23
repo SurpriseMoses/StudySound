@@ -285,32 +285,73 @@ function normalize(url: string): string {
 export async function tryFetchTextbookPdf(
   indexUrl: string,
   indexHtml: string,
-  opts: { timeoutMs?: number; maxBytes?: number; userAgent?: string } = {},
+  opts: {
+    timeoutMs?: number;
+    maxBytes?: number;
+    userAgent?: string;
+    subject?: string | null;
+    grade?: string | number | null;
+    minChars?: number;
+  } = {},
 ): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number } | null> {
   const timeoutMs = opts.timeoutMs ?? 45_000;
   const maxBytes = opts.maxBytes ?? 40 * 1024 * 1024;
   const ua = opts.userAgent ?? "Mozilla/5.0 (compatible; StudySoundBot/1.0)";
+  const minChars = opts.minChars ?? 5_000;
+  const subj = String(opts.subject ?? "").toLowerCase().trim();
+  const grade = String(opts.grade ?? "").trim();
 
   const base = new URL(indexUrl);
   const seen = new Set<string>();
-  const candidates: { url: string; score: number }[] = [];
-  const rx = /href\s*=\s*["']([^"']+\.pdf)["']/gi;
+  const candidates: { url: string; label: string; score: number }[] = [];
+
+  // Match anchors so we can score on link text too — directory pages often put
+  // subject/grade in the visible label (e.g. "Grade 8 Afrikaans Workbook").
+  const anchorRx = /<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m: RegExpExecArray | null;
-  while ((m = rx.exec(indexHtml)) !== null) {
+  while ((m = anchorRx.exec(indexHtml)) !== null) {
+    const href = m[1].trim();
+    const label = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    let abs: URL;
+    try { abs = new URL(href, base); } catch { continue; }
+    const u = abs.toString();
+    if (seen.has(u)) continue;
+    const lowerHref = u.toLowerCase();
+    const looksPdf =
+      lowerHref.endsWith(".pdf") ||
+      /\.pdf(?:[?#]|$)/.test(lowerHref) ||
+      /linkclick\.aspx/.test(lowerHref) ||
+      /[?&](file|filename|download)=[^&]*\.pdf/.test(lowerHref);
+    if (!looksPdf) continue;
+    seen.add(u);
+
+    const blob = `${lowerHref} ${label.toLowerCase()}`;
+    let score = 0;
+    if (/_eng(\b|[_.\/])|english/.test(blob)) score += 4;
+    if (/learner|workbook|textbook|book/.test(blob)) score += 6;
+    if (/teacher|guide|memo|memorandum|exam|paper|practical/.test(blob)) score -= 4;
+    if (subj) {
+      const subjTokens = subj.split(/[^a-z]+/).filter((s) => s.length >= 4);
+      for (const t of subjTokens) if (blob.includes(t)) score += 8;
+    }
+    if (grade) {
+      const gradeRx = new RegExp(`(?:^|[^0-9])(?:grade[\\s_-]*)?${grade}(?:[^0-9]|$)`, "i");
+      if (gradeRx.test(blob)) score += 8;
+    }
+    candidates.push({ url: u, label, score });
+  }
+
+  // Fallback: bare PDF hrefs not wrapped in an <a>.
+  const bareRx = /href\s*=\s*["']([^"']+\.pdf)["']/gi;
+  while ((m = bareRx.exec(indexHtml)) !== null) {
     let abs: URL;
     try { abs = new URL(m[1], base); } catch { continue; }
     const u = abs.toString();
     if (seen.has(u)) continue;
     seen.add(u);
-    const p = abs.pathname.toLowerCase();
-    if (!/\/downloads?\/|\/books?\/|learner|textbook|grade/i.test(p)) continue;
-    let score = 0;
-    if (/_eng(\b|[_.\/])|english/i.test(p)) score += 10;
-    if (/learner/i.test(p)) score += 8;
-    if (/_v\d+\.pdf$/i.test(p)) score += 2;
-    if (/teacher|afr|_nd|practical/i.test(p)) score -= 6;
-    candidates.push({ url: u, score });
+    candidates.push({ url: u, label: "", score: 0 });
   }
+
   candidates.sort((a, b) => b.score - a.score);
   if (candidates.length === 0) return null;
 
@@ -318,7 +359,7 @@ export async function tryFetchTextbookPdf(
   // intentionally avoids this path because unpdf can exceed Edge CPU limits.
   const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
 
-  for (const c of candidates.slice(0, 3)) {
+  for (const c of candidates.slice(0, 5)) {
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -330,14 +371,14 @@ export async function tryFetchTextbookPdf(
       if (!res.ok) continue;
       const ct = res.headers.get("content-type") ?? "";
       const cl = Number(res.headers.get("content-length") ?? "0");
-      if (cl > maxBytes) continue;
-      if (!/pdf/i.test(ct) && !c.url.toLowerCase().endsWith(".pdf")) continue;
+      if (cl && cl > maxBytes) continue;
+      if (!/pdf/i.test(ct) && !/\.pdf(?:[?#]|$)/i.test(c.url)) continue;
       const buf = new Uint8Array(await res.arrayBuffer());
       if (buf.byteLength === 0 || buf.byteLength > maxBytes) continue;
       const pdf = await getDocumentProxy(buf);
       const { text, totalPages } = await extractText(pdf, { mergePages: true });
       const merged = Array.isArray(text) ? text.join("\n\n") : text;
-      if (!merged || merged.length < 5_000) continue;
+      if (!merged || merged.length < minChars) continue;
       return { text: merged, pageCount: totalPages, pdfUrl: c.url, bytes: buf.byteLength };
     } catch (_) { /* try next */ }
   }
