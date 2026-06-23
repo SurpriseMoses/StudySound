@@ -287,7 +287,9 @@ async function stageStructure(job: any): Promise<AdvanceResult> {
 
 async function stageTag(job: any): Promise<AdvanceResult> {
   // Use AI gateway if available; otherwise fall back to hints.
-  let grade = usefulHint(job.grade), subject = usefulHint(job.subject) ?? usefulHint(job.title_hint), curriculum = job.curriculum ?? "CAPS", country = job.country ?? "ZA";
+  const explicitGrade = usefulHint(job.grade);
+  const explicitSubject = usefulHint(job.subject);
+  let grade = explicitGrade, subject = explicitSubject ?? usefulHint(job.title_hint), curriculum = job.curriculum ?? "CAPS", country = job.country ?? "ZA";
   let topic: string | null = null, subtopic: string | null = null, confidence = 0.4;
   const text = (job.input_raw_text ?? "").slice(0, 4000);
   if (LOVABLE_API_KEY && text.length > 200) {
@@ -309,8 +311,8 @@ async function stageTag(job: any): Promise<AdvanceResult> {
         const m = raw.match(/\{[\s\S]*\}/);
         if (m) {
           const parsed = JSON.parse(m[0]);
-          grade = usefulHint(parsed.grade) ?? grade;
-          subject = usefulHint(parsed.subject) ?? subject;
+          grade = explicitGrade ?? usefulHint(parsed.grade) ?? grade;
+          subject = explicitSubject ?? usefulHint(parsed.subject) ?? subject;
           topic = parsed.topic ?? null;
           subtopic = parsed.subtopic ?? null;
           confidence = Number(parsed.confidence) || confidence;
