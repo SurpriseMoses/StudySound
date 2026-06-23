@@ -245,6 +245,7 @@ async function stageParse(job: any): Promise<AdvanceResult> {
         job_id: job.id, stage: "parsing", status: "warn",
         message: `deep-crawl failed: ${String(e?.message ?? e)}`,
       });
+    }
   }
 
   // PDF fallback: directory/landing pages (e.g. DBE Workbooks, gov.za LTSM)
@@ -270,7 +271,6 @@ async function stageParse(job: any): Promise<AdvanceResult> {
         message: `pdf fallback failed: ${String(e?.message ?? e)}`,
       });
     }
-  }
   }
 
   // Cache raw_text on the job for later stages.
