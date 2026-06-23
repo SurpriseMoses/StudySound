@@ -362,26 +362,36 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
     if (!grade || !subject) return toast({ title: "Pick grade & subject", variant: "destructive" });
     if (!url && !rawText) return toast({ title: "URL or raw text required", variant: "destructive" });
     setBusy(true);
-    const titleHint = [title, topic].filter(Boolean).join(" — ") || undefined;
-    const { error, data } = await supabase.functions.invoke("ingestion-orchestrator", {
-      body: {
-        source_id: sourceId,
-        input_url: url || undefined,
-        input_raw_text: rawText || undefined,
-        title_hint: titleHint,
-        grade,
-        subject,
-        topic: topic || undefined,
-        curriculum: "CAPS",
-        country: "ZA",
-      },
-    });
+    const targetSubjects = subject === "__all__" ? subjects : [subject];
+    let okCount = 0;
+    let firstErr: string | null = null;
+    for (const subj of targetSubjects) {
+      const titleHint = [title, subj, topic].filter(Boolean).join(" — ") || undefined;
+      const { error, data } = await supabase.functions.invoke("ingestion-orchestrator", {
+        body: {
+          source_id: sourceId,
+          input_url: url || undefined,
+          input_raw_text: rawText || undefined,
+          title_hint: titleHint,
+          grade,
+          subject: subj,
+          topic: subject === "__all__" ? undefined : (topic || undefined),
+          curriculum: "CAPS",
+          country: "ZA",
+        },
+      });
+      if (error || (data as any)?.error) {
+        firstErr ??= error?.message ?? (data as any)?.error;
+      } else {
+        okCount++;
+      }
+    }
     setBusy(false);
-    if (error || (data as any)?.error) {
-      toast({ title: error?.message ?? (data as any)?.error, variant: "destructive" });
+    if (okCount === 0) {
+      toast({ title: firstErr ?? "Failed", variant: "destructive" });
       return;
     }
-    toast({ title: "Job created" });
+    toast({ title: `Created ${okCount} job${okCount > 1 ? "s" : ""}${firstErr ? ` (some failed: ${firstErr})` : ""}` });
     onCreated();
   };
 
@@ -405,12 +415,15 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
           <Field label="Subject">
             <Select value={subject} onValueChange={(v) => { setSubject(v); setTopic(""); }} disabled={!grade}>
               <SelectTrigger><SelectValue placeholder="Subject" /></SelectTrigger>
-              <SelectContent>{subjects.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+              <SelectContent>
+                {subjects.length > 0 && <SelectItem value="__all__">All subjects (Grade {grade})</SelectItem>}
+                {subjects.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
             </Select>
           </Field>
           <Field label="Topic">
-            <Select value={topic} onValueChange={setTopic} disabled={!subject || topics.length === 0}>
-              <SelectTrigger><SelectValue placeholder={topics.length ? "Topic" : "—"} /></SelectTrigger>
+            <Select value={topic} onValueChange={setTopic} disabled={!subject || subject === "__all__" || topics.length === 0}>
+              <SelectTrigger><SelectValue placeholder={subject === "__all__" ? "—" : (topics.length ? "Topic" : "—")} /></SelectTrigger>
               <SelectContent>{topics.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
