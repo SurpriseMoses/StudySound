@@ -157,7 +157,7 @@ async function stageDownload(job: any): Promise<AdvanceResult> {
     const fcRes = await fetch("https://api.firecrawl.dev/v2/scrape", {
       method: "POST",
       headers: { "Authorization": `Bearer ${fcKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ url: job.input_url, formats: ["html", "markdown"], onlyMainContent: true }),
+      body: JSON.stringify({ url: job.input_url, formats: ["html", "markdown"], onlyMainContent: false }),
     });
     const fcData = await fcRes.json().catch(() => null);
     if (!fcRes.ok || !fcData) throw new Error(`firecrawl fallback failed ${fcRes.status} for ${job.input_url}`);
