@@ -360,7 +360,9 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
   const submit = async () => {
     if (!sourceId) return toast({ title: "Pick a source", variant: "destructive" });
     if (!grade || !subject) return toast({ title: "Pick grade & subject", variant: "destructive" });
-    if (!url && !rawText) return toast({ title: "URL or raw text required", variant: "destructive" });
+    const selectedSource = sources.find((s) => s.id === sourceId);
+    const effectiveUrl = url || selectedSource?.source_url || "";
+    if (!effectiveUrl && !rawText) return toast({ title: "URL or raw text required (source has no default URL)", variant: "destructive" });
     setBusy(true);
     const targetSubjects = subject === "__all__" ? subjects : [subject];
     let okCount = 0;
