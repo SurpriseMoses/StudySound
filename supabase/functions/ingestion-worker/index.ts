@@ -171,7 +171,7 @@ async function stageDownload(job: any): Promise<AdvanceResult> {
   const path = `ingest/${job.id}/source.bin`;
   const { error } = await admin.storage.from("uploads").upload(path, buf, {
     upsert: true,
-    contentType: res.headers.get("content-type") ?? "application/octet-stream",
+    contentType,
   });
   if (error) throw error;
   await admin.from("ingestion_jobs").update({ input_upload_path: path }).eq("id", job.id);
