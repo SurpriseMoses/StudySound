@@ -373,12 +373,13 @@ export async function tryFetchTextbookPdf(
       const ct = res.headers.get("content-type") ?? "";
       const cl = Number(res.headers.get("content-length") ?? "0");
       if (cl && cl > maxBytes) continue;
-      // Avoid parsing very large PDFs inside the Edge worker; that has caused
-      // resource-limit timeouts. Firecrawl is tried above for these files.
-      if (cl && cl > 12 * 1024 * 1024) continue;
       if (!/pdf/i.test(ct) && !/\.pdf(?:[?#]|$)/i.test(c.url)) continue;
       const buf = new Uint8Array(await res.arrayBuffer());
       if (buf.byteLength === 0 || buf.byteLength > maxBytes) continue;
+      const gemini = await tryGeminiPdfText(c.url, buf, minChars);
+      if (gemini) return gemini;
+      // Avoid parsing very large PDFs inside the Edge worker; that has caused
+      // resource-limit timeouts. Firecrawl/Gemini are tried above for these.
       if (buf.byteLength > 12 * 1024 * 1024) continue;
       // Lazy-load PDF parsing only when a small explicit PDF is still worth
       // local extraction. Backfill intentionally avoids this path.
