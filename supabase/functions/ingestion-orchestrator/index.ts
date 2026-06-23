@@ -57,7 +57,23 @@ Deno.serve(async (req) => {
       state: "pending",
     }).select("id").single();
 
-    if (error) return json({ error: error.message }, 400);
+    if (error) {
+      // Duplicate active URL → return the existing active job instead of failing.
+      if (String(error.message || "").includes("uq_ingestion_jobs_active_url") && body.input_url) {
+        const { data: existing } = await admin
+          .from("ingestion_jobs")
+          .select("id, state")
+          .eq("input_url", body.input_url)
+          .not("state", "in", "(completed,failed,cancelled)")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (existing?.id) {
+          return json({ job_id: existing.id, already_active: true, state: existing.state });
+        }
+      }
+      return json({ error: error.message }, 400);
+    }
 
     await admin.from("ingestion_stage_logs").insert({
       job_id: job.id, stage: "pending", status: "info", message: "Job created",
