@@ -372,7 +372,7 @@ function NewJobDialog({ sources, onClose, onCreated }: { sources: Source[]; onCl
       const { error, data } = await supabase.functions.invoke("ingestion-orchestrator", {
         body: {
           source_id: sourceId,
-          input_url: url || undefined,
+          input_url: effectiveUrl || undefined,
           input_raw_text: rawText || undefined,
           title_hint: titleHint,
           grade,
