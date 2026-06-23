@@ -400,17 +400,93 @@ async function tryFirecrawlPdf(
   const fcKey = Deno.env.get("FIRECRAWL_API_KEY");
   if (!fcKey) return null;
   try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 20_000);
     const res = await fetch("https://api.firecrawl.dev/v2/scrape", {
       method: "POST",
       headers: { "Authorization": `Bearer ${fcKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: false }),
-    });
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(t));
     const data = await res.json().catch(() => null);
     if (!res.ok || !data) return null;
     const doc = data.data ?? data;
     const text = String(doc.markdown ?? doc.html ?? "").trim();
     if (text.length < minChars) return null;
     return { text, pageCount: 0, pdfUrl: url, bytes: text.length };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function tryGeminiPdfText(
+  pdfUrl: string,
+  bytes: Uint8Array,
+  minChars: number,
+): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number } | null> {
+  const key = Deno.env.get("Gemini_Secret_Key");
+  if (!key) return null;
+  try {
+    const displayName = `studysound-${crypto.randomUUID()}.pdf`;
+    const start = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${key}`, {
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(bytes.byteLength),
+        "X-Goog-Upload-Header-Content-Type": "application/pdf",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ file: { display_name: displayName } }),
+    });
+    const uploadUrl = start.headers.get("x-goog-upload-url");
+    if (!start.ok || !uploadUrl) return null;
+
+    const upload = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Length": String(bytes.byteLength),
+        "X-Goog-Upload-Offset": "0",
+        "X-Goog-Upload-Command": "upload, finalize",
+      },
+      body: bytes,
+    });
+    const uploaded = await upload.json().catch(() => null);
+    if (!upload.ok || !uploaded?.file?.uri) return null;
+
+    const name = uploaded.file.name as string | undefined;
+    for (let i = 0; i < 10 && name; i++) {
+      const state = await fetch(`https://generativelanguage.googleapis.com/v1beta/${name}?key=${key}`)
+        .then((r) => r.json())
+        .catch(() => null);
+      if (!state?.state || state.state === "ACTIVE") break;
+      if (state.state === "FAILED") return null;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+
+    const gen = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: "Extract all readable learner workbook text from this PDF. Preserve page order, headings, questions, and paragraph breaks. Output only the extracted text." },
+            { file_data: { mime_type: "application/pdf", file_uri: uploaded.file.uri } },
+          ],
+        }],
+        generationConfig: { temperature: 0, maxOutputTokens: 65536 },
+      }),
+    });
+    const out = await gen.json().catch(() => null);
+    const text = (out?.candidates?.[0]?.content?.parts ?? [])
+      .map((p: any) => p.text ?? "")
+      .join("\n")
+      .trim();
+    if (name) {
+      fetch(`https://generativelanguage.googleapis.com/v1beta/${name}?key=${key}`, { method: "DELETE" }).catch(() => {});
+    }
+    if (text.length < minChars) return null;
+    return { text, pageCount: 0, pdfUrl, bytes: bytes.byteLength };
   } catch (_) {
     return null;
   }
