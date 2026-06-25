@@ -64,6 +64,7 @@ Deno.serve(async (req) => {
     let steps = 0;
     for (; steps < maxSteps; steps++) {
       if (["completed", "failed", "cancelled"].includes(job.state)) break;
+      const prevState = job.state;
       try {
         const next = await advance(job);
         const progress = PROGRESS[next.state] ?? job.progress;
