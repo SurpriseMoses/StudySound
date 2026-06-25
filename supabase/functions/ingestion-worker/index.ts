@@ -57,7 +57,10 @@ Deno.serve(async (req) => {
     let job = await pickJob(body.job_id);
     if (!job) return json({ skipped: "no_pending_jobs" });
 
-    const maxSteps = Math.max(1, Math.min(Number(body.max_steps ?? 1) || 1, 20));
+    // Default to advancing many stages per invocation so jobs don't crawl
+    // through one stage per cron minute. Individual stages bail out early
+    // when they need external work (e.g. translating batch poll).
+    const maxSteps = Math.max(1, Math.min(Number(body.max_steps ?? 12) || 12, 20));
     let steps = 0;
     for (; steps < maxSteps; steps++) {
       if (["completed", "failed", "cancelled"].includes(job.state)) break;
