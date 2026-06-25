@@ -83,6 +83,9 @@ Deno.serve(async (req) => {
       });
         const { data: refreshed } = await admin.from("ingestion_jobs").select("*").eq("id", job.id).maybeSingle();
         job = refreshed ?? { ...job, state: next.state, progress, document_id, started_at: job.started_at ?? new Date().toISOString(), last_error: null };
+        // If the stage is idempotent and didn't advance (e.g. translating
+        // batch still pending), stop so we don't busy-loop.
+        if (job.state === prevState) break;
       } catch (err: any) {
         const attempts = (job.attempts ?? 0) + 1;
         const failed = attempts >= 3;
