@@ -57,10 +57,14 @@ Deno.serve(async (req) => {
     let job = await pickJob(body.job_id);
     if (!job) return json({ skipped: "no_pending_jobs" });
 
-    const maxSteps = Math.max(1, Math.min(Number(body.max_steps ?? 1) || 1, 20));
+    // Default to advancing many stages per invocation so jobs don't crawl
+    // through one stage per cron minute. Individual stages bail out early
+    // when they need external work (e.g. translating batch poll).
+    const maxSteps = Math.max(1, Math.min(Number(body.max_steps ?? 12) || 12, 20));
     let steps = 0;
     for (; steps < maxSteps; steps++) {
       if (["completed", "failed", "cancelled"].includes(job.state)) break;
+      const prevState = job.state;
       try {
         const next = await advance(job);
         const progress = PROGRESS[next.state] ?? job.progress;
@@ -79,6 +83,9 @@ Deno.serve(async (req) => {
       });
         const { data: refreshed } = await admin.from("ingestion_jobs").select("*").eq("id", job.id).maybeSingle();
         job = refreshed ?? { ...job, state: next.state, progress, document_id, started_at: job.started_at ?? new Date().toISOString(), last_error: null };
+        // If the stage is idempotent and didn't advance (e.g. translating
+        // batch still pending), stop so we don't busy-loop.
+        if (job.state === prevState) break;
       } catch (err: any) {
         const attempts = (job.attempts ?? 0) + 1;
         const failed = attempts >= 3;
