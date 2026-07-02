@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
     }));
     await admin.from("ingestion_batch_items").insert(items);
     await admin.from("ingestion_jobs")
-      .update({ batch_job_id: batchRow.id, batch_stage: "clean_tag", state: "structuring" })
+      .update({ batch_job_id: batchRow.id, batch_stage: "clean_tag", state: "batching" })
       .in("id", ready.map((r) => r.id));
 
     return j({ batch_id: batchRow.id, gemini_batch: submit.name, item_count: ready.length, grade });
