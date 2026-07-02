@@ -32,8 +32,8 @@ const LANGS = [
   { code: "nso", label: "Sepedi" },
   { code: "tn", label: "Setswana" },
   { code: "ts", label: "Xitsonga" },
-  
-  
+  { code: "ve", label: "Tshivenda" },
+  { code: "nr", label: "isiNdebele" },
 ];
 
 type Tab = "listen" | "visuals" | "quiz";

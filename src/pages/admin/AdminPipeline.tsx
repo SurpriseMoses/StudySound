@@ -25,12 +25,15 @@ const RECLEAN_LANGUAGES = [
   { code: "nso", label: "Sepedi" },
   { code: "af", label: "Afrikaans" },
   { code: "ts", label: "Xitsonga" },
+  { code: "ve", label: "Tshivenda" },
+  { code: "nr", label: "isiNdebele" },
 ];
 
-type Lang = "zu" | "xh" | "tn" | "nso";
-const ALL_LANGS: Lang[] = ["zu", "xh", "tn", "nso"];
+type Lang = "zu" | "xh" | "tn" | "nso" | "ve" | "nr";
+const ALL_LANGS: Lang[] = ["zu", "xh", "tn", "nso", "ve", "nr"];
 const LANG_LABEL: Record<string, string> = {
-  zu: "isiZulu", xh: "isiXhosa", tn: "Setswana", nso: "Sepedi (Northern Sotho)", st: "Sesotho", af: "Afrikaans", ts: "Xitsonga",
+  zu: "isiZulu", xh: "isiXhosa", tn: "Setswana", nso: "Sepedi (Northern Sotho)",
+  st: "Sesotho", af: "Afrikaans", ts: "Xitsonga", ve: "Tshivenda", nr: "isiNdebele",
 };
 
 function timeAgo(iso: string): string {

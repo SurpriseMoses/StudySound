@@ -17,6 +17,8 @@ const RECLEAN_LANGUAGES = [
   { code: "nso", label: "Sepedi" },
   { code: "af", label: "Afrikaans" },
   { code: "ts", label: "Xitsonga" },
+  { code: "ve", label: "Tshivenda" },
+  { code: "nr", label: "isiNdebele" },
 ];
 
 type Doc = {

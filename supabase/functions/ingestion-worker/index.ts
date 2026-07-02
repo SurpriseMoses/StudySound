@@ -114,7 +114,7 @@ async function pickJob(jobId?: string) {
   }
   const { data } = await admin.from("ingestion_jobs")
     .select("*")
-    .not("state", "in", "(completed,failed,cancelled)")
+    .not("state", "in", "(completed,failed,cancelled,batching)")
     .order("updated_at", { ascending: true })
     .limit(1).maybeSingle();
   return data;
