@@ -70,6 +70,7 @@ Deno.serve(async (req) => {
 
     const created: string[] = [];
     const existing: string[] = [];
+    const errors: { subject: string; error: string }[] = [];
     for (const item of plan) {
       const { data: existRow } = await admin.from("ingestion_jobs")
         .select("id,state")
@@ -78,13 +79,19 @@ Deno.serve(async (req) => {
         .order("created_at", { ascending: false })
         .limit(1).maybeSingle();
       if (existRow) { existing.push(existRow.id); continue; }
+      // Make URL unique per subject so uq_ingestion_jobs_active_url doesn't collide
+      // when many subjects share the same index page (DBE case).
+      const uniqueUrl = item.url.includes("#")
+        ? item.url
+        : `${item.url}#g${grade}-${encodeURIComponent(item.subject)}`;
       const { data: newJob, error } = await admin.from("ingestion_jobs").insert({
-        source_id: source.id, input_url: item.url,
+        source_id: source.id, input_url: uniqueUrl,
         title_hint: `${item.subject} — Grade ${grade}`,
         grade, subject: item.subject, curriculum: "CAPS", country: "ZA",
         created_by: user.id, state: "pending",
       }).select("id").maybeSingle();
-      if (!error && newJob) created.push(newJob.id);
+      if (error) { errors.push({ subject: item.subject, error: error.message }); continue; }
+      if (newJob) created.push(newJob.id);
     }
 
     // Kick worker to start download+parse on new jobs
@@ -95,7 +102,7 @@ Deno.serve(async (req) => {
       }).catch(() => {});
     }
 
-    return j({ grade, created: created.length, existing: existing.length, subjects: plan.map((p) => p.subject) });
+    return j({ grade, created: created.length, existing: existing.length, errors, subjects: plan.map((p) => p.subject) });
   } catch (e: any) {
     return j({ error: String(e?.message ?? e) }, 500);
   }
