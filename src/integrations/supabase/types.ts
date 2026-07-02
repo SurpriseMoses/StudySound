@@ -755,9 +755,107 @@ export type Database = {
           },
         ]
       }
+      ingestion_batch_items: {
+        Row: {
+          batch_job_id: string
+          created_at: string
+          error: string | null
+          id: string
+          ingestion_job_id: string
+          position: number
+          result_ref: string | null
+          status: string
+        }
+        Insert: {
+          batch_job_id: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          ingestion_job_id: string
+          position: number
+          result_ref?: string | null
+          status?: string
+        }
+        Update: {
+          batch_job_id?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          ingestion_job_id?: string
+          position?: number
+          result_ref?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ingestion_batch_items_batch_job_id_fkey"
+            columns: ["batch_job_id"]
+            isOneToOne: false
+            referencedRelation: "ingestion_batch_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingestion_batch_items_ingestion_job_id_fkey"
+            columns: ["ingestion_job_id"]
+            isOneToOne: false
+            referencedRelation: "ingestion_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ingestion_batch_jobs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          finished_at: string | null
+          gemini_batch_name: string | null
+          grade: string
+          id: string
+          item_count: number
+          last_error: string | null
+          report: Json | null
+          stage: string
+          state: string
+          submitted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          finished_at?: string | null
+          gemini_batch_name?: string | null
+          grade: string
+          id?: string
+          item_count?: number
+          last_error?: string | null
+          report?: Json | null
+          stage: string
+          state?: string
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          finished_at?: string | null
+          gemini_batch_name?: string | null
+          grade?: string
+          id?: string
+          item_count?: number
+          last_error?: string | null
+          report?: Json | null
+          stage?: string
+          state?: string
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ingestion_jobs: {
         Row: {
           attempts: number
+          batch_job_id: string | null
+          batch_stage: string | null
           country: string | null
           created_at: string
           created_by: string | null
@@ -780,6 +878,8 @@ export type Database = {
         }
         Insert: {
           attempts?: number
+          batch_job_id?: string | null
+          batch_stage?: string | null
           country?: string | null
           created_at?: string
           created_by?: string | null
@@ -802,6 +902,8 @@ export type Database = {
         }
         Update: {
           attempts?: number
+          batch_job_id?: string | null
+          batch_stage?: string | null
           country?: string | null
           created_at?: string
           created_by?: string | null
@@ -823,6 +925,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ingestion_jobs_batch_job_id_fkey"
+            columns: ["batch_job_id"]
+            isOneToOne: false
+            referencedRelation: "ingestion_batch_jobs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "ingestion_jobs_document_id_fkey"
             columns: ["document_id"]
