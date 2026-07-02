@@ -180,6 +180,8 @@ export default function AdminIngestion() {
       </div>
 
       <LibrarySummaryPanel />
+      <GradeSweepPanel />
+
 
       <Tabs defaultValue="jobs">
 
