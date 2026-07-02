@@ -1281,3 +1281,143 @@ function LibrarySummaryPanel() {
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────
+// GRADE SWEEP — batch ingest all subjects for a grade in one go
+// ─────────────────────────────────────────────────────────────
+type BatchRow = {
+  id: string;
+  grade: string;
+  stage: string;
+  state: string;
+  item_count: number;
+  gemini_batch_name: string | null;
+  submitted_at: string | null;
+  finished_at: string | null;
+  report: any;
+  last_error: string | null;
+};
+
+const GRADES: { grade: string; label: string; provider: string }[] = [
+  { grade: "8",  label: "Grade 8",  provider: "DBE Workbooks" },
+  { grade: "9",  label: "Grade 9",  provider: "DBE Workbooks" },
+  { grade: "10", label: "Grade 10", provider: "Siyavula" },
+  { grade: "11", label: "Grade 11", provider: "Siyavula" },
+  { grade: "12", label: "Grade 12", provider: "Siyavula" },
+];
+
+function GradeSweepPanel() {
+  const { toast } = useToast();
+  const [batches, setBatches] = useState<BatchRow[]>([]);
+  const [jobsByGrade, setJobsByGrade] = useState<Record<string, { total: number; parsing: number; chunking_plus: number; completed: number }>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = async () => {
+    const { data: b } = await supabase
+      .from("ingestion_batch_jobs").select("*")
+      .order("created_at", { ascending: false }).limit(50);
+    setBatches((b ?? []) as BatchRow[]);
+
+    const counts: typeof jobsByGrade = {};
+    for (const g of GRADES) {
+      const { data } = await supabase
+        .from("ingestion_jobs")
+        .select("state").eq("grade", g.grade).limit(500);
+      const s = { total: 0, parsing: 0, chunking_plus: 0, completed: 0 };
+      for (const r of data ?? []) {
+        s.total++;
+        if (r.state === "parsing") s.parsing++;
+        if (["chunking","embedding_en","translating","embedding_tr","publishing","coverage"].includes(r.state)) s.chunking_plus++;
+        if (r.state === "completed") s.completed++;
+      }
+      counts[g.grade] = s;
+    }
+    setJobsByGrade(counts);
+  };
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 8000);
+    return () => clearInterval(t);
+  }, []);
+
+  const startGrade = async (grade: string) => {
+    setBusy(`start-${grade}`);
+    const { data, error } = await supabase.functions.invoke("run-grade-ingestion", { body: { grade } });
+    setBusy(null);
+    if (error) toast({ title: "Failed to start", description: error.message, variant: "destructive" });
+    else toast({ title: `Grade ${grade} queued`, description: `${data?.created ?? 0} new, ${data?.existing ?? 0} existing` });
+    load();
+  };
+
+  const submitBatch = async (grade: string) => {
+    setBusy(`submit-${grade}`);
+    const { data, error } = await supabase.functions.invoke("batch-ingestion-submit", { body: { grade } });
+    setBusy(null);
+    if (error) toast({ title: "Submit failed", description: error.message, variant: "destructive" });
+    else toast({ title: `Batch submitted for Grade ${grade}`, description: `${data?.item_count ?? 0} books` });
+    load();
+  };
+
+  const pollNow = async () => {
+    setBusy("poll");
+    const { data, error } = await supabase.functions.invoke("batch-ingestion-poll", { body: {} });
+    setBusy(null);
+    if (error) toast({ title: "Poll failed", description: error.message, variant: "destructive" });
+    else toast({ title: `Polled ${data?.polled ?? 0} batches` });
+    load();
+  };
+
+  // Sequential unlock: G9 disabled until G8 has a succeeded batch
+  const isUnlocked = (grade: string) => {
+    const idx = GRADES.findIndex((g) => g.grade === grade);
+    if (idx <= 0) return true;
+    const prev = GRADES[idx - 1].grade;
+    return batches.some((b) => b.grade === prev && b.state === "succeeded");
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-base flex items-center gap-2"><Sparkles className="w-4 h-4" /> Grade Sweep (Gemini Batch)</CardTitle>
+        <Button size="sm" variant="outline" onClick={pollNow} disabled={busy === "poll"}>
+          {busy === "poll" ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />} Poll batches
+        </Button>
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {GRADES.map((g) => {
+          const s = jobsByGrade[g.grade] ?? { total: 0, parsing: 0, chunking_plus: 0, completed: 0 };
+          const latest = batches.find((b) => b.grade === g.grade);
+          const unlocked = isUnlocked(g.grade);
+          return (
+            <div key={g.grade} className={`border rounded-lg p-3 space-y-2 ${!unlocked ? "opacity-50" : ""}`}>
+              <div className="flex items-center justify-between">
+                <div className="font-semibold">{g.label}</div>
+                <Badge variant="outline" className="text-[10px]">{g.provider}</Badge>
+              </div>
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                <div>Jobs: {s.total} · parsing: {s.parsing}</div>
+                <div>Post-batch: {s.chunking_plus} · done: {s.completed}</div>
+                {latest && (
+                  <div>Batch: <Badge variant="secondary" className="text-[10px]">{latest.state}</Badge> ({latest.item_count})</div>
+                )}
+                {latest?.report && (
+                  <div className="text-primary">✓ ok:{latest.report.ok ?? 0} · fail:{latest.report.failed ?? 0} · rev:{latest.report.review_required ?? 0}</div>
+                )}
+                {latest?.last_error && <div className="text-destructive truncate" title={latest.last_error}>{latest.last_error}</div>}
+              </div>
+              <div className="flex flex-col gap-1">
+                <Button size="sm" variant="outline" disabled={!unlocked || busy === `start-${g.grade}`} onClick={() => startGrade(g.grade)}>
+                  {busy === `start-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 mr-1" />} 1. Start / kick
+                </Button>
+                <Button size="sm" disabled={!unlocked || s.parsing === 0 || busy === `submit-${g.grade}`} onClick={() => submitBatch(g.grade)}>
+                  {busy === `submit-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />} 2. Submit batch ({s.parsing})
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
