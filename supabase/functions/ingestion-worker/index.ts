@@ -380,20 +380,29 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
 
   const hash = await sha256(text);
 
-  // Duplicate detection — reuse existing document if same hash, OR if a document
-  // already exists for this source (prevents importing the same textbook twice
-  // when the publisher tweaks the HTML and the content hash shifts).
-  const { data: existing } = await admin.from("documents").select("id").eq("content_hash", hash).maybeSingle();
+  // Duplicate detection — reuse existing document only when hash AND (grade,subject)
+  // match. Sources like DBE Workbooks host every subject behind one index page,
+  // so hashing alone would collapse all subjects into one document. Requiring
+  // grade+subject keeps each subject in its own row.
+  const jobGrade = job.grade ?? null;
+  const jobSubject = job.subject ?? null;
+  let hashQuery = admin.from("documents").select("id").eq("content_hash", hash);
+  if (jobGrade) hashQuery = hashQuery.eq("grade_level", jobGrade);
+  if (jobSubject) hashQuery = hashQuery.eq("doc_type", jobSubject);
+  const { data: existing } = await hashQuery.maybeSingle();
   let docId = existing?.id ?? null;
-  if (!docId && job.source_id) {
+  if (!docId && job.source_id && jobGrade && jobSubject) {
     const { data: bySource } = await admin
       .from("documents")
       .select("id")
       .eq("source_id", job.source_id)
+      .eq("grade_level", jobGrade)
+      .eq("doc_type", jobSubject)
       .limit(1)
       .maybeSingle();
     docId = bySource?.id ?? null;
   }
+
 
 
   if (!docId) {
