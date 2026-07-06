@@ -378,7 +378,10 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
     }
   }
 
-  const hash = await sha256(text);
+  // Scope the content hash by grade+subject so multi-subject sources (e.g. DBE
+  // Workbooks index page) don't collide on the documents_content_hash unique key.
+  const hash = await sha256(`${job.grade ?? ""}|${job.subject ?? ""}|${text}`);
+
 
   // Duplicate detection — reuse existing document only when hash AND (grade,subject)
   // match. Sources like DBE Workbooks host every subject behind one index page,
