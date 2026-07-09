@@ -305,12 +305,26 @@ export async function tryFetchTextbookPdf(
   const seen = new Set<string>();
   const candidates: { url: string; label: string; score: number }[] = [];
 
+  // Direct PDF/LinkClick URLs can be passed here too. Treat the index URL as
+  // the first candidate so subject-specific DBE links don't need to be wrapped
+  // in a separate directory page.
+  const indexLower = indexUrl.toLowerCase();
+  if (
+    indexLower.endsWith(".pdf") ||
+    /\.pdf(?:[?#]|$)/.test(indexLower) ||
+    /linkclick\.aspx/.test(indexLower) ||
+    /[?&](file|filename|download)=[^&]*\.pdf/.test(indexLower)
+  ) {
+    seen.add(indexUrl);
+    candidates.push({ url: indexUrl, label: [subj, grade ? `Grade ${grade}` : ""].filter(Boolean).join(" "), score: 100 });
+  }
+
   // Match anchors so we can score on link text too — directory pages often put
   // subject/grade in the visible label (e.g. "Grade 8 Afrikaans Workbook").
   const anchorRx = /<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m: RegExpExecArray | null;
   while ((m = anchorRx.exec(indexHtml)) !== null) {
-    const href = m[1].trim();
+    const href = decodeHtmlAttr(m[1].trim());
     const nearbyHeading = nearestHeadingBefore(indexHtml, m.index);
     const anchorLabel = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     const label = [nearbyHeading, anchorLabel].filter(Boolean).join(" — ");
@@ -348,7 +362,7 @@ export async function tryFetchTextbookPdf(
   const bareRx = /href\s*=\s*["']([^"']+\.pdf)["']/gi;
   while ((m = bareRx.exec(indexHtml)) !== null) {
     let abs: URL;
-    try { abs = new URL(m[1], base); } catch { continue; }
+    try { abs = new URL(decodeHtmlAttr(m[1]), base); } catch { continue; }
     const u = abs.toString();
     if (seen.has(u)) continue;
     seen.add(u);
@@ -395,6 +409,15 @@ export async function tryFetchTextbookPdf(
     } catch (_) { /* try next */ }
   }
   return null;
+}
+
+function decodeHtmlAttr(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
 async function tryFirecrawlPdf(

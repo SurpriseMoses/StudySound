@@ -214,7 +214,20 @@ async function stageParse(job: any): Promise<AdvanceResult> {
         sourceHtml = new TextDecoder().decode(bytes);
         text = htmlToText(sourceHtml);
       } else if (sniff.startsWith("%PDF")) {
-        text = Array.from(bytes).map((b) => (b >= 32 && b < 127) || b === 10 ? String.fromCharCode(b) : "").join("");
+        if (!job.input_url) throw new Error("PDF upload has no source URL for extraction");
+        const pdf = await tryFetchTextbookPdf(job.input_url, "", {
+          subject: usefulHint(job.subject) ?? usefulHint(job.title_hint) ?? null,
+          grade: usefulHint(job.grade) ?? gradeFromHint(job.title_hint) ?? null,
+          timeoutMs: 25_000,
+          maxBytes: 25 * 1024 * 1024,
+          minChars: 2_000,
+        });
+        if (!pdf) throw new Error("PDF extraction did not return usable text");
+        text = pdf.text;
+        await admin.from("ingestion_stage_logs").insert({
+          job_id: job.id, stage: "parsing", status: "info",
+          message: `direct PDF extracted ${pdf.text.length} chars from ${pdf.pdfUrl}`,
+        });
       } else {
         text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
       }

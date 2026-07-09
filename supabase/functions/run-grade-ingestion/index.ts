@@ -33,10 +33,18 @@ const SIYAVULA_URLS: Record<string, Record<string, string>> = {
 };
 
 const DBE_INDEX = "https://www.education.gov.za/Curriculum/LearningandTeachingSupportMaterials(LTSM)/2026Workbooks1.aspx";
-const DBE_SUBJECTS = [
-  "Mathematics","Natural Sciences","Technology","Social Sciences",
-  "English","Afrikaans","Life Orientation","Economic and Management Sciences","Creative Arts",
-];
+const DBE_GRADE_8_CAPS_URLS: Record<string, string> = {
+  "Mathematics": "https://www.education.gov.za/LinkClick.aspx?fileticket=uCNqOwfGbmc%3d&tabid=573&portalid=0&mid=1629",
+  "Natural Sciences": "https://www.education.gov.za/LinkClick.aspx?fileticket=zhaFloMyZTs%3d&tabid=573&portalid=0&mid=1629",
+  "Technology": "https://www.education.gov.za/LinkClick.aspx?fileticket=41Ak4eHaKt4%3d&tabid=573&portalid=0&mid=1629",
+  "Social Sciences": "https://www.education.gov.za/LinkClick.aspx?fileticket=6jpCz5DCZ08%3d&tabid=573&portalid=0&mid=1629",
+  "English": "https://www.education.gov.za/LinkClick.aspx?fileticket=5xCztldu-Kw%3d&tabid=573&portalid=0&mid=1569",
+  "Afrikaans": "https://www.education.gov.za/LinkClick.aspx?fileticket=slLbge-bPMk%3d&tabid=573&portalid=0&mid=1569",
+  "Life Orientation": "https://www.education.gov.za/LinkClick.aspx?fileticket=ANFLxkl-Hgk%3d&tabid=573&portalid=0&mid=1629",
+  "Economic and Management Sciences": "https://www.education.gov.za/LinkClick.aspx?fileticket=YEgQQlsQNCw%3d&tabid=573&portalid=0&mid=1629",
+  "Creative Arts": "https://www.education.gov.za/LinkClick.aspx?fileticket=EqlGbEbaejU%3d&tabid=573&portalid=0&mid=1629",
+};
+const DBE_SUBJECTS = Object.keys(DBE_GRADE_8_CAPS_URLS);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -62,7 +70,7 @@ Deno.serve(async (req) => {
 
     const plan: { subject: string; url: string }[] = [];
     if (isDbe) {
-      for (const s of DBE_SUBJECTS) plan.push({ subject: s, url: DBE_INDEX });
+      for (const s of DBE_SUBJECTS) plan.push({ subject: s, url: grade === "8" ? DBE_GRADE_8_CAPS_URLS[s] : DBE_INDEX });
     } else {
       const grd = SIYAVULA_URLS[grade] ?? {};
       for (const [subject, url] of Object.entries(grd)) plan.push({ subject, url });
@@ -75,15 +83,16 @@ Deno.serve(async (req) => {
       const { data: existRow } = await admin.from("ingestion_jobs")
         .select("id,state")
         .eq("grade", grade).eq("subject", item.subject)
-        .not("state", "in", "(failed,cancelled)")
+        .not("state", "in", "(completed,failed,cancelled)")
         .order("created_at", { ascending: false })
         .limit(1).maybeSingle();
       if (existRow) { existing.push(existRow.id); continue; }
-      // Make URL unique per subject so uq_ingestion_jobs_active_url doesn't collide
-      // when many subjects share the same index page (DBE case).
-      const uniqueUrl = item.url.includes("#")
-        ? item.url
-        : `${item.url}#g${grade}-${encodeURIComponent(item.subject)}`;
+      // Make shared index URLs unique per subject so active-url de-dupe doesn't
+      // collide. Subject-specific DBE CAPS URLs are already unique and should
+      // stay unmodified so the worker downloads the PDF directly.
+      const uniqueUrl = item.url === DBE_INDEX && !item.url.includes("#")
+        ? `${item.url}#g${grade}-${encodeURIComponent(item.subject)}`
+        : item.url;
       const { data: newJob, error } = await admin.from("ingestion_jobs").insert({
         source_id: source.id, input_url: uniqueUrl,
         title_hint: `${item.subject} — Grade ${grade}`,
