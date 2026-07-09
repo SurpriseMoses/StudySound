@@ -258,13 +258,27 @@ async function stageParse(job: any): Promise<AdvanceResult> {
   // PDF fallback: directory/landing pages (e.g. DBE Workbooks, gov.za LTSM)
   // expose textbooks as PDF links. If our extracted text is still too small,
   // pick the best-matching PDF for this job's subject+grade and use its text.
+  //
+  // Guarded by a hard wall-clock budget: the DBE index has hundreds of PDF
+  // anchors and any single Firecrawl/Gemini/unpdf attempt can burn tens of
+  // seconds. Without this budget the edge function silently exceeds its CPU
+  // wall time, gets killed, and the job stays at state='downloading' forever
+  // with attempts=0 (no failure ever gets written back).
   const hasPdfLinks = /\.pdf(?:[?#"'\s>]|$)|LinkClick\.aspx|fileticket=|forcedownload/i.test(sourceHtml);
   if (sourceHtml && job.input_url && text.length < MIN_TEXTBOOK_CHARS && hasPdfLinks) {
+    const PDF_FALLBACK_BUDGET_MS = 90_000;
     try {
-      const pdf = await tryFetchTextbookPdf(job.input_url, sourceHtml, {
-        subject: usefulHint(job.subject) ?? usefulHint(job.title_hint) ?? null,
-        grade: usefulHint(job.grade) ?? gradeFromHint(job.title_hint) ?? null,
-      });
+      const pdf = await Promise.race([
+        tryFetchTextbookPdf(job.input_url, sourceHtml, {
+          subject: usefulHint(job.subject) ?? usefulHint(job.title_hint) ?? null,
+          grade: usefulHint(job.grade) ?? gradeFromHint(job.title_hint) ?? null,
+          timeoutMs: 25_000,
+          maxBytes: 25 * 1024 * 1024,
+        }),
+        new Promise<null>((_, rej) =>
+          setTimeout(() => rej(new Error(`pdf fallback exceeded ${PDF_FALLBACK_BUDGET_MS}ms budget`)), PDF_FALLBACK_BUDGET_MS)
+        ),
+      ]);
       if (pdf && pdf.text.length > text.length) {
         text = pdf.text;
         await admin.from("ingestion_stage_logs").insert({
@@ -278,6 +292,14 @@ async function stageParse(job: any): Promise<AdvanceResult> {
         message: `pdf fallback failed: ${String(e?.message ?? e)}`,
       });
     }
+  }
+
+  // If we still don't have real textbook text, surface a visible failure
+  // instead of advancing with just the index-page skeleton. This is what
+  // makes stuck DBE jobs move to 'failed' (and eventually 'review_required')
+  // rather than parking silently at 'downloading'.
+  if (text.length < MIN_TEXTBOOK_CHARS && sourceHtml && hasPdfLinks) {
+    throw new Error(`parse yielded only ${text.length} chars from index page; PDF fallback did not return a usable textbook`);
   }
 
   // Cache raw_text on the job for later stages.

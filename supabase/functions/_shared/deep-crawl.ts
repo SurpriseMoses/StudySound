@@ -358,8 +358,10 @@ export async function tryFetchTextbookPdf(
   candidates.sort((a, b) => b.score - a.score);
   if (candidates.length === 0) return null;
 
-  for (const c of candidates.slice(0, 5)) {
-    const scraped = await tryFirecrawlPdf(c.url, minChars);
+  for (const c of candidates.slice(0, 3)) {
+    // Firecrawl can't resolve DBE LinkClick.aspx redirects; skip it there.
+    const isLinkClick = /linkclick\.aspx/i.test(c.url);
+    const scraped = isLinkClick ? null : await tryFirecrawlPdf(c.url, minChars);
     if (scraped) return scraped;
 
     try {
