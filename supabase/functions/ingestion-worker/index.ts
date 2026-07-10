@@ -452,8 +452,9 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
 
 
 
+  const { data: src } = await admin.from("content_sources").select("license_type,name,publisher").eq("id", job.source_id).maybeSingle();
+
   if (!docId) {
-    const { data: src } = await admin.from("content_sources").select("license_type,name,publisher").eq("id", job.source_id).maybeSingle();
     const publisher = (src as any)?.publisher
       ?? (src?.name ? String(src.name).split(" ")[0] : null); // e.g. "Siyavula"
     const baseTitle = job.title_hint
@@ -510,6 +511,20 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
     await admin.from("content_sources").update({
       import_count: 1, last_import_at: new Date().toISOString(),
     }).eq("id", job.source_id);
+  } else {
+    // Re-imports after parser/cleaner fixes must refresh the reused document;
+    // otherwise old TOC-only/noisy text remains even though the job now has
+    // correct extracted content.
+    await admin.from("documents").update({
+      raw_text: text,
+      clean_text: text,
+      char_count: text.length,
+      source_url: job.input_url ?? null,
+      license_type: src?.license_type ?? null,
+      curriculum: job.curriculum ?? null,
+      country: job.country ?? null,
+      import_job_id: job.id,
+    }).eq("id", docId);
   }
 
   // Materialize chunk-level English rows (idempotent, no embeddings yet).
