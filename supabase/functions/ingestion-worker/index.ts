@@ -39,6 +39,12 @@ const DBE_WORKBOOK_INDEX_URLS = [
   "https://www.education.gov.za/Curriculum/LearningandTeachingSupportMaterials(LTSM)/Workbooks.aspx",
 ];
 
+// Some DBE subjects (Maths, Natural Sciences, EMS, LO, Social Sciences) are
+// published as CAPS policy PDFs rather than workbook PDFs. They often have
+// long curriculum body text but few "chapter" headings, so the generic
+// textbook gate must not reject them as TOC-only after successful PDF extract.
+const DBE_CAPS_MIN_CHARS = 50_000;
+
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 // Stage → progress %
@@ -404,8 +410,9 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
   const isLiterature = /literature|english|novel|story|play|shakespeare/.test(subjectLow);
   if (!isLiterature) {
     const v = validateTextbook(text);
-    const isDbeWorkbook = job.input_url && isDbeWorkbookIndexUrl(job.input_url) && v.chars > 5_000;
-    if (!v.ok && !isDbeWorkbook) {
+    const isDbeCapsPdf = job.input_url && isDbeDirectPdfUrl(job.input_url) && v.chars >= DBE_CAPS_MIN_CHARS;
+    const isDbeWorkbookIndex = job.input_url && isDbeWorkbookIndexUrl(job.input_url) && v.chars > 5_000;
+    if (!v.ok && !isDbeCapsPdf && !isDbeWorkbookIndex) {
       throw new Error(
         `Only TOC page imported (chars=${v.chars}, chapters=${v.chapters}; ` +
         `need >${MIN_TEXTBOOK_CHARS} chars OR >${MIN_CHAPTERS} chapters)`,
@@ -933,6 +940,19 @@ function isDbeWorkbookIndexUrl(url: string): boolean {
     return u.hostname.toLowerCase().endsWith("education.gov.za") && /workbooks/i.test(u.pathname);
   } catch {
     return /education\.gov\.za[\s\S]*workbooks/i.test(url);
+  }
+}
+
+function isDbeDirectPdfUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname.toLowerCase().endsWith("education.gov.za") && (
+      /linkclick\.aspx/i.test(u.pathname) ||
+      /\.pdf$/i.test(u.pathname) ||
+      /fileticket=/i.test(u.search)
+    );
+  } catch {
+    return /education\.gov\.za[\s\S]*(linkclick\.aspx|fileticket=|\.pdf)/i.test(url);
   }
 }
 
