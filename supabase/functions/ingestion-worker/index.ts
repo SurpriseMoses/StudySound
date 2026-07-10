@@ -374,7 +374,10 @@ async function stageTag(job: any): Promise<AdvanceResult> {
 }
 
 async function stageClean(job: any): Promise<AdvanceResult> {
-  const text: string = job.input_raw_text ?? "";
+  const text: string = String(job.input_raw_text ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ");
   // Decide cleaner: textbooks (science/maths/etc.) preserve TOC + headings;
   // literature/novels use the line-noise stripper.
   const subjectLow = String(job.subject ?? "").toLowerCase();
@@ -385,7 +388,6 @@ async function stageClean(job: any): Promise<AdvanceResult> {
     cleaned = cleanTextbookPreservingTOC(text);
   } else {
     cleaned = text
-      .replace(/\r\n/g, "\n")
       .replace(/_{2,}/g, " ")
       .replace(/\.{4,}/g, " ")
       .replace(/^\s*\d{1,4}\s*$/gm, "")
