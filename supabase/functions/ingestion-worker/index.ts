@@ -39,6 +39,12 @@ const DBE_WORKBOOK_INDEX_URLS = [
   "https://www.education.gov.za/Curriculum/LearningandTeachingSupportMaterials(LTSM)/Workbooks.aspx",
 ];
 
+// Some DBE subjects (Maths, Natural Sciences, EMS, LO, Social Sciences) are
+// published as CAPS policy PDFs rather than workbook PDFs. They often have
+// long curriculum body text but few "chapter" headings, so the generic
+// textbook gate must not reject them as TOC-only after successful PDF extract.
+const DBE_CAPS_MIN_CHARS = 50_000;
+
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 // Stage → progress %
@@ -368,7 +374,10 @@ async function stageTag(job: any): Promise<AdvanceResult> {
 }
 
 async function stageClean(job: any): Promise<AdvanceResult> {
-  const text: string = job.input_raw_text ?? "";
+  const text: string = String(job.input_raw_text ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ");
   // Decide cleaner: textbooks (science/maths/etc.) preserve TOC + headings;
   // literature/novels use the line-noise stripper.
   const subjectLow = String(job.subject ?? "").toLowerCase();
@@ -379,7 +388,6 @@ async function stageClean(job: any): Promise<AdvanceResult> {
     cleaned = cleanTextbookPreservingTOC(text);
   } else {
     cleaned = text
-      .replace(/\r\n/g, "\n")
       .replace(/_{2,}/g, " ")
       .replace(/\.{4,}/g, " ")
       .replace(/^\s*\d{1,4}\s*$/gm, "")
@@ -404,8 +412,9 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
   const isLiterature = /literature|english|novel|story|play|shakespeare/.test(subjectLow);
   if (!isLiterature) {
     const v = validateTextbook(text);
-    const isDbeWorkbook = job.input_url && isDbeWorkbookIndexUrl(job.input_url) && v.chars > 5_000;
-    if (!v.ok && !isDbeWorkbook) {
+    const isDbeCapsPdf = job.input_url && isDbeDirectPdfUrl(job.input_url) && v.chars >= DBE_CAPS_MIN_CHARS;
+    const isDbeWorkbookIndex = job.input_url && isDbeWorkbookIndexUrl(job.input_url) && v.chars > 5_000;
+    if (!v.ok && !isDbeCapsPdf && !isDbeWorkbookIndex) {
       throw new Error(
         `Only TOC page imported (chars=${v.chars}, chapters=${v.chapters}; ` +
         `need >${MIN_TEXTBOOK_CHARS} chars OR >${MIN_CHAPTERS} chapters)`,
@@ -443,8 +452,9 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
 
 
 
+  const { data: src } = await admin.from("content_sources").select("license_type,name,publisher").eq("id", job.source_id).maybeSingle();
+
   if (!docId) {
-    const { data: src } = await admin.from("content_sources").select("license_type,name,publisher").eq("id", job.source_id).maybeSingle();
     const publisher = (src as any)?.publisher
       ?? (src?.name ? String(src.name).split(" ")[0] : null); // e.g. "Siyavula"
     const baseTitle = job.title_hint
@@ -501,6 +511,21 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
     await admin.from("content_sources").update({
       import_count: 1, last_import_at: new Date().toISOString(),
     }).eq("id", job.source_id);
+  } else {
+    // Re-imports after parser/cleaner fixes must refresh the reused document;
+    // otherwise old TOC-only/noisy text remains even though the job now has
+    // correct extracted content.
+    await admin.from("documents").update({
+      content_hash: hash,
+      raw_text: text,
+      clean_text: text,
+      char_count: text.length,
+      source_url: job.input_url ?? null,
+      license_type: src?.license_type ?? null,
+      curriculum: job.curriculum ?? null,
+      country: job.country ?? null,
+      import_job_id: job.id,
+    }).eq("id", docId);
   }
 
   // Materialize chunk-level English rows (idempotent, no embeddings yet).
@@ -933,6 +958,19 @@ function isDbeWorkbookIndexUrl(url: string): boolean {
     return u.hostname.toLowerCase().endsWith("education.gov.za") && /workbooks/i.test(u.pathname);
   } catch {
     return /education\.gov\.za[\s\S]*workbooks/i.test(url);
+  }
+}
+
+function isDbeDirectPdfUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname.toLowerCase().endsWith("education.gov.za") && (
+      /linkclick\.aspx/i.test(u.pathname) ||
+      /\.pdf$/i.test(u.pathname) ||
+      /fileticket=/i.test(u.search)
+    );
+  } catch {
+    return /education\.gov\.za[\s\S]*(linkclick\.aspx|fileticket=|\.pdf)/i.test(url);
   }
 }
 

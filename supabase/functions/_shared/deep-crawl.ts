@@ -600,7 +600,10 @@ export function extractChapterLinks(html: string, indexUrl: string): string[] {
  * hierarchical numbering. Strips site chrome lines only.
  */
 export function cleanTextbookPreservingTOC(raw: string): string {
-  let text = raw.replace(/\r\n/g, "\n").replace(/\u00a0/g, " ");
+  let text = raw
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ");
 
   // --- Excise Siyavula site-chrome phrases that survive HTML stripping ----
   // The crawler concatenates text into long lines, so per-line filters don't
@@ -628,9 +631,13 @@ export function cleanTextbookPreservingTOC(raw: string): string {
   ];
   for (const rx of SIY_PHRASE_PATTERNS) text = text.replace(rx, " ");
 
-  const footerRx = /(All\s+\w+\s+textbook\s+content\s+made\s+available|Creative\s+Commons\s+Attribution\s+License|Terms\s+and\s+Conditions|Privacy\s+Policy|©\s*\d{4})/i;
-  const footerMatch = text.match(footerRx);
-  if (footerMatch && footerMatch.index !== undefined && footerMatch.index > 500) {
+  // Only truncate at known Siyavula footer/license blocks. CAPS PDFs often put
+  // copyright/license text in the front matter before the actual curriculum
+  // body; cutting on generic ©/Creative Commons markers turns the import into
+  // a TOC/disclaimer-only document.
+  const siyavulaFooterRx = /(All\s+\w+\s+textbook\s+content\s+made\s+available|Terms\s+and\s+Conditions|Privacy\s+Policy)/i;
+  const footerMatch = text.match(siyavulaFooterRx);
+  if (footerMatch && footerMatch.index !== undefined && footerMatch.index > 5_000) {
     text = text.slice(0, footerMatch.index).trimEnd();
   }
 
