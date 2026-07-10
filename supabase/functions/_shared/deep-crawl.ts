@@ -600,7 +600,10 @@ export function extractChapterLinks(html: string, indexUrl: string): string[] {
  * hierarchical numbering. Strips site chrome lines only.
  */
 export function cleanTextbookPreservingTOC(raw: string): string {
-  let text = raw.replace(/\r\n/g, "\n").replace(/\u00a0/g, " ");
+  let text = raw
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ");
 
   // --- Excise Siyavula site-chrome phrases that survive HTML stripping ----
   // The crawler concatenates text into long lines, so per-line filters don't
