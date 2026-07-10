@@ -516,6 +516,7 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
     // otherwise old TOC-only/noisy text remains even though the job now has
     // correct extracted content.
     await admin.from("documents").update({
+      content_hash: hash,
       raw_text: text,
       clean_text: text,
       char_count: text.length,
