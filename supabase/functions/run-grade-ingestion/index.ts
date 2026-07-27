@@ -33,6 +33,9 @@ const SIYAVULA_URLS: Record<string, Record<string, string>> = {
 };
 
 const DBE_INDEX = "https://www.education.gov.za/Curriculum/LearningandTeachingSupportMaterials(LTSM)/2026Workbooks1.aspx";
+// Senior Phase CAPS PDFs cover Grades 7–9 collectively, so G9 reuses the same
+// direct PDFs as G8. Worker hashes are scoped by grade|subject|text, so this
+// won't collide with the existing G8 documents.
 const DBE_GRADE_8_CAPS_URLS: Record<string, string> = {
   "Mathematics": "https://www.education.gov.za/LinkClick.aspx?fileticket=uCNqOwfGbmc%3d&tabid=573&portalid=0&mid=1629",
   "Natural Sciences": "https://www.education.gov.za/LinkClick.aspx?fileticket=zhaFloMyZTs%3d&tabid=573&portalid=0&mid=1629",
@@ -44,6 +47,7 @@ const DBE_GRADE_8_CAPS_URLS: Record<string, string> = {
   "Economic and Management Sciences": "https://www.education.gov.za/LinkClick.aspx?fileticket=YEgQQlsQNCw%3d&tabid=573&portalid=0&mid=1629",
   "Creative Arts": "https://www.education.gov.za/LinkClick.aspx?fileticket=EqlGbEbaejU%3d&tabid=573&portalid=0&mid=1629",
 };
+const DBE_GRADE_9_CAPS_URLS: Record<string, string> = { ...DBE_GRADE_8_CAPS_URLS };
 const DBE_SUBJECTS = Object.keys(DBE_GRADE_8_CAPS_URLS);
 
 Deno.serve(async (req) => {
@@ -70,7 +74,8 @@ Deno.serve(async (req) => {
 
     const plan: { subject: string; url: string }[] = [];
     if (isDbe) {
-      for (const s of DBE_SUBJECTS) plan.push({ subject: s, url: grade === "8" ? DBE_GRADE_8_CAPS_URLS[s] : DBE_INDEX });
+      const map = grade === "8" ? DBE_GRADE_8_CAPS_URLS : DBE_GRADE_9_CAPS_URLS;
+      for (const s of DBE_SUBJECTS) plan.push({ subject: s, url: map[s] });
     } else {
       const grd = SIYAVULA_URLS[grade] ?? {};
       for (const [subject, url] of Object.entries(grd)) plan.push({ subject, url });
