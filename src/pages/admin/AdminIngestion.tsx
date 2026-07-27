@@ -1368,6 +1368,75 @@ function GradeSweepPanel() {
     load();
   };
 
+  // Fast finish: fan out ingestion-worker (concurrency 5) + drain embeddings via backfill.
+  const fastFinish = async (grade: string) => {
+    const CONCURRENCY = 5;
+    const WORKER_PASSES = 12;
+    const BACKFILL_PASSES = 20;
+    if (!confirm(
+      `Fast-finish Grade ${grade}?\n\n` +
+      `• Fans out ingestion-worker in parallel (cap ${CONCURRENCY})\n` +
+      `• Loops backfill-pipeline to drain embeddings (max ${BACKFILL_PASSES} passes)\n` +
+      `• Rough cost: ~$0.10–0.30 per book in Gemini/embedding calls\n` +
+      `• Translations & audio stay manual\n\nContinue?`
+    )) return;
+
+    setBusy(`fast-${grade}`);
+    const runPool = async <T,>(items: T[], fn: (x: T) => Promise<unknown>) => {
+      const q = [...items];
+      const workers = Array.from({ length: Math.min(CONCURRENCY, q.length) }, async () => {
+        while (q.length) {
+          const it = q.shift();
+          if (!it) return;
+          try { await fn(it); } catch (e) { console.warn("pool err", e); }
+        }
+      });
+      await Promise.all(workers);
+    };
+
+    try {
+      const ACTIVE = ["downloading","parsing","structuring","tagging","cleaning","chunking","embedding_en","publishing"];
+      for (let pass = 0; pass < WORKER_PASSES; pass++) {
+        const { data: jobs } = await supabase
+          .from("ingestion_jobs")
+          .select("id,state")
+          .eq("grade", grade)
+          .in("state", ACTIVE as any)
+          .limit(50);
+        if (!jobs || jobs.length === 0) break;
+        toast({ title: `Grade ${grade} worker pass ${pass + 1}`, description: `${jobs.length} active jobs` });
+        await runPool(jobs, (j: any) =>
+          supabase.functions.invoke("ingestion-worker", { body: { job_id: j.id } })
+        );
+        await new Promise((r) => setTimeout(r, 1500));
+        await load();
+      }
+
+      for (let pass = 0; pass < BACKFILL_PASSES; pass++) {
+        const { data: pending } = await supabase
+          .from("documents")
+          .select("id")
+          .neq("embeddings_status", "done")
+          .limit(20);
+        if (!pending || pending.length === 0) break;
+        toast({ title: `Grade ${grade} embed pass ${pass + 1}`, description: `${pending.length} docs pending` });
+        await runPool(pending, (d: any) =>
+          supabase.functions.invoke("backfill-pipeline", {
+            body: { document_id: d.id, reclean: false, skip_pdf: true, max_embed_batches: 4 },
+          })
+        );
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+
+      toast({ title: `Grade ${grade}: fast finish complete` });
+    } catch (e: any) {
+      toast({ title: "Fast finish error", description: e?.message ?? String(e), variant: "destructive" });
+    } finally {
+      setBusy(null);
+      load();
+    }
+  };
+
   // Grades are independently kickable — no sequential gate.
   const isUnlocked = (_grade: string) => true;
 
