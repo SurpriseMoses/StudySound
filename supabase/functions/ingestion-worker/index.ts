@@ -9,9 +9,9 @@
 //   tagging        → cleaning
 //   cleaning       → chunking
 //   chunking       → embedding_en      (split into document_chunks + embed English)
-//   embedding_en   → translating       (enable translation seeding)
-//   translating    → embedding_tr      (waits for translation_status='done')
-//   embedding_tr   → publishing        (skip auto audio seeding)
+//   embedding_en   → publishing        (translations/audio are seeded manually)
+//   translating    → publishing        (legacy passthrough; no auto translation wait)
+//   embedding_tr   → publishing        (legacy passthrough)
 //   publishing     → coverage          (refresh coverage_snapshots)
 //   coverage       → completed
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
@@ -137,9 +137,9 @@ async function advance(job: any): Promise<AdvanceResult> {
     case "tagging":       return await stageClean(job);
     case "cleaning":      return await stageChunk(job);
     case "chunking":      return await stageEmbedEnglish(job);
-    case "embedding_en":  return await stageTranslate(job);
-    case "translating":   return await stageEmbedTranslations(job);
-    case "embedding_tr":  return await stagePublish(job);
+    case "embedding_en":  return await stageFinishEnglishEmbeddings(job);
+    case "translating":   return await stagePublish(job); // legacy passthrough; translations are manual
+    case "embedding_tr":  return await stagePublish(job); // legacy passthrough
     case "audio_seeding": return await stagePublish(job); // passthrough for stuck legacy jobs
     case "publishing":    return await stageCoverage(job);
     case "coverage":      return await stageComplete(job);
@@ -708,9 +708,9 @@ async function stageEmbedEnglish(job: any): Promise<AdvanceResult> {
   return { state: "embedding_en", message: `embedded ${rows.length} english chunks` };
 }
 
-async function stageTranslate(job: any): Promise<AdvanceResult> {
+async function stageFinishEnglishEmbeddings(job: any): Promise<AdvanceResult> {
   if (!job.document_id) throw new Error("no document_id");
-  // Make sure all English chunks are embedded before flipping to translation.
+  // Make sure all English chunks are embedded before publishing.
   const { count } = await admin
     .from("document_chunks")
     .select("id", { count: "exact", head: true })
@@ -720,11 +720,11 @@ async function stageTranslate(job: any): Promise<AdvanceResult> {
     // Re-run embedding on the same tick path: process another batch, stay in embedding_en.
     return await stageEmbedEnglish(job);
   }
-  await admin.from("documents").update({
-    seed_translation: true,
-    translation_status: "pending",
-  }).eq("id", job.document_id);
-  return { state: "translating", message: "translation seeding enabled" };
+
+  // Translations are intentionally manual from Admin > Seed Translations. Do
+  // not flip seed_translation/translation_status here, otherwise imports get
+  // stuck waiting for translation seed work the user did not request.
+  return { state: "publishing", message: "english embeddings ready; manual translations skipped" };
 }
 
 async function stageEmbedTranslations(job: any): Promise<AdvanceResult> {

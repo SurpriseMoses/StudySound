@@ -348,6 +348,12 @@ async function backfillDoc(
       published_at: new Date().toISOString(),
       embeddings_status: "complete",
     }).eq("id", doc.id);
+    await admin.from("ingestion_jobs").update({
+      state: "completed",
+      progress: 100,
+      finished_at: new Date().toISOString(),
+      last_error: null,
+    }).eq("document_id", doc.id).not("state", "in", "(completed,failed,cancelled)");
     out.stages.push({ publish: "ok" });
     out.published = true;
   } else {
