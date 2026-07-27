@@ -26,8 +26,12 @@ Deno.serve(async (req) => {
       try {
         const status = await pollBatch(b.gemini_batch_name, GEMINI_KEY);
         if (status.state === "JOB_STATE_SUCCEEDED") {
-          await handleSuccess(b, status.inlinedResponses ?? []);
-          results.push({ id: b.id, state: "succeeded", items: status.inlinedResponses?.length ?? 0 });
+          if (b.stage === "reclean") {
+            await handleRecleanSuccess(b, status.inlinedResponses ?? []);
+          } else {
+            await handleSuccess(b, status.inlinedResponses ?? []);
+          }
+          results.push({ id: b.id, state: "succeeded", stage: b.stage, items: status.inlinedResponses?.length ?? 0 });
         } else if (status.state === "JOB_STATE_FAILED" || status.state === "JOB_STATE_CANCELLED" || status.state === "JOB_STATE_EXPIRED") {
           await admin.from("ingestion_batch_jobs").update({
             state: "failed", finished_at: new Date().toISOString(),
