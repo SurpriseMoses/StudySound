@@ -1368,6 +1368,36 @@ function GradeSweepPanel() {
     load();
   };
 
+  const recleanBatch = async (grade: string) => {
+    // Count how many completed docs will be re-cleaned
+    const { data: doneJobs } = await supabase
+      .from("ingestion_jobs")
+      .select("document_id")
+      .eq("grade", grade)
+      .eq("state", "completed")
+      .not("document_id", "is", null);
+    const docCount = new Set((doneJobs ?? []).map((j: any) => j.document_id)).size;
+    if (!docCount) {
+      toast({ title: `No completed Grade ${grade} docs to re-clean`, variant: "destructive" });
+      return;
+    }
+    if (!confirm(
+      `Re-clean Grade ${grade} via Gemini Batch?\n\n` +
+      `• ${docCount} completed book(s) will be re-cleaned in place\n` +
+      `• Existing chunks, audio caches & translations for these books will be WIPED\n` +
+      `• Backfill re-chunks + re-embeds automatically after the batch returns\n` +
+      `• Async — Gemini Batch may take a few minutes to a few hours\n` +
+      `• Rough cost: ~$0.02–0.05 per book\n\nContinue?`
+    )) return;
+
+    setBusy(`reclean-${grade}`);
+    const { data, error } = await supabase.functions.invoke("batch-reclean-submit", { body: { grade } });
+    setBusy(null);
+    if (error) toast({ title: "Re-clean submit failed", description: error.message, variant: "destructive" });
+    else toast({ title: `Re-clean batch submitted for Grade ${grade}`, description: `${data?.item_count ?? 0} book(s) queued` });
+    load();
+  };
+
   // Fast finish: fan out ingestion-worker (concurrency 5) + drain embeddings via backfill.
   const fastFinish = async (grade: string) => {
     const CONCURRENCY = 5;
@@ -1480,6 +1510,9 @@ function GradeSweepPanel() {
                 </Button>
                 <Button size="sm" variant="secondary" disabled={busy === `fast-${g.grade}`} onClick={() => fastFinish(g.grade)}>
                   {busy === `fast-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 mr-1" />} ⚡ Fast finish
+                </Button>
+                <Button size="sm" variant="ghost" className="border border-dashed" disabled={busy === `reclean-${g.grade}`} onClick={() => recleanBatch(g.grade)}>
+                  {busy === `reclean-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />} ♻️ Re-clean (Batch)
                 </Button>
               </div>
             </div>
