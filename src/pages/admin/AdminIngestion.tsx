@@ -1368,13 +1368,9 @@ function GradeSweepPanel() {
     load();
   };
 
-  // Sequential unlock: G9 disabled until G8 has a succeeded batch
-  const isUnlocked = (grade: string) => {
-    const idx = GRADES.findIndex((g) => g.grade === grade);
-    if (idx <= 0) return true;
-    const prev = GRADES[idx - 1].grade;
-    return batches.some((b) => b.grade === prev && b.state === "succeeded");
-  };
+  // Grades are independently kickable — no sequential gate.
+  const isUnlocked = (_grade: string) => true;
+
 
   return (
     <Card>
