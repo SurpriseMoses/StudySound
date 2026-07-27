@@ -1426,16 +1426,30 @@ function GradeSweepPanel() {
 
     try {
       const ACTIVE = ["downloading","parsing","structuring","tagging","cleaning","chunking","embedding_en","publishing"];
+      const STALE_MS = 45_000; // skip jobs another worker touched within this window
       for (let pass = 0; pass < WORKER_PASSES; pass++) {
         const { data: jobs } = await supabase
           .from("ingestion_jobs")
-          .select("id,state")
+          .select("id,state,updated_at")
           .eq("grade", grade)
           .in("state", ACTIVE as any)
           .limit(50);
         if (!jobs || jobs.length === 0) break;
-        toast({ title: `Grade ${grade} worker pass ${pass + 1}`, description: `${jobs.length} active jobs` });
-        await runPool(jobs, (j: any) =>
+        // Don't re-invoke jobs that are actively progressing — that can restart
+        // the current stage from scratch. Only nudge jobs that look stalled.
+        const now = Date.now();
+        const stalled = jobs.filter((j: any) => {
+          const ts = j.updated_at ? new Date(j.updated_at).getTime() : 0;
+          return now - ts > STALE_MS;
+        });
+        if (stalled.length === 0) {
+          toast({ title: `Grade ${grade} pass ${pass + 1}`, description: `${jobs.length} jobs already progressing — waiting` });
+          await new Promise((r) => setTimeout(r, 5000));
+          await load();
+          continue;
+        }
+        toast({ title: `Grade ${grade} pass ${pass + 1}`, description: `nudging ${stalled.length}/${jobs.length} stalled jobs` });
+        await runPool(stalled, (j: any) =>
           supabase.functions.invoke("ingestion-worker", { body: { job_id: j.id } })
         );
         await new Promise((r) => setTimeout(r, 1500));
