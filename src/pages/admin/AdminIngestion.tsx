@@ -68,7 +68,7 @@ export default function AdminIngestion() {
   const refresh = async () => {
     const [s, j, docs, audio, trans, docList] = await Promise.all([
       supabase.from("content_sources").select("*").order("name"),
-      supabase.from("ingestion_jobs").select("*").order("created_at", { ascending: false }).limit(50),
+      supabase.from("ingestion_jobs").select("*").order("created_at", { ascending: false }).limit(300),
       supabase.from("documents").select("id", { count: "exact", head: true }).eq("is_seeded", true),
       supabase.from("audio_assets").select("id", { count: "exact", head: true }),
       supabase.from("translation_assets").select("id", { count: "exact", head: true }),
