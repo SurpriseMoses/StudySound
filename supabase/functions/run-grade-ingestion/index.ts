@@ -23,12 +23,14 @@ const SIYAVULA_URLS: Record<string, Record<string, string>> = {
     "Mathematics": "https://www.siyavula.com/read/za/mathematics/grade-11",
     "Physical Sciences": "https://www.siyavula.com/read/za/physical-sciences/grade-11",
     "Life Sciences": "https://www.siyavula.com/read/za/life-sciences/grade-11",
-    "Mathematical Literacy": "https://www.siyavula.com/read/za/mathematical-literacy/grade-11",
+    // Siyavula does not publish Mathematical Literacy — use the DBE CAPS PDF
+    // (covers Grades 10-12; grade-scoped hash keeps the URL unique per job).
+    "Mathematical Literacy": "https://www.education.gov.za/LinkClick.aspx?fileticket=q8-SkGy43rw%3d&tabid=570&portalid=0&mid=1558#g11-mathlit",
   },
   "12": {
     "Mathematics": "https://www.siyavula.com/read/za/mathematics/grade-12",
     "Physical Sciences": "https://www.siyavula.com/read/za/physical-sciences/grade-12",
-    "Mathematical Literacy": "https://www.siyavula.com/read/za/mathematical-literacy/grade-12",
+    "Mathematical Literacy": "https://www.education.gov.za/LinkClick.aspx?fileticket=q8-SkGy43rw%3d&tabid=570&portalid=0&mid=1558#g12-mathlit",
   },
 };
 
