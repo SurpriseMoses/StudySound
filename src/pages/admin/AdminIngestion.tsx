@@ -1406,7 +1406,7 @@ function GradeSweepPanel() {
                 <Button size="sm" variant="outline" disabled={!unlocked || busy === `start-${g.grade}`} onClick={() => startGrade(g.grade)}>
                   {busy === `start-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 mr-1" />} 1. Start / kick
                 </Button>
-                <Button size="sm" disabled={!unlocked || s.parsing === 0 || busy === `submit-${g.grade}`} onClick={() => submitBatch(g.grade)}>
+                <Button size="sm" disabled={busy === `submit-${g.grade}`} onClick={() => submitBatch(g.grade)}>
                   {busy === `submit-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />} 2. Submit batch ({s.parsing})
                 </Button>
               </div>
