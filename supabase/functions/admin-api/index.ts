@@ -140,94 +140,41 @@ Deno.serve(async (req) => {
       const { data: bm, error: bmErr } = await admin.rpc("admin_business_metrics", { _days: days });
       if (bmErr) throw bmErr;
 
-      // 2) characters processed — split user-driven vs system-seeded
-      //    Treat audio_assets/translation_assets created in window as the
-      //    "generation" events; user-driven if a corresponding access row
-      //    exists in same window, else system-seeded.
-      const [audioGen, transGen, audioAccess, transAccess] = await Promise.all([
-        admin.from("audio_assets").select("char_count, created_at").gte("created_at", since),
-        admin.from("translation_assets").select("char_count, created_at").gte("created_at", since),
-        admin.from("user_chunk_access").select("id, document_id, chunk_index, created_at").eq("asset_type", "audio").gte("created_at", since),
-        admin.from("user_translation_access").select("id, document_id, chunk_index, target_language, created_at").gte("created_at", since),
-      ]);
+      // 2) aggregated investor metrics — server-side to avoid statement timeouts
+      const { data: im, error: imErr } = await admin.rpc("admin_investor_metrics", { _days: days });
+      if (imErr) throw imErr;
+      const m: any = im ?? {};
 
-      const audioGenChars = (audioGen.data ?? []).reduce((s, r: any) => s + (r.char_count ?? 0), 0);
-      const transGenChars = (transGen.data ?? []).reduce((s, r: any) => s + (r.char_count ?? 0), 0);
+      const audioGenChars = Number(m.audio_gen_chars ?? 0);
+      const transGenChars = Number(m.trans_gen_chars ?? 0);
+      const audioChunksLifetime = Number(m.audio_lifetime_chunks ?? 0);
+      const audioCharsLifetime = Number(m.audio_lifetime_chars ?? 0);
+      const audioHoursLifetime = Number(m.audio_lifetime_seconds ?? 0) / 3600;
+      const docsCount = Number(m.docs_count ?? 0);
+      const transLifetime = Number(m.trans_lifetime ?? 0);
 
-      // 3) plan distribution → MRR proxy
-      const { data: planRows } = await admin.from("profiles").select("plan");
-      const planCounts: Record<string, number> = {};
-      (planRows ?? []).forEach((r: any) => {
-        const p = (r.plan ?? "free") as string;
-        planCounts[p] = (planCounts[p] ?? 0) + 1;
-      });
-      // configurable plan prices (ZAR/month)
+      const planCounts: Record<string, number> = (m.plan_counts ?? {}) as Record<string, number>;
       const PLAN_PRICE = { free: 0, essential: 49, premium: 149 } as Record<string, number>;
       const mrr = Object.entries(planCounts).reduce(
-        (s, [plan, n]) => s + (PLAN_PRICE[plan] ?? 0) * n, 0,
+        (s, [plan, n]) => s + (PLAN_PRICE[plan] ?? 0) * Number(n), 0,
       );
 
-      // 4) content asset totals (lifetime — investor signal)
-      const [{ count: docsCount }, { data: audioLifetime }, { count: transLifetime }] = await Promise.all([
-        admin.from("documents").select("id", { count: "exact", head: true }),
-        admin.from("audio_assets").select("duration_seconds, char_count"),
-        admin.from("translation_assets").select("id", { count: "exact", head: true }),
-      ]);
-      const audioHoursLifetime =
-        (audioLifetime ?? []).reduce((s: number, r: any) => s + (Number(r.duration_seconds) ?? 0), 0) / 3600;
-      const audioCharsLifetime =
-        (audioLifetime ?? []).reduce((s: number, r: any) => s + (r.char_count ?? 0), 0);
-      const audioChunksLifetime = (audioLifetime ?? []).length;
-
-      // 5) growth — daily credit spend last N days (reuse timeseries rpc)
-      const { data: series } = await admin.rpc("admin_credit_timeseries", { _days: days });
-
-      // 6) signups daily (last N)
-      const { data: profilesRecent } = await admin
-        .from("profiles").select("created_at").gte("created_at", since);
-      const signupsByDay: Record<string, number> = {};
-      (profilesRecent ?? []).forEach((r: any) => {
-        const d = (r.created_at ?? "").slice(0, 10);
-        if (d) signupsByDay[d] = (signupsByDay[d] ?? 0) + 1;
-      });
-
-      // 7) active 30d (distinct users with any access in window)
-      const [{ data: a1 }, { data: a2 }, { data: a3 }] = await Promise.all([
-        admin.from("user_chunk_access").select("user_id").gte("created_at", since),
-        admin.from("user_translation_access").select("user_id").gte("created_at", since),
-        admin.from("scene_unlocks").select("user_id").gte("created_at", since),
-      ]);
-      const activeSet = new Set<string>();
-      [a1, a2, a3].forEach((arr) => (arr ?? []).forEach((r: any) => r.user_id && activeSet.add(r.user_id)));
-      const active30d = activeSet.size;
-
-      // 7b) active 7d
-      const [{ data: b1 }, { data: b2 }] = await Promise.all([
-        admin.from("user_chunk_access").select("user_id").gte("created_at", since7),
-        admin.from("user_translation_access").select("user_id").gte("created_at", since7),
-      ]);
-      const active7Set = new Set<string>();
-      [b1, b2].forEach((arr) => (arr ?? []).forEach((r: any) => r.user_id && activeSet.add(r.user_id)));
-      [b1, b2].forEach((arr) => (arr ?? []).forEach((r: any) => r.user_id && active7Set.add(r.user_id)));
-
-      // 8) seeded / system content cost = chars generated by seed workers
-      //    (no corresponding user access in window) — approximate by:
-      //    system_chars = generated_chars - user_unlocked_chars
-      const userAudioUnlocks = (audioAccess.data ?? []).length;
-      const userTransUnlocks = (transAccess.data ?? []).length;
-
-      // assume avg chunk size to approximate user-served chars
+      const userAudioUnlocks = Number(m.user_audio_unlocks ?? 0);
+      const userTransUnlocks = Number(m.user_trans_unlocks ?? 0);
       const avgAudioChunkChars = audioChunksLifetime > 0 ? audioCharsLifetime / audioChunksLifetime : 1800;
       const userAudioChars = userAudioUnlocks * avgAudioChunkChars;
       const userTransChars = userTransUnlocks * 1800;
-
       const systemAudioChars = Math.max(0, audioGenChars - userAudioChars);
       const systemTransChars = Math.max(0, transGenChars - userTransChars);
+
+      const { data: series } = await admin.rpc("admin_credit_timeseries", { _days: days });
+
+      const signupsByDay: Record<string, number> = (m.signups_by_day ?? {}) as Record<string, number>;
 
       return json({
         success: true,
         days,
-        metrics: bm,                 // base
+        metrics: bm,
         chars: {
           audio_generated: audioGenChars,
           translation_generated: transGenChars,
@@ -240,22 +187,23 @@ Deno.serve(async (req) => {
         mrr_zar: mrr,
         plan_counts: planCounts,
         content_assets: {
-          documents: docsCount ?? 0,
+          documents: docsCount,
           audio_chunks_lifetime: audioChunksLifetime,
           audio_hours_lifetime: audioHoursLifetime,
           audio_chars_lifetime: audioCharsLifetime,
-          translations_lifetime: transLifetime ?? 0,
+          translations_lifetime: transLifetime,
         },
         growth: {
           credit_series: series ?? [],
           signups_by_day: Object.entries(signupsByDay)
             .sort()
-            .map(([day, count]) => ({ day, count })),
-          active_30d: active30d,
-          active_7d: active7Set.size,
+            .map(([day, count]) => ({ day, count: Number(count) })),
+          active_30d: Number(m.active_30d ?? 0),
+          active_7d: Number(m.active_7d ?? 0),
         },
       });
     }
+
 
     // -------------------- WRITE ACTIONS --------------------
 

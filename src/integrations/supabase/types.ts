@@ -2142,6 +2142,7 @@ export type Database = {
           visual_credits: number
         }[]
       }
+      admin_investor_metrics: { Args: { _days: number }; Returns: Json }
       admin_top_documents: {
         Args: { _limit?: number }
         Returns: {
