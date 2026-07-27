@@ -17,7 +17,7 @@ const SIYAVULA_URLS: Record<string, Record<string, string>> = {
     "Mathematics": "https://www.siyavula.com/read/za/mathematics/grade-10",
     "Physical Sciences": "https://www.siyavula.com/read/za/physical-sciences/grade-10",
     "Life Sciences": "https://www.siyavula.com/read/za/life-sciences/grade-10",
-    "Mathematical Literacy": "https://www.siyavula.com/read/za/mathematical-literacy/grade-10",
+    "Mathematical Literacy": "https://www.education.gov.za/LinkClick.aspx?fileticket=q8-SkGy43rw%3d&tabid=570&portalid=0&mid=1558#g10-mathlit",
   },
   "11": {
     "Mathematics": "https://www.siyavula.com/read/za/mathematics/grade-11",
