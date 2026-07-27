@@ -117,6 +117,87 @@ async function handleSuccess(batch: any, inlined: any[]) {
   }).eq("id", batch.id);
 }
 
+// Re-clean flow: batch was submitted from batch-reclean-submit. Each item
+// maps to a shadow ingestion_job whose document_id points at an EXISTING
+// published document. On success we overwrite that document's clean_text,
+// bump cleaning_version (triggers cleanup elsewhere), purge stale chunks
+// and cached assets, then kick backfill-pipeline to re-chunk + re-embed.
+async function handleRecleanSuccess(batch: any, inlined: any[]) {
+  const { data: items } = await admin.from("ingestion_batch_items")
+    .select("*").eq("batch_job_id", batch.id).order("position");
+
+  let ok = 0, failed = 0, review = 0, totalChars = 0;
+
+  for (const item of items ?? []) {
+    const { data: shadow } = await admin.from("ingestion_jobs")
+      .select("id,document_id").eq("id", item.ingestion_job_id).maybeSingle();
+    const docId = shadow?.document_id;
+    const res = inlined[item.position];
+    if (!res || res.error || !docId) {
+      await markItem(item.id, item.ingestion_job_id, "failed", res?.error?.message ?? "no result / no document");
+      failed++; continue;
+    }
+    try {
+      const raw = extractText(res.response);
+      const parsed = extractJson(raw);
+      const cleanText = parsed?.clean_text ? String(parsed.clean_text) : "";
+      if (cleanText.length < 500) {
+        await markItem(item.id, item.ingestion_job_id, "review_required", "empty or too-short clean_text");
+        review++; continue;
+      }
+
+      // Load current doc to bump cleaning_version + refresh char_count.
+      const { data: doc } = await admin.from("documents")
+        .select("cleaning_version").eq("id", docId).maybeSingle();
+
+      await admin.from("documents").update({
+        clean_text: cleanText,
+        char_count: cleanText.length,
+        cleaning_version: (doc?.cleaning_version ?? 1) + 1,
+        embeddings_status: "pending",
+        updated_at: new Date().toISOString(),
+      }).eq("id", docId);
+
+      // Purge stale caches so users don't see mixed old/new content.
+      await admin.from("document_chunks").delete().eq("document_id", docId);
+      await admin.from("audio_assets").delete().eq("document_id", docId);
+      await admin.from("translation_assets").delete().eq("document_id", docId);
+
+      totalChars += cleanText.length;
+
+      await admin.from("ingestion_jobs").update({
+        state: "completed",
+        batch_stage: null,
+        finished_at: new Date().toISOString(),
+      }).eq("id", item.ingestion_job_id);
+
+      await admin.from("ingestion_stage_logs").insert({
+        job_id: item.ingestion_job_id, stage: "cleaning", status: "ok",
+        message: `reclean -> ${cleanText.length} chars, chunks/audio/translations purged`,
+      });
+
+      await admin.from("ingestion_batch_items").update({ status: "ok", error: null }).eq("id", item.id);
+
+      // Kick backfill to re-chunk + re-embed. Skip PDF path — we have text.
+      fetch(`${SUPABASE_URL}/functions/v1/backfill-pipeline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: ANON },
+        body: JSON.stringify({ document_id: docId, reclean: false, skip_pdf: true, max_embed_batches: 6 }),
+      }).catch(() => {});
+      ok++;
+    } catch (e: any) {
+      await markItem(item.id, item.ingestion_job_id, "failed", String(e?.message ?? e));
+      failed++;
+    }
+  }
+
+  await admin.from("ingestion_batch_jobs").update({
+    state: "succeeded",
+    finished_at: new Date().toISOString(),
+    report: { ok, failed, review_required: review, total_chars: totalChars, items_processed: (items ?? []).length, stage: "reclean" },
+  }).eq("id", batch.id);
+}
+
 async function markItem(itemId: string, jobId: string, status: string, error: string | null) {
   await admin.from("ingestion_batch_items").update({ status, error }).eq("id", itemId);
   if (status !== "ok") {
