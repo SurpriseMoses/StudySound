@@ -1426,7 +1426,8 @@ function GradeSweepPanel() {
 
     try {
       const ACTIVE = ["downloading","parsing","structuring","tagging","cleaning","chunking","embedding_en","publishing"];
-      const STALE_MS = 45_000; // skip jobs another worker touched within this window
+      const STALE_MS = 8_000; // nudge unless another worker touched it in the last 8s
+      const lastState = new Map<string, string>();
       for (let pass = 0; pass < WORKER_PASSES; pass++) {
         const { data: jobs } = await supabase
           .from("ingestion_jobs")
@@ -1435,31 +1436,44 @@ function GradeSweepPanel() {
           .in("state", ACTIVE as any)
           .limit(50);
         if (!jobs || jobs.length === 0) break;
-        // Don't re-invoke jobs that are actively progressing — that can restart
-        // the current stage from scratch. Only nudge jobs that look stalled.
         const now = Date.now();
-        const stalled = jobs.filter((j: any) => {
+        // Only skip a job if (a) it was updated very recently AND (b) its state
+        // changed since we last saw it — that means it's genuinely progressing.
+        const toNudge = jobs.filter((j: any) => {
           const ts = j.updated_at ? new Date(j.updated_at).getTime() : 0;
-          return now - ts > STALE_MS;
+          const recent = now - ts < STALE_MS;
+          const prev = lastState.get(j.id);
+          const advanced = prev && prev !== j.state;
+          lastState.set(j.id, j.state);
+          return !(recent && advanced);
         });
-        if (stalled.length === 0) {
-          toast({ title: `Grade ${grade} pass ${pass + 1}`, description: `${jobs.length} jobs already progressing — waiting` });
-          await new Promise((r) => setTimeout(r, 5000));
+        if (toNudge.length === 0) {
+          toast({ title: `Grade ${grade} pass ${pass + 1}`, description: `${jobs.length} jobs progressing on their own — waiting` });
+          await new Promise((r) => setTimeout(r, 3000));
           await load();
           continue;
         }
-        toast({ title: `Grade ${grade} pass ${pass + 1}`, description: `nudging ${stalled.length}/${jobs.length} stalled jobs` });
-        await runPool(stalled, (j: any) =>
+        toast({ title: `Grade ${grade} pass ${pass + 1}`, description: `nudging ${toNudge.length}/${jobs.length} jobs in parallel` });
+        await runPool(toNudge, (j: any) =>
           supabase.functions.invoke("ingestion-worker", { body: { job_id: j.id } })
         );
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, 2000));
         await load();
       }
 
+      // Scope embedding drain to documents belonging to this grade's jobs.
+      const { data: gradeJobs } = await supabase
+        .from("ingestion_jobs")
+        .select("document_id")
+        .eq("grade", grade)
+        .not("document_id", "is", null);
+      const gradeDocIds = Array.from(new Set((gradeJobs ?? []).map((j: any) => j.document_id).filter(Boolean)));
       for (let pass = 0; pass < BACKFILL_PASSES; pass++) {
+        if (gradeDocIds.length === 0) break;
         const { data: pending } = await supabase
           .from("documents")
           .select("id")
+          .in("id", gradeDocIds)
           .neq("embeddings_status", "done")
           .limit(20);
         if (!pending || pending.length === 0) break;
@@ -1471,6 +1485,7 @@ function GradeSweepPanel() {
         );
         await new Promise((r) => setTimeout(r, 1000));
       }
+
 
       toast({ title: `Grade ${grade}: fast finish complete` });
     } catch (e: any) {
