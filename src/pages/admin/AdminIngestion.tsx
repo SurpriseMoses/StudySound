@@ -1478,6 +1478,9 @@ function GradeSweepPanel() {
                 <Button size="sm" disabled={busy === `submit-${g.grade}`} onClick={() => submitBatch(g.grade)}>
                   {busy === `submit-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />} 2. Submit batch ({s.parsing})
                 </Button>
+                <Button size="sm" variant="secondary" disabled={busy === `fast-${g.grade}`} onClick={() => fastFinish(g.grade)}>
+                  {busy === `fast-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 mr-1" />} ⚡ Fast finish
+                </Button>
               </div>
             </div>
           );
