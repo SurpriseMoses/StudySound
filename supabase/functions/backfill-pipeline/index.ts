@@ -514,11 +514,13 @@ async function embedBatch(inputs: string[]): Promise<number[][]> {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${LOVABLE_API_KEY}` },
     body: JSON.stringify({ model: EMBED_MODEL, input: inputs }),
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`embedding failed ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const j = await res.json();
   return (j.data ?? []).map((d: any) => d.embedding as number[]);
 }
+
 
 async function sha256(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
