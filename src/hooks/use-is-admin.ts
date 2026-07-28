@@ -12,20 +12,36 @@ export function useIsAdmin() {
     if (authLoading) return;
     if (!user) { setIsAdmin(false); setLoading(false); return; }
     setLoading(true);
-    supabase
-      .from("user_roles")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("role", "admin")
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) {
-          setIsAdmin(!!data);
-          setLoading(false);
+
+    const check = async () => {
+      // Retry a few times so a transient backend hiccup doesn't hide the admin UI forever.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const { data, error } = await supabase
+            .from("user_roles")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("role", "admin")
+            .maybeSingle();
+          if (cancelled) return;
+          if (!error) {
+            setIsAdmin(!!data);
+            setLoading(false);
+            return;
+          }
+        } catch {
+          // network failure — fall through to retry
         }
-      });
+        if (cancelled) return;
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      }
+      if (!cancelled) setLoading(false);
+    };
+
+    check();
     return () => { cancelled = true; };
   }, [user, authLoading]);
+
 
   return { isAdmin, loading };
 }
