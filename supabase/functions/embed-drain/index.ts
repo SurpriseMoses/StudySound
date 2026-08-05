@@ -2,7 +2,7 @@
 // using parallel gateway calls + parallel row updates. Designed to be invoked
 // many times concurrently (one or more per document).
 //
-// POST { document_id?: string, grade?: string, budget_ms?: number }
+// POST { document_id?: string, grade?: string, budget_ms?: number, auto_next_grade?: boolean }
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
   const startedAt = Date.now();
   try {
     if (!LOVABLE_API_KEY) return j({ error: "no LOVABLE_API_KEY" }, 500);
-    let body: { document_id?: string; grade?: string; budget_ms?: number } = {};
+    let body: { document_id?: string; grade?: string; budget_ms?: number; auto_next_grade?: boolean } = {};
     try { body = await req.json(); } catch { /* empty ok */ }
     const budget = Math.min(Math.max(Number(body.budget_ms ?? 100_000) || 100_000, 10_000), 110_000);
 
@@ -93,7 +93,27 @@ Deno.serve(async (req) => {
       }
     }
 
-    return j({ ok: true, embedded, published, errors: errors.slice(0, 5), ms: Date.now() - startedAt });
+    let queuedGrade: string | null = null;
+    if (body.grade && body.auto_next_grade !== false) {
+      const remaining = await countMissingEmbeddings(docIds);
+
+      // Keep a grade draining across fresh function budgets. Once Grade 10 is
+      // fully embedded, immediately hand the queue to Grade 11. The call is
+      // kept alive by EdgeRuntime without making this response wait for it.
+      if (remaining > 0 && embedded > 0) queuedGrade = body.grade;
+      else if (remaining === 0 && body.grade === "10") queuedGrade = "11";
+
+      if (queuedGrade) queueGradeDrain(queuedGrade, budget);
+    }
+
+    return j({
+      ok: true,
+      embedded,
+      published,
+      queued_grade: queuedGrade,
+      errors: errors.slice(0, 5),
+      ms: Date.now() - startedAt,
+    });
   } catch (e: any) {
     return j({ error: String(e?.message ?? e) }, 500);
   }
@@ -109,6 +129,38 @@ async function embedBatch(inputs: string[]): Promise<number[][]> {
   if (!res.ok) throw new Error(`embedding failed ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const jn = await res.json();
   return (jn.data ?? []).map((d: any) => d.embedding as number[]);
+}
+
+async function countMissingEmbeddings(docIds: string[]): Promise<number> {
+  let remaining = 0;
+  for (const docId of docIds) {
+    const { count, error } = await admin.from("document_chunks")
+      .select("id", { count: "exact", head: true })
+      .eq("document_id", docId)
+      .is("embedding", null);
+    if (error) throw new Error(`failed to check embedding queue: ${error.message}`);
+    remaining += count ?? 0;
+  }
+  return remaining;
+}
+
+function queueGradeDrain(grade: string, budgetMs: number) {
+  const request = fetch(`${SUPABASE_URL}/functions/v1/embed-drain`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SERVICE_ROLE,
+      Authorization: `Bearer ${SERVICE_ROLE}`,
+    },
+    body: JSON.stringify({ grade, budget_ms: budgetMs, auto_next_grade: true }),
+  }).then(async (res) => {
+    if (!res.ok) throw new Error(`queued Grade ${grade} drain failed: ${res.status} ${(await res.text()).slice(0, 160)}`);
+  }).catch((error) => console.error(error));
+
+  const runtime = (globalThis as typeof globalThis & {
+    EdgeRuntime?: { waitUntil(promise: Promise<unknown>): void };
+  }).EdgeRuntime;
+  if (runtime) runtime.waitUntil(request);
 }
 
 function j(b: unknown, s = 200) {
