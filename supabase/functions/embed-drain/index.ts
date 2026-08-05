@@ -10,9 +10,12 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
 const EMBED_MODEL = "openai/text-embedding-3-small";
-const BATCH = 32;
-const PARALLEL = 6; // gateway calls in flight
-const UPDATE_PARALLEL = 12;
+// Keep gateway throughput high without overwhelming Postgres with concurrent
+// vector writes. The previous 6 x 12 fan-out caused statement timeouts once
+// several documents were drained at the same time.
+const BATCH = 24;
+const PARALLEL = 3;
+const UPDATE_PARALLEL = 4;
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
@@ -56,9 +59,10 @@ Deno.serve(async (req) => {
             while (cursor < queue.length) {
               const item = queue[cursor++];
               if (!item?.v) continue;
-              await admin.from("document_chunks")
+              const { error: updateError } = await admin.from("document_chunks")
                 .update({ embedding: item.v as any, embedding_model: EMBED_MODEL })
                 .eq("id", item.id);
+              if (updateError) throw new Error(updateError.message);
             }
           }));
           return g.length;
