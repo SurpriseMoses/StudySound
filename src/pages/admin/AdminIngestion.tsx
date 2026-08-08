@@ -1355,27 +1355,44 @@ function GradeSweepPanel() {
   }, []);
 
   const startGrade = async (grade: string) => {
-    setBusy(`start-${grade}`);
+    const key = `start-${grade}`;
+    beginAction(key);
     const { data, error } = await supabase.functions.invoke("run-grade-ingestion", { body: { grade } });
-    setBusy(null);
+    const cancelled = isCancelled(key);
+    endAction(key);
+    if (cancelled) return void load();
     if (error) toast({ title: "Failed to start", description: error.message, variant: "destructive" });
     else toast({ title: `Grade ${grade} queued`, description: `${data?.created ?? 0} new, ${data?.existing ?? 0} existing` });
     load();
   };
 
   const submitBatch = async (grade: string) => {
-    setBusy(`submit-${grade}`);
+    const key = `submit-${grade}`;
+    beginAction(key);
     const { data, error } = await supabase.functions.invoke("batch-ingestion-submit", { body: { grade } });
-    setBusy(null);
+    const cancelled = isCancelled(key);
+    endAction(key);
+    if (cancelled) {
+      // Batch already left for Gemini — mark it cancelled so the poller ignores it.
+      if ((data as any)?.batch_id) {
+        await supabase.from("ingestion_batch_jobs")
+          .update({ state: "cancelled", last_error: "Cancelled by admin" })
+          .eq("id", (data as any).batch_id);
+      }
+      return void load();
+    }
     if (error) toast({ title: "Submit failed", description: error.message, variant: "destructive" });
     else toast({ title: `Batch submitted for Grade ${grade}`, description: `${data?.item_count ?? 0} books` });
     load();
   };
 
   const pollNow = async () => {
-    setBusy("poll");
+    const key = "poll";
+    beginAction(key);
     const { data, error } = await supabase.functions.invoke("batch-ingestion-poll", { body: {} });
-    setBusy(null);
+    const cancelled = isCancelled(key);
+    endAction(key);
+    if (cancelled) return void load();
     if (error) toast({ title: "Poll failed", description: error.message, variant: "destructive" });
     else toast({ title: `Polled ${data?.polled ?? 0} batches` });
     load();
@@ -1403,13 +1420,24 @@ function GradeSweepPanel() {
       `• Rough cost: ~$0.02–0.05 per book\n\nContinue?`
     )) return;
 
-    setBusy(`reclean-${grade}`);
+    const key = `reclean-${grade}`;
+    beginAction(key);
     const { data, error } = await supabase.functions.invoke("batch-reclean-submit", { body: { grade } });
-    setBusy(null);
+    const cancelled = isCancelled(key);
+    endAction(key);
+    if (cancelled) {
+      if ((data as any)?.batch_id) {
+        await supabase.from("ingestion_batch_jobs")
+          .update({ state: "cancelled", last_error: "Cancelled by admin" })
+          .eq("id", (data as any).batch_id);
+      }
+      return void load();
+    }
     if (error) toast({ title: "Re-clean submit failed", description: error.message, variant: "destructive" });
     else toast({ title: `Re-clean batch submitted for Grade ${grade}`, description: `${data?.item_count ?? 0} book(s) queued` });
     load();
   };
+
 
   // Fast finish: fan out ingestion-worker (concurrency 5) + drain embeddings via backfill.
   const fastFinish = async (grade: string) => {
