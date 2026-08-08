@@ -1311,6 +1311,19 @@ function GradeSweepPanel() {
   const [batches, setBatches] = useState<BatchRow[]>([]);
   const [jobsByGrade, setJobsByGrade] = useState<Record<string, { total: number; parsing: number; chunking_plus: number; completed: number }>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  // Pressing a running action again cancels it.
+  const cancelRef = useRef<Set<string>>(new Set());
+  const isCancelled = (key: string) => cancelRef.current.has(key);
+  const beginAction = (key: string) => { cancelRef.current.delete(key); setBusy(key); };
+  const endAction = (key: string) => { cancelRef.current.delete(key); setBusy((b) => (b === key ? null : b)); };
+  const cancelAction = (key: string) => {
+    cancelRef.current.add(key);
+    setBusy(null);
+    toast({ title: "Cancelled", description: "Action stopped — any request already sent will finish on the server." });
+  };
+  // Toggle helper: first press runs, second press cancels.
+  const toggle = (key: string, run: () => void) => () => (busy === key ? cancelAction(key) : run());
+
 
   const load = async () => {
     const { data: b } = await supabase
