@@ -1579,19 +1579,50 @@ function GradeSweepPanel() {
                 {latest?.last_error && <div className="text-destructive truncate" title={latest.last_error}>{latest.last_error}</div>}
               </div>
               <div className="flex flex-col gap-1">
-                <Button size="sm" variant="outline" disabled={!unlocked || busy === `start-${g.grade}`} onClick={() => startGrade(g.grade)}>
-                  {busy === `start-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 mr-1" />} 1. Start / kick
+                <Button
+                  size="sm"
+                  variant={busy === `start-${g.grade}` ? "destructive" : "outline"}
+                  disabled={!unlocked}
+                  title={busy === `start-${g.grade}` ? "Press again to stop" : undefined}
+                  onClick={toggle(`start-${g.grade}`, () => startGrade(g.grade))}
+                >
+                  {busy === `start-${g.grade}`
+                    ? <><Square className="w-3 h-3 mr-1" /> Stop</>
+                    : <><Play className="w-3 h-3 mr-1" /> 1. Start / kick</>}
                 </Button>
-                <Button size="sm" disabled={busy === `submit-${g.grade}`} onClick={() => submitBatch(g.grade)}>
-                  {busy === `submit-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />} 2. Submit batch ({s.parsing})
+                <Button
+                  size="sm"
+                  variant={busy === `submit-${g.grade}` ? "destructive" : "default"}
+                  title={busy === `submit-${g.grade}` ? "Press again to stop" : undefined}
+                  onClick={toggle(`submit-${g.grade}`, () => submitBatch(g.grade))}
+                >
+                  {busy === `submit-${g.grade}`
+                    ? <><Square className="w-3 h-3 mr-1" /> Stop</>
+                    : <><Sparkles className="w-3 h-3 mr-1" /> 2. Submit batch ({s.parsing})</>}
                 </Button>
-                <Button size="sm" variant="secondary" disabled={busy === `fast-${g.grade}`} onClick={() => fastFinish(g.grade)}>
-                  {busy === `fast-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 mr-1" />} ⚡ Fast finish
+                <Button
+                  size="sm"
+                  variant={busy === `fast-${g.grade}` ? "destructive" : "secondary"}
+                  title={busy === `fast-${g.grade}` ? "Press again to stop" : undefined}
+                  onClick={toggle(`fast-${g.grade}`, () => fastFinish(g.grade))}
+                >
+                  {busy === `fast-${g.grade}`
+                    ? <><Square className="w-3 h-3 mr-1" /> Stop fast finish</>
+                    : <><Play className="w-3 h-3 mr-1" /> ⚡ Fast finish</>}
                 </Button>
-                <Button size="sm" variant="ghost" className="border border-dashed" disabled={busy === `reclean-${g.grade}`} onClick={() => recleanBatch(g.grade)}>
-                  {busy === `reclean-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />} ♻️ Re-clean (Batch)
+                <Button
+                  size="sm"
+                  variant={busy === `reclean-${g.grade}` ? "destructive" : "ghost"}
+                  className={busy === `reclean-${g.grade}` ? "" : "border border-dashed"}
+                  title={busy === `reclean-${g.grade}` ? "Press again to stop" : undefined}
+                  onClick={toggle(`reclean-${g.grade}`, () => recleanBatch(g.grade))}
+                >
+                  {busy === `reclean-${g.grade}`
+                    ? <><Square className="w-3 h-3 mr-1" /> Stop</>
+                    : <><RefreshCw className="w-3 h-3 mr-1" /> ♻️ Re-clean (Batch)</>}
                 </Button>
               </div>
+
             </div>
           );
         })}
