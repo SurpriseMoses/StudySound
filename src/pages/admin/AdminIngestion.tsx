@@ -1551,9 +1551,10 @@ function GradeSweepPanel() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-base flex items-center gap-2"><Sparkles className="w-4 h-4" /> Grade Sweep (Gemini Batch)</CardTitle>
-        <Button size="sm" variant="outline" onClick={pollNow} disabled={busy === "poll"}>
-          {busy === "poll" ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />} Poll batches
+        <Button size="sm" variant={busy === "poll" ? "destructive" : "outline"} onClick={toggle("poll", pollNow)} title={busy === "poll" ? "Press again to stop" : undefined}>
+          {busy === "poll" ? <><Square className="w-3 h-3 mr-1" /> Stop</> : <><RefreshCw className="w-3 h-3 mr-1" /> Poll batches</>}
         </Button>
+
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {GRADES.map((g) => {
