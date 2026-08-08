@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Play, Plus, RefreshCw, ShieldCheck, ShieldOff, Download, TrendingUp, Sparkles } from "lucide-react";
+import { Loader2, Play, Plus, RefreshCw, ShieldCheck, ShieldOff, Download, TrendingUp, Sparkles, Square } from "lucide-react";
 
 type Source = {
   id: string;
@@ -1311,6 +1311,19 @@ function GradeSweepPanel() {
   const [batches, setBatches] = useState<BatchRow[]>([]);
   const [jobsByGrade, setJobsByGrade] = useState<Record<string, { total: number; parsing: number; chunking_plus: number; completed: number }>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  // Pressing a running action again cancels it.
+  const cancelRef = useRef<Set<string>>(new Set());
+  const isCancelled = (key: string) => cancelRef.current.has(key);
+  const beginAction = (key: string) => { cancelRef.current.delete(key); setBusy(key); };
+  const endAction = (key: string) => { cancelRef.current.delete(key); setBusy((b) => (b === key ? null : b)); };
+  const cancelAction = (key: string) => {
+    cancelRef.current.add(key);
+    setBusy(null);
+    toast({ title: "Cancelled", description: "Action stopped — any request already sent will finish on the server." });
+  };
+  // Toggle helper: first press runs, second press cancels.
+  const toggle = (key: string, run: () => void) => () => (busy === key ? cancelAction(key) : run());
+
 
   const load = async () => {
     const { data: b } = await supabase
@@ -1342,27 +1355,44 @@ function GradeSweepPanel() {
   }, []);
 
   const startGrade = async (grade: string) => {
-    setBusy(`start-${grade}`);
+    const key = `start-${grade}`;
+    beginAction(key);
     const { data, error } = await supabase.functions.invoke("run-grade-ingestion", { body: { grade } });
-    setBusy(null);
+    const cancelled = isCancelled(key);
+    endAction(key);
+    if (cancelled) return void load();
     if (error) toast({ title: "Failed to start", description: error.message, variant: "destructive" });
     else toast({ title: `Grade ${grade} queued`, description: `${data?.created ?? 0} new, ${data?.existing ?? 0} existing` });
     load();
   };
 
   const submitBatch = async (grade: string) => {
-    setBusy(`submit-${grade}`);
+    const key = `submit-${grade}`;
+    beginAction(key);
     const { data, error } = await supabase.functions.invoke("batch-ingestion-submit", { body: { grade } });
-    setBusy(null);
+    const cancelled = isCancelled(key);
+    endAction(key);
+    if (cancelled) {
+      // Batch already left for Gemini — mark it cancelled so the poller ignores it.
+      if ((data as any)?.batch_id) {
+        await supabase.from("ingestion_batch_jobs")
+          .update({ state: "cancelled", last_error: "Cancelled by admin" })
+          .eq("id", (data as any).batch_id);
+      }
+      return void load();
+    }
     if (error) toast({ title: "Submit failed", description: error.message, variant: "destructive" });
     else toast({ title: `Batch submitted for Grade ${grade}`, description: `${data?.item_count ?? 0} books` });
     load();
   };
 
   const pollNow = async () => {
-    setBusy("poll");
+    const key = "poll";
+    beginAction(key);
     const { data, error } = await supabase.functions.invoke("batch-ingestion-poll", { body: {} });
-    setBusy(null);
+    const cancelled = isCancelled(key);
+    endAction(key);
+    if (cancelled) return void load();
     if (error) toast({ title: "Poll failed", description: error.message, variant: "destructive" });
     else toast({ title: `Polled ${data?.polled ?? 0} batches` });
     load();
@@ -1390,13 +1420,24 @@ function GradeSweepPanel() {
       `• Rough cost: ~$0.02–0.05 per book\n\nContinue?`
     )) return;
 
-    setBusy(`reclean-${grade}`);
+    const key = `reclean-${grade}`;
+    beginAction(key);
     const { data, error } = await supabase.functions.invoke("batch-reclean-submit", { body: { grade } });
-    setBusy(null);
+    const cancelled = isCancelled(key);
+    endAction(key);
+    if (cancelled) {
+      if ((data as any)?.batch_id) {
+        await supabase.from("ingestion_batch_jobs")
+          .update({ state: "cancelled", last_error: "Cancelled by admin" })
+          .eq("id", (data as any).batch_id);
+      }
+      return void load();
+    }
     if (error) toast({ title: "Re-clean submit failed", description: error.message, variant: "destructive" });
     else toast({ title: `Re-clean batch submitted for Grade ${grade}`, description: `${data?.item_count ?? 0} book(s) queued` });
     load();
   };
+
 
   // Fast finish: fan out ingestion-worker (concurrency 5) + drain embeddings via backfill.
   const fastFinish = async (grade: string) => {
@@ -1411,11 +1452,13 @@ function GradeSweepPanel() {
       `• Translations & audio stay manual\n\nContinue?`
     )) return;
 
-    setBusy(`fast-${grade}`);
+    const key = `fast-${grade}`;
+    beginAction(key);
     const runPool = async <T,>(items: T[], fn: (x: T) => Promise<unknown>) => {
       const q = [...items];
       const workers = Array.from({ length: Math.min(CONCURRENCY, q.length) }, async () => {
         while (q.length) {
+          if (isCancelled(key)) return;
           const it = q.shift();
           if (!it) return;
           try { await fn(it); } catch (e) { console.warn("pool err", e); }
@@ -1429,6 +1472,7 @@ function GradeSweepPanel() {
       const STALE_MS = 8_000; // nudge unless another worker touched it in the last 8s
       const lastState = new Map<string, string>();
       for (let pass = 0; pass < WORKER_PASSES; pass++) {
+        if (isCancelled(key)) break;
         const { data: jobs } = await supabase
           .from("ingestion_jobs")
           .select("id,state,updated_at")
@@ -1469,6 +1513,7 @@ function GradeSweepPanel() {
         .not("document_id", "is", null);
       const gradeDocIds = Array.from(new Set((gradeJobs ?? []).map((j: any) => j.document_id).filter(Boolean)));
       for (let pass = 0; pass < BACKFILL_PASSES; pass++) {
+        if (isCancelled(key)) break;
         if (gradeDocIds.length === 0) break;
         const { data: pending } = await supabase
           .from("documents")
@@ -1487,14 +1532,16 @@ function GradeSweepPanel() {
       }
 
 
-      toast({ title: `Grade ${grade}: fast finish complete` });
+      if (isCancelled(key)) toast({ title: `Grade ${grade}: fast finish stopped` });
+      else toast({ title: `Grade ${grade}: fast finish complete` });
     } catch (e: any) {
       toast({ title: "Fast finish error", description: e?.message ?? String(e), variant: "destructive" });
     } finally {
-      setBusy(null);
+      endAction(key);
       load();
     }
   };
+
 
   // Grades are independently kickable — no sequential gate.
   const isUnlocked = (_grade: string) => true;
@@ -1504,9 +1551,10 @@ function GradeSweepPanel() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-base flex items-center gap-2"><Sparkles className="w-4 h-4" /> Grade Sweep (Gemini Batch)</CardTitle>
-        <Button size="sm" variant="outline" onClick={pollNow} disabled={busy === "poll"}>
-          {busy === "poll" ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />} Poll batches
+        <Button size="sm" variant={busy === "poll" ? "destructive" : "outline"} onClick={toggle("poll", pollNow)} title={busy === "poll" ? "Press again to stop" : undefined}>
+          {busy === "poll" ? <><Square className="w-3 h-3 mr-1" /> Stop</> : <><RefreshCw className="w-3 h-3 mr-1" /> Poll batches</>}
         </Button>
+
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {GRADES.map((g) => {
@@ -1531,19 +1579,50 @@ function GradeSweepPanel() {
                 {latest?.last_error && <div className="text-destructive truncate" title={latest.last_error}>{latest.last_error}</div>}
               </div>
               <div className="flex flex-col gap-1">
-                <Button size="sm" variant="outline" disabled={!unlocked || busy === `start-${g.grade}`} onClick={() => startGrade(g.grade)}>
-                  {busy === `start-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 mr-1" />} 1. Start / kick
+                <Button
+                  size="sm"
+                  variant={busy === `start-${g.grade}` ? "destructive" : "outline"}
+                  disabled={!unlocked}
+                  title={busy === `start-${g.grade}` ? "Press again to stop" : undefined}
+                  onClick={toggle(`start-${g.grade}`, () => startGrade(g.grade))}
+                >
+                  {busy === `start-${g.grade}`
+                    ? <><Square className="w-3 h-3 mr-1" /> Stop</>
+                    : <><Play className="w-3 h-3 mr-1" /> 1. Start / kick</>}
                 </Button>
-                <Button size="sm" disabled={busy === `submit-${g.grade}`} onClick={() => submitBatch(g.grade)}>
-                  {busy === `submit-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />} 2. Submit batch ({s.parsing})
+                <Button
+                  size="sm"
+                  variant={busy === `submit-${g.grade}` ? "destructive" : "default"}
+                  title={busy === `submit-${g.grade}` ? "Press again to stop" : undefined}
+                  onClick={toggle(`submit-${g.grade}`, () => submitBatch(g.grade))}
+                >
+                  {busy === `submit-${g.grade}`
+                    ? <><Square className="w-3 h-3 mr-1" /> Stop</>
+                    : <><Sparkles className="w-3 h-3 mr-1" /> 2. Submit batch ({s.parsing})</>}
                 </Button>
-                <Button size="sm" variant="secondary" disabled={busy === `fast-${g.grade}`} onClick={() => fastFinish(g.grade)}>
-                  {busy === `fast-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 mr-1" />} ⚡ Fast finish
+                <Button
+                  size="sm"
+                  variant={busy === `fast-${g.grade}` ? "destructive" : "secondary"}
+                  title={busy === `fast-${g.grade}` ? "Press again to stop" : undefined}
+                  onClick={toggle(`fast-${g.grade}`, () => fastFinish(g.grade))}
+                >
+                  {busy === `fast-${g.grade}`
+                    ? <><Square className="w-3 h-3 mr-1" /> Stop fast finish</>
+                    : <><Play className="w-3 h-3 mr-1" /> ⚡ Fast finish</>}
                 </Button>
-                <Button size="sm" variant="ghost" className="border border-dashed" disabled={busy === `reclean-${g.grade}`} onClick={() => recleanBatch(g.grade)}>
-                  {busy === `reclean-${g.grade}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />} ♻️ Re-clean (Batch)
+                <Button
+                  size="sm"
+                  variant={busy === `reclean-${g.grade}` ? "destructive" : "ghost"}
+                  className={busy === `reclean-${g.grade}` ? "" : "border border-dashed"}
+                  title={busy === `reclean-${g.grade}` ? "Press again to stop" : undefined}
+                  onClick={toggle(`reclean-${g.grade}`, () => recleanBatch(g.grade))}
+                >
+                  {busy === `reclean-${g.grade}`
+                    ? <><Square className="w-3 h-3 mr-1" /> Stop</>
+                    : <><RefreshCw className="w-3 h-3 mr-1" /> ♻️ Re-clean (Batch)</>}
                 </Button>
               </div>
+
             </div>
           );
         })}
