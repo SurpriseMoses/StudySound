@@ -2143,6 +2143,7 @@ export type Database = {
         }[]
       }
       admin_investor_metrics: { Args: { _days: number }; Returns: Json }
+      admin_pipeline_counts: { Args: { _ids: string[] }; Returns: Json }
       admin_top_documents: {
         Args: { _limit?: number }
         Returns: {
