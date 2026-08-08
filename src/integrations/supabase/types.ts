@@ -2209,6 +2209,10 @@ export type Database = {
           title: string
         }[]
       }
+      set_chunk_embeddings: {
+        Args: { _ids: string[]; _model: string; _vecs: string[] }
+        Returns: number
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
