@@ -226,51 +226,43 @@ Deno.serve(async (req) => {
 
       const ids = docList.map((d) => d.id);
 
-      // Audio counts (cached chunks per doc)
-      const { data: audioRows } = await admin
-        .from("audio_assets").select("document_id").in("document_id", ids);
-      const audioCount = new Map<string, number>();
-      (audioRows ?? []).forEach((r: any) =>
-        audioCount.set(r.document_id, (audioCount.get(r.document_id) ?? 0) + 1));
+      // Aggregate counts server-side (avoids fetching every asset row => statement timeout)
+      const { data: counts, error: countsErr } = await admin.rpc("admin_pipeline_counts", { _ids: ids });
+      if (countsErr) throw countsErr;
+      const c: any = counts ?? {};
 
-      // Translation counts per (doc, language)
-      const { data: transRows } = await admin
-        .from("translation_assets").select("document_id, target_language").in("document_id", ids);
-      const transByDoc = new Map<string, Record<string, number>>();
-      (transRows ?? []).forEach((r: any) => {
-        const m = transByDoc.get(r.document_id) ?? {};
-        m[r.target_language] = (m[r.target_language] ?? 0) + 1;
-        transByDoc.set(r.document_id, m);
-      });
+      const audioCount = new Map<string, number>(
+        Object.entries((c.audio ?? {}) as Record<string, number>).map(([k, v]) => [k, Number(v)]),
+      );
 
-      // Audio queue counts per doc
-      const { data: audioQueue } = await admin
-        .from("seed_queue").select("document_id, status").in("document_id", ids);
+      const transByDoc = new Map<string, Record<string, number>>(
+        Object.entries((c.translations ?? {}) as Record<string, Record<string, number>>),
+      );
+
       const audioQueueByDoc = new Map<string, { pending: number; in_progress: number; failed: number; done: number }>();
-      (audioQueue ?? []).forEach((r: any) => {
-        const m = audioQueueByDoc.get(r.document_id) ?? { pending: 0, in_progress: 0, failed: 0, done: 0 };
-        if (r.status === "pending") m.pending++;
-        else if (r.status === "in_progress") m.in_progress++;
-        else if (r.status === "failed") m.failed++;
-        else if (r.status === "completed" || r.status === "done") m.done++;
-        audioQueueByDoc.set(r.document_id, m);
-      });
+      for (const [docId, statuses] of Object.entries((c.audio_queue ?? {}) as Record<string, Record<string, number>>)) {
+        audioQueueByDoc.set(docId, {
+          pending: Number(statuses.pending ?? 0),
+          in_progress: Number(statuses.in_progress ?? 0),
+          failed: Number(statuses.failed ?? 0),
+          done: Number(statuses.completed ?? 0) + Number(statuses.done ?? 0),
+        });
+      }
 
-      // Translation queue counts per (doc, language) — also derive "seeded done" count
-      const { data: transQueue } = await admin
-        .from("translation_seed_queue")
-        .select("document_id, target_language, status").in("document_id", ids);
       const transQueueByDoc = new Map<string, Record<string, { pending: number; in_progress: number; failed: number; seeded: number }>>();
-      (transQueue ?? []).forEach((r: any) => {
-        const m = transQueueByDoc.get(r.document_id) ?? {};
-        const lm = m[r.target_language] ?? { pending: 0, in_progress: 0, failed: 0, seeded: 0 };
-        if (r.status === "pending") lm.pending++;
-        else if (r.status === "in_progress" || r.status === "processing") lm.in_progress++;
-        else if (r.status === "failed") lm.failed++;
-        else if (r.status === "done" || r.status === "completed") lm.seeded++;
-        m[r.target_language] = lm;
-        transQueueByDoc.set(r.document_id, m);
-      });
+      for (const [docId, byLang] of Object.entries((c.translation_queue ?? {}) as Record<string, Record<string, Record<string, number>>>)) {
+        const m: Record<string, { pending: number; in_progress: number; failed: number; seeded: number }> = {};
+        for (const [lang, statuses] of Object.entries(byLang)) {
+          m[lang] = {
+            pending: Number(statuses.pending ?? 0),
+            in_progress: Number(statuses.in_progress ?? 0) + Number(statuses.processing ?? 0),
+            failed: Number(statuses.failed ?? 0),
+            seeded: Number(statuses.done ?? 0) + Number(statuses.completed ?? 0),
+          };
+        }
+        transQueueByDoc.set(docId, m);
+      }
+
 
       // Estimate total chunks from char_count (mirrors seeder TARGET=700)
       const estimateChunks = (chars: number) => Math.max(1, Math.round(chars / 700));
