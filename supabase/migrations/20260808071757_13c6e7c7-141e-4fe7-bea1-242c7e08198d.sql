@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS public.document_chunks_embedding_idx;
