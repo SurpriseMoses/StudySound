@@ -1452,11 +1452,13 @@ function GradeSweepPanel() {
       `• Translations & audio stay manual\n\nContinue?`
     )) return;
 
-    setBusy(`fast-${grade}`);
+    const key = `fast-${grade}`;
+    beginAction(key);
     const runPool = async <T,>(items: T[], fn: (x: T) => Promise<unknown>) => {
       const q = [...items];
       const workers = Array.from({ length: Math.min(CONCURRENCY, q.length) }, async () => {
         while (q.length) {
+          if (isCancelled(key)) return;
           const it = q.shift();
           if (!it) return;
           try { await fn(it); } catch (e) { console.warn("pool err", e); }
@@ -1470,6 +1472,7 @@ function GradeSweepPanel() {
       const STALE_MS = 8_000; // nudge unless another worker touched it in the last 8s
       const lastState = new Map<string, string>();
       for (let pass = 0; pass < WORKER_PASSES; pass++) {
+        if (isCancelled(key)) break;
         const { data: jobs } = await supabase
           .from("ingestion_jobs")
           .select("id,state,updated_at")
@@ -1510,6 +1513,7 @@ function GradeSweepPanel() {
         .not("document_id", "is", null);
       const gradeDocIds = Array.from(new Set((gradeJobs ?? []).map((j: any) => j.document_id).filter(Boolean)));
       for (let pass = 0; pass < BACKFILL_PASSES; pass++) {
+        if (isCancelled(key)) break;
         if (gradeDocIds.length === 0) break;
         const { data: pending } = await supabase
           .from("documents")
@@ -1528,14 +1532,16 @@ function GradeSweepPanel() {
       }
 
 
-      toast({ title: `Grade ${grade}: fast finish complete` });
+      if (isCancelled(key)) toast({ title: `Grade ${grade}: fast finish stopped` });
+      else toast({ title: `Grade ${grade}: fast finish complete` });
     } catch (e: any) {
       toast({ title: "Fast finish error", description: e?.message ?? String(e), variant: "destructive" });
     } finally {
-      setBusy(null);
+      endAction(key);
       load();
     }
   };
+
 
   // Grades are independently kickable — no sequential gate.
   const isUnlocked = (_grade: string) => true;
