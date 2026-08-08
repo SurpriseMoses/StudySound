@@ -53,20 +53,23 @@ Deno.serve(async (req) => {
 
         const results = await Promise.allSettled(groups.map(async (g) => {
           const vectors = await embedBatch(g.map((r) => (r.text ?? "").slice(0, 8000)));
-          const queue = g.map((r, i) => ({ id: r.id, v: vectors[i] }));
-          let cursor = 0;
-          await Promise.all(Array.from({ length: UPDATE_PARALLEL }, async () => {
-            while (cursor < queue.length) {
-              const item = queue[cursor++];
-              if (!item?.v) continue;
-              const { error: updateError } = await admin.from("document_chunks")
-                .update({ embedding: item.v as any, embedding_model: EMBED_MODEL })
-                .eq("id", item.id);
-              if (updateError) throw new Error(updateError.message);
-            }
-          }));
-          return g.length;
+          const ids: string[] = [];
+          const vecs: string[] = [];
+          g.forEach((r, i) => {
+            const v = vectors[i];
+            if (!v) return;
+            ids.push(r.id);
+            vecs.push(`[${v.join(",")}]`);
+          });
+          if (ids.length === 0) return 0;
+          // One statement per batch — avoids exhausting the connection pool.
+          const { error: rpcError } = await admin.rpc("set_chunk_embeddings", {
+            _ids: ids, _vecs: vecs, _model: EMBED_MODEL,
+          });
+          if (rpcError) throw new Error(rpcError.message);
+          return ids.length;
         }));
+
 
         let progressed = 0;
         for (const r of results) {
