@@ -17,6 +17,22 @@ interface Body {
   subject?: string;
   curriculum?: string;
   country?: string;
+  /** Optional caller-supplied key; derived from the request when omitted. */
+  idempotency_key?: string;
+}
+
+/** Stable key so retries of the same request reuse the in-flight job. */
+async function deriveIdempotencyKey(b: Body): Promise<string> {
+  const basis = [
+    b.source_id,
+    b.grade ?? "",
+    b.subject ?? "",
+    b.curriculum ?? "",
+    b.country ?? "",
+    b.input_url ?? b.input_upload_path ?? (b.input_raw_text ?? "").slice(0, 2000),
+  ].join("|");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(basis));
+  return Array.from(new Uint8Array(digest)).map((x) => x.toString(16).padStart(2, "0")).join("").slice(0, 40);
 }
 
 Deno.serve(async (req) => {
@@ -43,6 +59,24 @@ Deno.serve(async (req) => {
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+    const idempotencyKey = body.idempotency_key?.trim() || await deriveIdempotencyKey(body);
+
+    // Release scopes held by dead workers so retries aren't blocked forever.
+    await admin.rpc("reclaim_stale_ingestion_jobs", { _stale_minutes: 30 });
+
+    // Fast path: an active job already exists for this key → return it.
+    const { data: prior } = await admin
+      .from("ingestion_jobs")
+      .select("id, state")
+      .eq("idempotency_key", idempotencyKey)
+      .not("state", "in", "(completed,failed,cancelled)")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (prior?.id) {
+      return json({ job_id: prior.id, already_active: true, state: prior.state, idempotency_key: idempotencyKey });
+    }
+
     const { data: job, error } = await admin.from("ingestion_jobs").insert({
       source_id: body.source_id,
       input_url: body.input_url ?? null,
@@ -55,19 +89,25 @@ Deno.serve(async (req) => {
       country: body.country ?? null,
       created_by: user.id,
       state: "pending",
+      idempotency_key: idempotencyKey,
     }).select("id").single();
 
     if (error) {
-      // Duplicate active URL → return the existing active job instead of failing.
-      if (String(error.message || "").includes("uq_ingestion_jobs_active_url") && body.input_url) {
-        const { data: existing } = await admin
-          .from("ingestion_jobs")
-          .select("id, state")
-          .eq("input_url", body.input_url)
+      // Lost a race on one of the active-job unique indexes (idempotency key,
+      // grade+subject scope, or url) → return the winning job instead of failing.
+      const msg = String(error.message || "");
+      if (error.code === "23505" || msg.includes("uq_ingestion_jobs_active")) {
+        let q = admin.from("ingestion_jobs").select("id, state")
           .not("state", "in", "(completed,failed,cancelled)")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .order("created_at", { ascending: false }).limit(1);
+        if (msg.includes("scope") && body.grade && body.subject) {
+          q = q.eq("grade", body.grade).eq("subject", body.subject);
+        } else if (msg.includes("url") && body.input_url) {
+          q = q.eq("input_url", body.input_url);
+        } else {
+          q = q.eq("idempotency_key", idempotencyKey);
+        }
+        const { data: existing } = await q.maybeSingle();
         if (existing?.id) {
           return json({ job_id: existing.id, already_active: true, state: existing.state });
         }
