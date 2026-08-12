@@ -83,10 +83,14 @@ Deno.serve(async (req) => {
       for (const [subject, url] of Object.entries(grd)) plan.push({ subject, url });
     }
 
+    // Free up scopes blocked by dead workers before planning new jobs.
+    await admin.rpc("reclaim_stale_ingestion_jobs", { _stale_minutes: 30 });
+
     const created: string[] = [];
     const existing: string[] = [];
     const errors: { subject: string; error: string }[] = [];
     for (const item of plan) {
+      const idempotencyKey = `caps|ZA|g${grade}|${item.subject}`;
       const { data: existRow } = await admin.from("ingestion_jobs")
         .select("id,state")
         .eq("grade", grade).eq("subject", item.subject)
@@ -105,8 +109,24 @@ Deno.serve(async (req) => {
         title_hint: `${item.subject} — Grade ${grade}`,
         grade, subject: item.subject, curriculum: "CAPS", country: "ZA",
         created_by: user.id, state: "pending",
+        idempotency_key: idempotencyKey,
       }).select("id").maybeSingle();
-      if (error) { errors.push({ subject: item.subject, error: error.message }); continue; }
+      if (error) {
+        // Unique-index races (idempotency key / scope / active url) mean another
+        // kick already created this job — reuse it instead of piling up.
+        const msg = String(error.message ?? "");
+        if (error.code === "23505" || msg.includes("uq_ingestion_jobs_active")) {
+          const { data: dupe } = await admin.from("ingestion_jobs")
+            .select("id")
+            .eq("grade", grade).eq("subject", item.subject)
+            .not("state", "in", "(completed,failed,cancelled)")
+            .order("created_at", { ascending: false })
+            .limit(1).maybeSingle();
+          if (dupe?.id) { existing.push(dupe.id); continue; }
+        }
+        errors.push({ subject: item.subject, error: msg });
+        continue;
+      }
       if (newJob) created.push(newJob.id);
     }
 
