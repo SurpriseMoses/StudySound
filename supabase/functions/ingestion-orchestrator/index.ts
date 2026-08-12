@@ -17,6 +17,22 @@ interface Body {
   subject?: string;
   curriculum?: string;
   country?: string;
+  /** Optional caller-supplied key; derived from the request when omitted. */
+  idempotency_key?: string;
+}
+
+/** Stable key so retries of the same request reuse the in-flight job. */
+async function deriveIdempotencyKey(b: Body): Promise<string> {
+  const basis = [
+    b.source_id,
+    b.grade ?? "",
+    b.subject ?? "",
+    b.curriculum ?? "",
+    b.country ?? "",
+    b.input_url ?? b.input_upload_path ?? (b.input_raw_text ?? "").slice(0, 2000),
+  ].join("|");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(basis));
+  return Array.from(new Uint8Array(digest)).map((x) => x.toString(16).padStart(2, "0")).join("").slice(0, 40);
 }
 
 Deno.serve(async (req) => {
