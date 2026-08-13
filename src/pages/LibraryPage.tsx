@@ -3,8 +3,9 @@ import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Headphones, Brain, Image as ImageIcon, Wifi, WifiOff, FileText, Loader2,
-  Search, Play, ArrowRight, Plus, Languages,
+  Search, Play, ArrowRight, Plus, Languages, Download, GraduationCap,
 } from "lucide-react";
+
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -17,8 +18,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { subjects, getSubjectById } from "@/lib/subjects";
 import { CreditEstimator } from "@/components/CreditEstimator";
 import {
-  docMatchesSubject, categorizeDoc, CATEGORY_ORDER, type DocLite, type Category,
+  docMatchesSubject, categorizeDoc, CATEGORY_ORDER, isStudyGuide, type DocLite, type Category,
 } from "@/lib/subject-docs";
+
 
 type Lesson = {
   id: string;
@@ -92,10 +94,11 @@ export default function LibraryPage() {
       // Seeded library
       const { data: docs } = await supabase
         .from("documents")
-        .select("id, title, subject_type, doc_type, tags")
+        .select("id, title, subject_type, doc_type, tags, source_url")
         .eq("is_seeded", true)
         .order("created_at", { ascending: false })
         .limit(200);
+
 
       const docIds = (docs ?? []).map(d => d.id);
       // Which seeded docs already have audio/translation?
@@ -125,11 +128,13 @@ export default function LibraryPage() {
         subject_type: d.subject_type as string,
         doc_type: d.doc_type ?? null,
         tags: d.tags,
+        source_url: (d as any).source_url ?? null,
         has_audio: audioSet.has(d.id),
         has_translation: transSet.has(d.id),
         progress: docProgress.get(d.id) ?? 0,
         started: docProgress.has(d.id),
       }));
+
 
       setLessons(builtLessons);
       setSeeded(builtSeeded);
@@ -151,7 +156,9 @@ export default function LibraryPage() {
     return seeded.filter(d => activeSubjectIds.some(sid => docMatchesSubject(d, sid)));
   }, [seeded, activeSubjectIds]);
 
-  const seededVisible = filterBySearch(subjectFilteredSeeded);
+  const allVisible = filterBySearch(subjectFilteredSeeded);
+  const studyGuides = useMemo(() => allVisible.filter(isStudyGuide), [allVisible]);
+  const seededVisible = useMemo(() => allVisible.filter(d => !isStudyGuide(d)), [allVisible]);
 
   // Group by category
   const grouped = useMemo(() => {
@@ -163,6 +170,7 @@ export default function LibraryPage() {
     }
     return map;
   }, [seededVisible]);
+
 
   const downloaded = lessons.filter(l => l.is_downloaded);
   const visibleLessons = filterBySearch(lessons);
@@ -248,8 +256,9 @@ export default function LibraryPage() {
 
         {/* Tabs: Library (seeded) vs My Lessons */}
         <Tabs defaultValue="library">
-          <TabsList>
+          <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="library">Library ({seededVisible.length})</TabsTrigger>
+            <TabsTrigger value="guides">Study Guides ({studyGuides.length})</TabsTrigger>
             <TabsTrigger value="mine">My Lessons ({visibleLessons.length})</TabsTrigger>
             <TabsTrigger value="downloaded">Offline ({downloaded.length})</TabsTrigger>
           </TabsList>
@@ -265,6 +274,30 @@ export default function LibraryPage() {
               ))
             )}
           </TabsContent>
+
+          <TabsContent value="guides" className="mt-4 space-y-3">
+            {loading ? (
+              <LoadingState />
+            ) : studyGuides.length === 0 ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <GraduationCap className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                  <h3 className="font-semibold mb-1">No study guides yet</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Free DBE Mind the Gap and Self-Study Guides will appear here — free to read and download.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Study guides are free to download and keep. Other library books are read and listened to in the app.
+                </p>
+                {studyGuides.map(d => <StudyGuideCard key={d.id} doc={d} />)}
+              </>
+            )}
+          </TabsContent>
+
 
           <TabsContent value="mine" className="mt-4 space-y-3">
             {loading ? (
@@ -432,5 +465,36 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
         </CardContent>
       </Card>
     </Link>
+  );
+}
+
+function StudyGuideCard({ doc }: { doc: SeededDoc }) {
+  const href = doc.source_url ?? null;
+  return (
+    <Card className="rounded-2xl">
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className="w-11 h-11 rounded-xl bg-secondary/15 flex items-center justify-center shrink-0">
+          <GraduationCap className="w-5 h-5 text-secondary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            {doc.doc_type ?? doc.subject_type} · Study guide
+          </p>
+          <p className="font-semibold text-sm truncate">{doc.title}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Link to={`/lesson/${doc.id}`}>
+            <Button size="sm" variant="outline" className="rounded-xl">Read</Button>
+          </Link>
+          {href && (
+            <a href={href} target="_blank" rel="noopener noreferrer" download>
+              <Button size="sm" className="gap-1.5 rounded-xl">
+                <Download className="w-3.5 h-3.5" /> Free
+              </Button>
+            </a>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
