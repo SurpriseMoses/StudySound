@@ -467,3 +467,34 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
     </Link>
   );
 }
+
+function StudyGuideCard({ doc }: { doc: SeededDoc }) {
+  const href = doc.source_url ?? null;
+  return (
+    <Card className="rounded-2xl">
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className="w-11 h-11 rounded-xl bg-secondary/15 flex items-center justify-center shrink-0">
+          <GraduationCap className="w-5 h-5 text-secondary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            {doc.doc_type ?? doc.subject_type} · Study guide
+          </p>
+          <p className="font-semibold text-sm truncate">{doc.title}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Link to={`/lesson/${doc.id}`}>
+            <Button size="sm" variant="outline" className="rounded-xl">Read</Button>
+          </Link>
+          {href && (
+            <a href={href} target="_blank" rel="noopener noreferrer" download>
+              <Button size="sm" className="gap-1.5 rounded-xl">
+                <Download className="w-3.5 h-3.5" /> Free
+              </Button>
+            </a>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
