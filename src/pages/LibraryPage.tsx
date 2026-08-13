@@ -256,8 +256,9 @@ export default function LibraryPage() {
 
         {/* Tabs: Library (seeded) vs My Lessons */}
         <Tabs defaultValue="library">
-          <TabsList>
+          <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="library">Library ({seededVisible.length})</TabsTrigger>
+            <TabsTrigger value="guides">Study Guides ({studyGuides.length})</TabsTrigger>
             <TabsTrigger value="mine">My Lessons ({visibleLessons.length})</TabsTrigger>
             <TabsTrigger value="downloaded">Offline ({downloaded.length})</TabsTrigger>
           </TabsList>
@@ -273,6 +274,30 @@ export default function LibraryPage() {
               ))
             )}
           </TabsContent>
+
+          <TabsContent value="guides" className="mt-4 space-y-3">
+            {loading ? (
+              <LoadingState />
+            ) : studyGuides.length === 0 ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <GraduationCap className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                  <h3 className="font-semibold mb-1">No study guides yet</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Free DBE Mind the Gap and Self-Study Guides will appear here — free to read and download.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Study guides are free to download and keep. Other library books are read and listened to in the app.
+                </p>
+                {studyGuides.map(d => <StudyGuideCard key={d.id} doc={d} />)}
+              </>
+            )}
+          </TabsContent>
+
 
           <TabsContent value="mine" className="mt-4 space-y-3">
             {loading ? (
