@@ -76,5 +76,10 @@ export const CATEGORY_ORDER: Category[] = ["Novels", "Drama", "Poetry", "Short S
 export function isStudyGuide(doc: DocLite): boolean {
   const kinds = tagKinds(doc.tags);
   if (kinds.some(k => ["study-guide", "study_guide", "studyguide", "mind-the-gap", "self-study-guide"].includes(k))) return true;
+  const t = doc.tags;
+  if (t && typeof t === "object" && !Array.isArray(t)) {
+    const flat = Object.values(t).filter(v => typeof v === "string").join(" ").toLowerCase();
+    if (/study[ _-]?guide|mind the gap/.test(flat)) return true;
+  }
   return /mind the gap|study guide/i.test(doc.title || "");
 }
