@@ -3,8 +3,9 @@ import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Headphones, Brain, Image as ImageIcon, Wifi, WifiOff, FileText, Loader2,
-  Search, Play, ArrowRight, Plus, Languages,
+  Search, Play, ArrowRight, Plus, Languages, Download, GraduationCap,
 } from "lucide-react";
+
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -17,8 +18,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { subjects, getSubjectById } from "@/lib/subjects";
 import { CreditEstimator } from "@/components/CreditEstimator";
 import {
-  docMatchesSubject, categorizeDoc, CATEGORY_ORDER, type DocLite, type Category,
+  docMatchesSubject, categorizeDoc, CATEGORY_ORDER, isStudyGuide, type DocLite, type Category,
 } from "@/lib/subject-docs";
+
 
 type Lesson = {
   id: string;
@@ -92,10 +94,11 @@ export default function LibraryPage() {
       // Seeded library
       const { data: docs } = await supabase
         .from("documents")
-        .select("id, title, subject_type, doc_type, tags")
+        .select("id, title, subject_type, doc_type, tags, source_url")
         .eq("is_seeded", true)
         .order("created_at", { ascending: false })
         .limit(200);
+
 
       const docIds = (docs ?? []).map(d => d.id);
       // Which seeded docs already have audio/translation?
@@ -125,11 +128,13 @@ export default function LibraryPage() {
         subject_type: d.subject_type as string,
         doc_type: d.doc_type ?? null,
         tags: d.tags,
+        source_url: (d as any).source_url ?? null,
         has_audio: audioSet.has(d.id),
         has_translation: transSet.has(d.id),
         progress: docProgress.get(d.id) ?? 0,
         started: docProgress.has(d.id),
       }));
+
 
       setLessons(builtLessons);
       setSeeded(builtSeeded);
