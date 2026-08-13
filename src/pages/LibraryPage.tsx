@@ -156,7 +156,9 @@ export default function LibraryPage() {
     return seeded.filter(d => activeSubjectIds.some(sid => docMatchesSubject(d, sid)));
   }, [seeded, activeSubjectIds]);
 
-  const seededVisible = filterBySearch(subjectFilteredSeeded);
+  const allVisible = filterBySearch(subjectFilteredSeeded);
+  const studyGuides = useMemo(() => allVisible.filter(isStudyGuide), [allVisible]);
+  const seededVisible = useMemo(() => allVisible.filter(d => !isStudyGuide(d)), [allVisible]);
 
   // Group by category
   const grouped = useMemo(() => {
@@ -168,6 +170,7 @@ export default function LibraryPage() {
     }
     return map;
   }, [seededVisible]);
+
 
   const downloaded = lessons.filter(l => l.is_downloaded);
   const visibleLessons = filterBySearch(lessons);
