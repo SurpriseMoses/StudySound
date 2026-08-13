@@ -8,7 +8,9 @@ export type DocLite = {
   subject_type: string;
   tags: any;
   doc_type?: string | null;
+  source_url?: string | null;
 };
+
 
 const tagKinds = (tags: any): string[] => {
   if (!Array.isArray(tags)) return [];
