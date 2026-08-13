@@ -34,23 +34,42 @@ const SIYAVULA_URLS: Record<string, Record<string, string>> = {
   },
 };
 
-const DBE_INDEX = "https://www.education.gov.za/Curriculum/LearningandTeachingSupportMaterials(LTSM)/2026Workbooks1.aspx";
-// Senior Phase CAPS PDFs cover Grades 7–9 collectively, so G9 reuses the same
-// direct PDFs as G8. Worker hashes are scoped by grade|subject|text, so this
-// won't collide with the existing G8 documents.
-const DBE_GRADE_8_CAPS_URLS: Record<string, string> = {
-  "Mathematics": "https://www.education.gov.za/LinkClick.aspx?fileticket=uCNqOwfGbmc%3d&tabid=573&portalid=0&mid=1629",
-  "Natural Sciences": "https://www.education.gov.za/LinkClick.aspx?fileticket=zhaFloMyZTs%3d&tabid=573&portalid=0&mid=1629",
-  "Technology": "https://www.education.gov.za/LinkClick.aspx?fileticket=41Ak4eHaKt4%3d&tabid=573&portalid=0&mid=1629",
-  "Social Sciences": "https://www.education.gov.za/LinkClick.aspx?fileticket=6jpCz5DCZ08%3d&tabid=573&portalid=0&mid=1629",
-  "English": "https://www.education.gov.za/LinkClick.aspx?fileticket=5xCztldu-Kw%3d&tabid=573&portalid=0&mid=1569",
-  "Afrikaans": "https://www.education.gov.za/LinkClick.aspx?fileticket=slLbge-bPMk%3d&tabid=573&portalid=0&mid=1569",
-  "Life Orientation": "https://www.education.gov.za/LinkClick.aspx?fileticket=ANFLxkl-Hgk%3d&tabid=573&portalid=0&mid=1629",
-  "Economic and Management Sciences": "https://www.education.gov.za/LinkClick.aspx?fileticket=YEgQQlsQNCw%3d&tabid=573&portalid=0&mid=1629",
-  "Creative Arts": "https://www.education.gov.za/LinkClick.aspx?fileticket=EqlGbEbaejU%3d&tabid=573&portalid=0&mid=1629",
+// Senior Phase (Gr 8-9): Sasol Inzalo Foundation / Ukuqonda + Siyavula learner
+// textbooks (CC-BY). These replaced the DBE CAPS curriculum statements, which
+// are policy documents rather than teachable learner content.
+// Multi-volume books are ingested as separate passes (book 1 then book 2) —
+// the active grade+subject unique index only allows one in flight at a time.
+const SENIOR_PHASE_BOOKS: Record<string, Record<string, string[]>> = {
+  "8": {
+    "Mathematics": [
+      "https://www.siyavula.com/downloads/books/maths/Gr8A_Mathematics_Learner_Eng.pdf",
+      "https://www.siyavula.com/downloads/books/maths/Gr8B_Mathematics_Learner_Eng.pdf",
+    ],
+    "Natural Sciences": [
+      "https://www.siyavula.com/downloads/books/science/Gr8_A_learner_eng.pdf",
+      "https://www.siyavula.com/downloads/books/science/Gr8_B_learner_eng.pdf",
+    ],
+    "Technology": [
+      "https://www.stanmorephysics.com/wp-content/uploads/2020/05/Tech1_Gr8_LB.pdf",
+      "https://www.stanmorephysics.com/wp-content/uploads/2020/05/Tech2_Gr8_LB.pdf",
+    ],
+  },
+  "9": {
+    "Mathematics": [
+      "https://www.siyavula.com/downloads/books/maths/Gr9A_Mathematics_Learner_Eng.pdf",
+      "https://www.siyavula.com/downloads/books/maths/Gr9B_Mathematics_Learner_Eng.pdf",
+    ],
+    "Natural Sciences": [
+      "https://www.siyavula.com/downloads/books/science/Gr9_A_learner_eng.pdf",
+      "https://www.siyavula.com/downloads/books/science/Gr9_B_learner_eng.pdf",
+    ],
+    "Technology": [
+      "https://www.stanmorephysics.com/wp-content/uploads/2020/05/Tech1_Gr9_LB.pdf",
+      "https://www.stanmorephysics.com/wp-content/uploads/2020/05/Tech2_Gr9_LB.pdf",
+    ],
+  },
 };
-const DBE_GRADE_9_CAPS_URLS: Record<string, string> = { ...DBE_GRADE_8_CAPS_URLS };
-const DBE_SUBJECTS = Object.keys(DBE_GRADE_8_CAPS_URLS);
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
