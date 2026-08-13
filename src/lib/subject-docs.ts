@@ -71,3 +71,10 @@ export function categorizeDoc(doc: DocLite): Category {
 }
 
 export const CATEGORY_ORDER: Category[] = ["Novels", "Drama", "Poetry", "Short Stories", "Textbooks", "Other"];
+
+// Study guides (DBE Mind the Gap / Self-Study Guides) are the only downloadable docs.
+export function isStudyGuide(doc: DocLite): boolean {
+  const kinds = tagKinds(doc.tags);
+  if (kinds.some(k => ["study-guide", "study_guide", "studyguide", "mind-the-gap", "self-study-guide"].includes(k))) return true;
+  return /mind the gap|study guide/i.test(doc.title || "");
+}
