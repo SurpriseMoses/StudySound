@@ -19,6 +19,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   deepCrawlFromIndex,
   tryFetchTextbookPdf,
+  tryGeminiPdfText,
   validateTextbook,
   cleanTextbookPreservingTOC,
   MIN_TEXTBOOK_CHARS,
