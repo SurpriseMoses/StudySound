@@ -220,20 +220,32 @@ async function stageParse(job: any): Promise<AdvanceResult> {
         sourceHtml = new TextDecoder().decode(bytes);
         text = htmlToText(sourceHtml);
       } else if (sniff.startsWith("%PDF")) {
-        if (!job.input_url) throw new Error("PDF upload has no source URL for extraction");
-        const pdf = await tryFetchTextbookPdf(job.input_url, "", {
-          subject: usefulHint(job.subject) ?? usefulHint(job.title_hint) ?? null,
-          grade: usefulHint(job.grade) ?? gradeFromHint(job.title_hint) ?? null,
-          timeoutMs: 25_000,
-          maxBytes: 25 * 1024 * 1024,
-          minChars: 2_000,
-        });
-        if (!pdf) throw new Error("PDF extraction did not return usable text");
-        text = pdf.text;
-        await admin.from("ingestion_stage_logs").insert({
-          job_id: job.id, stage: "parsing", status: "info",
-          message: `direct PDF extracted ${pdf.text.length} chars from ${pdf.pdfUrl}`,
-        });
+        // We already hold the PDF bytes — read them straight with Gemini instead
+        // of re-downloading (large learner books time out on a second fetch).
+        const direct = await tryGeminiPdfText(job.input_url ?? job.input_upload_path, bytes, 2_000);
+        if (direct) {
+          text = direct.text;
+          await admin.from("ingestion_stage_logs").insert({
+            job_id: job.id, stage: "parsing", status: "info",
+            message: `gemini PDF extracted ${direct.text.length} chars from stored bytes (${bytes.byteLength} bytes)`,
+          });
+        } else {
+          if (!job.input_url) throw new Error("PDF upload has no source URL for extraction");
+          const pdf = await tryFetchTextbookPdf(job.input_url, "", {
+            subject: usefulHint(job.subject) ?? usefulHint(job.title_hint) ?? null,
+            grade: usefulHint(job.grade) ?? gradeFromHint(job.title_hint) ?? null,
+            timeoutMs: 25_000,
+            maxBytes: 80 * 1024 * 1024,
+            minChars: 2_000,
+          });
+          if (!pdf) throw new Error("PDF extraction did not return usable text");
+          text = pdf.text;
+          await admin.from("ingestion_stage_logs").insert({
+            job_id: job.id, stage: "parsing", status: "info",
+            message: `direct PDF extracted ${pdf.text.length} chars from ${pdf.pdfUrl}`,
+          });
+        }
+
       } else {
         text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
       }
