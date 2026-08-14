@@ -864,6 +864,7 @@ export type Database = {
           finished_at: string | null
           grade: string | null
           id: string
+          idempotency_key: string | null
           input_raw_text: string | null
           input_upload_path: string | null
           input_url: string | null
@@ -888,6 +889,7 @@ export type Database = {
           finished_at?: string | null
           grade?: string | null
           id?: string
+          idempotency_key?: string | null
           input_raw_text?: string | null
           input_upload_path?: string | null
           input_url?: string | null
@@ -912,6 +914,7 @@ export type Database = {
           finished_at?: string | null
           grade?: string | null
           id?: string
+          idempotency_key?: string | null
           input_raw_text?: string | null
           input_upload_path?: string | null
           input_url?: string | null
@@ -2198,6 +2201,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      reclaim_stale_ingestion_jobs: {
+        Args: { _stale_minutes?: number }
+        Returns: number
       }
       search_documents_fuzzy: {
         Args: { _limit?: number; _query: string; _threshold?: number }

@@ -446,7 +446,7 @@ async function tryFirecrawlPdf(
   }
 }
 
-async function tryGeminiPdfText(
+export async function tryGeminiPdfText(
   pdfUrl: string,
   bytes: Uint8Array,
   minChars: number,

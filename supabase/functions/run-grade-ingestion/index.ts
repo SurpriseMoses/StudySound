@@ -93,10 +93,12 @@ Deno.serve(async (req) => {
     const source = sources?.[0];
     if (!source) return j({ error: `no verified source matching ${sourceName}` }, 400);
 
-    const plan: { subject: string; url: string }[] = [];
+    const plan: { subject: string; url: string; volume?: number }[] = [];
     if (isDbe) {
-      const map = grade === "8" ? DBE_GRADE_8_CAPS_URLS : DBE_GRADE_9_CAPS_URLS;
-      for (const s of DBE_SUBJECTS) plan.push({ subject: s, url: map[s] });
+      const books = SENIOR_PHASE_BOOKS[grade] ?? {};
+      for (const [subject, urls] of Object.entries(books)) {
+        urls.forEach((url, i) => plan.push({ subject, url, volume: i + 1 }));
+      }
     } else {
       const grd = SIYAVULA_URLS[grade] ?? {};
       for (const [subject, url] of Object.entries(grd)) plan.push({ subject, url });
@@ -108,24 +110,37 @@ Deno.serve(async (req) => {
     const created: string[] = [];
     const existing: string[] = [];
     const errors: { subject: string; error: string }[] = [];
+    const skippedSubjects = new Set<string>();
     for (const item of plan) {
-      const idempotencyKey = `caps|ZA|g${grade}|${item.subject}`;
+      // Only one job per grade+subject may be active (unique index). Multi-volume
+      // books queue volume by volume: skip later volumes whose sibling is active
+      // or already completed.
+      if (skippedSubjects.has(item.subject)) continue;
+      const idempotencyKey = item.volume
+        ? `caps|ZA|g${grade}|${item.subject}|v${item.volume}`
+        : `caps|ZA|g${grade}|${item.subject}`;
+
+      const { data: doneRow } = await admin.from("ingestion_jobs")
+        .select("id").eq("idempotency_key", idempotencyKey).eq("state", "completed")
+        .limit(1).maybeSingle();
+      if (doneRow) continue; // this volume already ingested, try the next one
+
       const { data: existRow } = await admin.from("ingestion_jobs")
         .select("id,state")
         .eq("grade", grade).eq("subject", item.subject)
         .not("state", "in", "(completed,failed,cancelled)")
         .order("created_at", { ascending: false })
         .limit(1).maybeSingle();
-      if (existRow) { existing.push(existRow.id); continue; }
-      // Make shared index URLs unique per subject so active-url de-dupe doesn't
-      // collide. Subject-specific DBE CAPS URLs are already unique and should
-      // stay unmodified so the worker downloads the PDF directly.
-      const uniqueUrl = item.url === DBE_INDEX && !item.url.includes("#")
-        ? `${item.url}#g${grade}-${encodeURIComponent(item.subject)}`
-        : item.url;
+      if (existRow) { existing.push(existRow.id); skippedSubjects.add(item.subject); continue; }
+
+      const uniqueUrl = item.url.includes("#")
+        ? item.url
+        : `${item.url}#g${grade}-${encodeURIComponent(item.subject)}`;
       const { data: newJob, error } = await admin.from("ingestion_jobs").insert({
         source_id: source.id, input_url: uniqueUrl,
-        title_hint: `${item.subject} — Grade ${grade}`,
+        title_hint: item.volume && item.volume > 1
+          ? `${item.subject} — Grade ${grade} (Book ${item.volume})`
+          : `${item.subject} — Grade ${grade}`,
         grade, subject: item.subject, curriculum: "CAPS", country: "ZA",
         created_by: user.id, state: "pending",
         idempotency_key: idempotencyKey,
@@ -141,12 +156,12 @@ Deno.serve(async (req) => {
             .not("state", "in", "(completed,failed,cancelled)")
             .order("created_at", { ascending: false })
             .limit(1).maybeSingle();
-          if (dupe?.id) { existing.push(dupe.id); continue; }
+          if (dupe?.id) { existing.push(dupe.id); skippedSubjects.add(item.subject); continue; }
         }
         errors.push({ subject: item.subject, error: msg });
         continue;
       }
-      if (newJob) created.push(newJob.id);
+      if (newJob) { created.push(newJob.id); skippedSubjects.add(item.subject); }
     }
 
     // Kick worker to start download+parse on new jobs
