@@ -93,10 +93,12 @@ Deno.serve(async (req) => {
     const source = sources?.[0];
     if (!source) return j({ error: `no verified source matching ${sourceName}` }, 400);
 
-    const plan: { subject: string; url: string }[] = [];
+    const plan: { subject: string; url: string; volume?: number }[] = [];
     if (isDbe) {
-      const map = grade === "8" ? DBE_GRADE_8_CAPS_URLS : DBE_GRADE_9_CAPS_URLS;
-      for (const s of DBE_SUBJECTS) plan.push({ subject: s, url: map[s] });
+      const books = SENIOR_PHASE_BOOKS[grade] ?? {};
+      for (const [subject, urls] of Object.entries(books)) {
+        urls.forEach((url, i) => plan.push({ subject, url, volume: i + 1 }));
+      }
     } else {
       const grd = SIYAVULA_URLS[grade] ?? {};
       for (const [subject, url] of Object.entries(grd)) plan.push({ subject, url });
