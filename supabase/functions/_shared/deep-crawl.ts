@@ -446,13 +446,11 @@ async function tryFirecrawlPdf(
   }
 }
 
-export async function tryGeminiPdfText(
-  pdfUrl: string,
-  bytes: Uint8Array,
-  minChars: number,
-): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number } | null> {
-  const key = Deno.env.get("Gemini_Secret_Key");
-  if (!key) return null;
+const GEMINI_EXTRACT_PROMPT =
+  "Extract all readable learner workbook text from this PDF. Preserve page order, headings, questions, and paragraph breaks. Output only the extracted text.";
+
+/** Upload one PDF payload to Gemini Files and return the extracted text ("" on failure). */
+async function geminiExtractPdfBytes(bytes: Uint8Array, key: string): Promise<string> {
   try {
     const displayName = `studysound-${crypto.randomUUID()}.pdf`;
     const start = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${key}`, {
@@ -467,7 +465,7 @@ export async function tryGeminiPdfText(
       body: JSON.stringify({ file: { display_name: displayName } }),
     });
     const uploadUrl = start.headers.get("x-goog-upload-url");
-    if (!start.ok || !uploadUrl) return null;
+    if (!start.ok || !uploadUrl) return "";
 
     const upload = await fetch(uploadUrl, {
       method: "POST",
@@ -479,7 +477,7 @@ export async function tryGeminiPdfText(
       body: bytes,
     });
     const uploaded = await upload.json().catch(() => null);
-    if (!upload.ok || !uploaded?.file?.uri) return null;
+    if (!upload.ok || !uploaded?.file?.uri) return "";
 
     const name = uploaded.file.name as string | undefined;
     for (let i = 0; i < 10 && name; i++) {
@@ -487,7 +485,7 @@ export async function tryGeminiPdfText(
         .then((r) => r.json())
         .catch(() => null);
       if (!state?.state || state.state === "ACTIVE") break;
-      if (state.state === "FAILED") return null;
+      if (state.state === "FAILED") return "";
       await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
 
@@ -497,7 +495,7 @@ export async function tryGeminiPdfText(
       body: JSON.stringify({
         contents: [{
           parts: [
-            { text: "Extract all readable learner workbook text from this PDF. Preserve page order, headings, questions, and paragraph breaks. Output only the extracted text." },
+            { text: GEMINI_EXTRACT_PROMPT },
             { file_data: { mime_type: "application/pdf", file_uri: uploaded.file.uri } },
           ],
         }],
@@ -512,12 +510,115 @@ export async function tryGeminiPdfText(
     if (name) {
       fetch(`https://generativelanguage.googleapis.com/v1beta/${name}?key=${key}`, { method: "DELETE" }).catch(() => {});
     }
-    if (text.length < minChars) return null;
-    return { text, pageCount: 0, pdfUrl, bytes: bytes.byteLength };
+    return text;
+  } catch (_) {
+    return "";
+  }
+}
+
+export interface PdfSliceOptions {
+  /** Pages per Gemini call. Keeps each response under the output-token ceiling. */
+  pagesPerSlice?: number;
+  /** Hard cap on slices so a huge book can't run forever. */
+  maxSlices?: number;
+  /** Wall-clock budget for the whole sliced extraction. */
+  budgetMs?: number;
+  /** Concurrent Gemini calls. */
+  concurrency?: number;
+}
+
+/**
+ * Split a PDF into page-range slices and extract each with Gemini, then join in
+ * page order. Large learner books (Maths Gr 8/9, Technology Gr 8) either exceed
+ * the Files upload limits or blow past maxOutputTokens in a single call; slicing
+ * keeps every request small and recovers partial books when a slice fails.
+ */
+export async function tryGeminiPdfTextSliced(
+  pdfUrl: string,
+  bytes: Uint8Array,
+  minChars: number,
+  opts: PdfSliceOptions = {},
+): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number; slices: number } | null> {
+  const key = Deno.env.get("Gemini_Secret_Key");
+  if (!key) return null;
+  const pagesPerSlice = Math.max(1, opts.pagesPerSlice ?? 20);
+  const maxSlices = Math.max(1, opts.maxSlices ?? 40);
+  const budgetMs = opts.budgetMs ?? 240_000;
+  const concurrency = Math.max(1, Math.min(4, opts.concurrency ?? 3));
+  const startedAt = Date.now();
+
+  let PDFDocument: any;
+  try {
+    ({ PDFDocument } = await import("npm:pdf-lib@1.17.1"));
   } catch (_) {
     return null;
   }
+
+  let src: any;
+  let pageCount = 0;
+  try {
+    src = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+    pageCount = src.getPageCount();
+  } catch (_) {
+    return null;
+  }
+  if (pageCount === 0) return null;
+
+  const ranges: Array<[number, number]> = [];
+  for (let start = 0; start < pageCount && ranges.length < maxSlices; start += pagesPerSlice) {
+    ranges.push([start, Math.min(pageCount, start + pagesPerSlice)]);
+  }
+
+  const parts: string[] = new Array(ranges.length).fill("");
+  let cursor = 0;
+  async function worker() {
+    while (true) {
+      const i = cursor++;
+      if (i >= ranges.length) return;
+      if (Date.now() - startedAt > budgetMs) return;
+      const [from, to] = ranges[i];
+      try {
+        const slice = await PDFDocument.create();
+        const copied = await slice.copyPages(src, Array.from({ length: to - from }, (_, k) => from + k));
+        for (const p of copied) slice.addPage(p);
+        const sliceBytes = await slice.save({ useObjectStreams: true });
+        parts[i] = await geminiExtractPdfBytes(sliceBytes, key!);
+      } catch (_) {
+        parts[i] = "";
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+  const text = parts.filter((p) => p.trim().length > 0).join("\n\n").trim();
+  if (text.length < minChars) return null;
+  return { text, pageCount, pdfUrl, bytes: bytes.byteLength, slices: ranges.length };
 }
+
+export async function tryGeminiPdfText(
+  pdfUrl: string,
+  bytes: Uint8Array,
+  minChars: number,
+): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number } | null> {
+  const key = Deno.env.get("Gemini_Secret_Key");
+  if (!key) return null;
+  // Small PDFs: one shot. Anything sizeable goes straight to page slicing so we
+  // don't lose the tail of the book to the output-token ceiling.
+  if (bytes.byteLength <= 8 * 1024 * 1024) {
+    const text = await geminiExtractPdfBytes(bytes, key);
+    if (text.length >= minChars) {
+      return { text, pageCount: 0, pdfUrl, bytes: bytes.byteLength };
+    }
+  }
+  const sliced = await tryGeminiPdfTextSliced(pdfUrl, bytes, minChars);
+  if (sliced) return sliced;
+  if (bytes.byteLength > 8 * 1024 * 1024) {
+    const text = await geminiExtractPdfBytes(bytes, key);
+    if (text.length >= minChars) return { text, pageCount: 0, pdfUrl, bytes: bytes.byteLength };
+  }
+  return null;
+}
+
 
 function nearestHeadingBefore(html: string, index: number): string {
   const prefix = html.slice(Math.max(0, index - 8_000), index);
