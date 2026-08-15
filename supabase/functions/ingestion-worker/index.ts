@@ -223,14 +223,24 @@ async function stageParse(job: any): Promise<AdvanceResult> {
       } else if (sniff.startsWith("%PDF")) {
         // We already hold the PDF bytes — read them straight with Gemini instead
         // of re-downloading (large learner books time out on a second fetch).
-        const direct = await tryGeminiPdfText(job.input_url ?? job.input_upload_path, bytes, 2_000);
+        // Big books are sliced by page range so no single call is truncated.
+        const sliced = await tryGeminiPdfTextSliced(
+          job.input_url ?? job.input_upload_path,
+          bytes,
+          2_000,
+          { pagesPerSlice: 20, maxSlices: 60, budgetMs: 240_000, concurrency: 3 },
+        );
+        const direct = sliced ?? await tryGeminiPdfText(job.input_url ?? job.input_upload_path, bytes, 2_000);
         if (direct) {
           text = direct.text;
           await admin.from("ingestion_stage_logs").insert({
             job_id: job.id, stage: "parsing", status: "info",
-            message: `gemini PDF extracted ${direct.text.length} chars from stored bytes (${bytes.byteLength} bytes)`,
+            message: `gemini PDF extracted ${direct.text.length} chars from stored bytes (${bytes.byteLength} bytes${
+              sliced ? `, ${sliced.slices} slices over ${sliced.pageCount} pages` : ", single pass"
+            })`,
           });
         } else {
+
           if (!job.input_url) throw new Error("PDF upload has no source URL for extraction");
           const pdf = await tryFetchTextbookPdf(job.input_url, "", {
             subject: usefulHint(job.subject) ?? usefulHint(job.title_hint) ?? null,
