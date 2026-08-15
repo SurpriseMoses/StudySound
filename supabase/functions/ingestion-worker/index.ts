@@ -20,6 +20,8 @@ import {
   deepCrawlFromIndex,
   tryFetchTextbookPdf,
   tryGeminiPdfText,
+  tryGeminiPdfTextSliced,
+
   validateTextbook,
   cleanTextbookPreservingTOC,
   MIN_TEXTBOOK_CHARS,
