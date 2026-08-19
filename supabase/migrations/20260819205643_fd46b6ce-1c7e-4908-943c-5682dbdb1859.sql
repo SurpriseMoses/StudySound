@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS document_chunks_pending_embed_idx ON public.document_chunks (document_id, chunk_index) WHERE embedding IS NULL;
