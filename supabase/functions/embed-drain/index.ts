@@ -13,8 +13,8 @@ const EMBED_MODEL = "openai/text-embedding-3-small";
 // Keep gateway throughput high without overwhelming Postgres with concurrent
 // vector writes. The previous 6 x 12 fan-out caused statement timeouts once
 // several documents were drained at the same time.
-const BATCH = 24;
-const PARALLEL = 3;
+const BATCH = 8;
+const PARALLEL = 4;
 const UPDATE_PARALLEL = 4;
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
         for (let i = 0; i < rows.length; i += BATCH) groups.push(rows.slice(i, i + BATCH) as any);
 
         const results = await Promise.allSettled(groups.map(async (g) => {
-          const vectors = await embedBatch(g.map((r) => (r.text ?? "").slice(0, 8000)));
+          const vectors = await embedBatch(g.map((r) => (r.text ?? "").slice(0, 3000)));
           const ids: string[] = [];
           const vecs: string[] = [];
           g.forEach((r, i) => {
@@ -123,16 +123,26 @@ Deno.serve(async (req) => {
 });
 
 async function embedBatch(inputs: string[]): Promise<number[][]> {
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${LOVABLE_API_KEY}` },
-    body: JSON.stringify({ model: EMBED_MODEL, input: inputs }),
-    signal: AbortSignal.timeout(45_000),
-  });
-  if (!res.ok) throw new Error(`embedding failed ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const jn = await res.json();
-  return (jn.data ?? []).map((d: any) => d.embedding as number[]);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${LOVABLE_API_KEY}` },
+        body: JSON.stringify({ model: EMBED_MODEL, input: inputs }),
+        signal: AbortSignal.timeout(25_000),
+      });
+      if (!res.ok) throw new Error(`embedding failed ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      const jn = await res.json();
+      return (jn.data ?? []).map((d: any) => d.embedding as number[]);
+    } catch (e) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
+
 
 async function countMissingEmbeddings(docIds: string[]): Promise<number> {
   let remaining = 0;
