@@ -47,6 +47,7 @@ const DBE_WORKBOOK_INDEX_URLS = [
 // long curriculum body text but few "chapter" headings, so the generic
 // textbook gate must not reject them as TOC-only after successful PDF extract.
 const DBE_CAPS_MIN_CHARS = 50_000;
+const DBE_STUDY_GUIDE_MIN_CHARS = 20_000;
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
@@ -60,11 +61,33 @@ const PROGRESS: Record<string, number> = {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    let body: { job_id?: string; cron?: boolean; max_steps?: number } = {};
+    let body: { job_id?: string; cron?: boolean; max_steps?: number; raw_text_override?: string } = {};
     try { body = await req.json(); } catch { /* cron may pass empty */ }
 
     let job = await pickJob(body.job_id);
     if (!job) return json({ skipped: "no_pending_jobs" });
+
+    // Repair path for oversized PDFs that exceed Edge Function memory during
+    // extraction. Admin tooling can provide already-extracted text, then the
+    // normal structure/clean/chunk/embed/publish pipeline resumes idempotently.
+    if (body.raw_text_override && body.raw_text_override.trim().length >= 2_000) {
+      const text = body.raw_text_override.replace(/\u0000/g, "").trim().slice(0, 4_000_000);
+      await admin.from("ingestion_jobs").update({
+        input_raw_text: text,
+        state: "parsing",
+        progress: PROGRESS.parsing,
+        attempts: 0,
+        last_error: null,
+        started_at: job.started_at ?? new Date().toISOString(),
+      }).eq("id", job.id);
+      await admin.from("ingestion_stage_logs").insert({
+        job_id: job.id,
+        stage: "parsing",
+        status: "info",
+        message: `manual text override accepted (${text.length} chars)`,
+      });
+      job = { ...job, input_raw_text: text, state: "parsing", progress: PROGRESS.parsing, attempts: 0, last_error: null };
+    }
 
     // Default to advancing many stages per invocation so jobs don't crawl
     // through one stage per cron minute. Individual stages bail out early
@@ -406,10 +429,22 @@ async function stageClean(job: any): Promise<AdvanceResult> {
   // Decide cleaner: textbooks (science/maths/etc.) preserve TOC + headings;
   // literature/novels use the line-noise stripper.
   const subjectLow = String(job.subject ?? "").toLowerCase();
-  const isTextbook = /math|physic|chem|biolog|life scien|natural scien|science|geograph|history|economics|account|business/.test(subjectLow);
+  const isTextbook = /math|physic|chem|biolog|life scien|natural scien|science|geograph|history|economics|account|business|technology/.test(subjectLow);
+  const isStudyGuide = isStudyGuideJob(job, text);
 
   let cleaned: string;
-  if (isTextbook) {
+  if (isStudyGuide) {
+    // Study guides/revision booklets often have few chapter-style headings and
+    // dense exam tables. The textbook cleaner can mistake that format for TOC
+    // chrome and trim valid body content, so keep a lighter DBE PDF cleanup.
+    cleaned = text
+      .replace(/©\s*Department of Basic Education\s*\d{4}/gi, " ")
+      .replace(/^\s*\d{1,4}\s*$/gm, "")
+      .replace(/\b(downloaded from|stanmorephysics|click here & upgrade|unlimited pages)\b.*$/gim, "")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  } else if (isTextbook) {
     cleaned = cleanTextbookPreservingTOC(text);
   } else {
     cleaned = text
@@ -435,11 +470,13 @@ async function stageChunk(job: any): Promise<AdvanceResult> {
   // A "real" textbook either has >100k chars OR >5 chapter-like headings.
   const subjectLow = String(job.subject ?? "").toLowerCase();
   const isLiterature = /literature|english|novel|story|play|shakespeare/.test(subjectLow);
+  const isStudyGuide = isStudyGuideJob(job, text);
   if (!isLiterature) {
     const v = validateTextbook(text);
     const isDbeCapsPdf = job.input_url && isDbeDirectPdfUrl(job.input_url) && v.chars >= DBE_CAPS_MIN_CHARS;
     const isDbeWorkbookIndex = job.input_url && isDbeWorkbookIndexUrl(job.input_url) && v.chars > 5_000;
-    if (!v.ok && !isDbeCapsPdf && !isDbeWorkbookIndex) {
+    const isDbeStudyGuide = isStudyGuide && job.input_url && isDbeDirectPdfUrl(job.input_url) && v.chars >= DBE_STUDY_GUIDE_MIN_CHARS;
+    if (!v.ok && !isDbeCapsPdf && !isDbeWorkbookIndex && !isDbeStudyGuide) {
       throw new Error(
         `Only TOC page imported (chars=${v.chars}, chapters=${v.chapters}; ` +
         `need >${MIN_TEXTBOOK_CHARS} chars OR >${MIN_CHAPTERS} chapters)`,
@@ -997,6 +1034,16 @@ function isDbeDirectPdfUrl(url: string): boolean {
   } catch {
     return /education\.gov\.za[\s\S]*(linkclick\.aspx|fileticket=|\.pdf)/i.test(url);
   }
+}
+
+function isStudyGuideJob(job: any, text = ""): boolean {
+  const haystack = [
+    job?.title_hint,
+    job?.input_url,
+    job?.subject,
+    text.slice(0, 8_000),
+  ].map((v) => String(v ?? "").toLowerCase()).join("\n");
+  return /study[-\s]*guide|revision[-\s]*booklet|mind[-\s]*the[-\s]*gap|second chance matric/.test(haystack);
 }
 
 function normalizeUrl(url: string): string {
