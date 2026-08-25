@@ -1,0 +1,1 @@
+DELETE FROM public.document_figures WHERE label IS NULL;

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import AppLayout from "@/components/AppLayout";
 import { TranslationSection } from "@/components/TranslationSection";
 import { AudioSection } from "@/components/AudioSection";
+import FigureGallery from "@/components/FigureGallery";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +19,7 @@ type Lesson = {
   title: string;
   subject: string;
   language: string | null;
+  document_id: string | null;
   documents: { subject_type: string | null } | null;
 };
 
@@ -73,7 +75,7 @@ export default function Listen({ lessonId: lessonIdProp, embedded = false }: Lis
     (async () => {
       const { data, error } = await supabase
         .from("lessons")
-        .select("id, title, subject, language, documents(subject_type)")
+        .select("id, title, subject, language, document_id, documents(subject_type)")
         .eq("id", lessonId)
         .maybeSingle();
       if (error || !data) {
@@ -218,6 +220,8 @@ export default function Listen({ lessonId: lessonIdProp, embedded = false }: Lis
                   {chunkText}
                 </p>
               )}
+
+              <FigureGallery documentId={lesson?.document_id} text={chunkText} />
 
               <AudioSection
                 key={`${lessonId}-${chunkIndex}-${language}`}
