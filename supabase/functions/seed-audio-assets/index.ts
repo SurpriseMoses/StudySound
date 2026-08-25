@@ -285,9 +285,13 @@ Deno.serve(async (req) => {
 
     // Validate chunks — fragments <200 chars or with no sentence punctuation
     // are TOC remnants / page-number stragglers and must NEVER be sent to TTS.
+    const bodyStart = findBodyStartChunk(chunks);
+    if (bodyStart > 0) {
+      console.log(`[seed-audio-assets] doc=${doc.id} narration starts at chunk ${bodyStart} (skipping front matter)`);
+    }
     const invalidIndices: number[] = [];
     for (let i = 0; i < totalChunks; i++) {
-      if (isInvalidChunk(chunks[i])) invalidIndices.push(i);
+      if (i < bodyStart || isInvalidChunk(chunks[i])) invalidIndices.push(i);
     }
     const invalidSet = new Set(invalidIndices);
 
