@@ -771,5 +771,64 @@ export function cleanTextbookPreservingTOC(raw: string): string {
     kept.push(line.replace(/\.{4,}/g, " ").replace(/[ \t]{2,}/g, " "));
   }
 
-  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  const out = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return stripFrontMatter(out);
 }
+
+/**
+ * Removes publisher/imprint front matter (ISBN, tel/fax, postal addresses,
+ * "All rights reserved", copyright/licence blocks, donation pleas) from the
+ * head of a textbook. Strictly bounded: only lines before the first real body
+ * marker AND within the first HEAD_LIMIT characters are considered, so no body
+ * text can ever be removed. License metadata is preserved separately on the
+ * document row (license_type / source_url), not in the readable text.
+ */
+export function stripFrontMatter(text: string, headLimit = 9_000): string {
+  if (!text || text.length < 1_000) return text;
+
+  const BODY_MARKER =
+    /^(?:#\s*)?(?:chapter\s+(?:1|one|i)\b|unit\s+1\b|term\s+1\b|module\s+1\b|topic\s+1\b|lesson\s+1\b|prologue\b|introduction\b|contents\b|table\s+of\s+contents\b|1\.1\b|1\s+[A-Z])/i;
+
+  const IMPRINT_PATTERNS: RegExp[] = [
+    /\bISBN\b/i,
+    /\b(?:Tel|Fax|Telephone|Call\s+centre|Callcentre)\s*[:.]/i,
+    /\b(?:e-?mail|email)\s*:/i,
+    /^\s*(?:https?:\/\/|www\.)\S+\s*$/i,
+    /^\s*\S+@\S+\.\S+\s*$/,
+    /\bpublished\s+by\b/i,
+    /\ball\s+rights\s+reserved\b/i,
+    /\b(?:first|second|third|fourth)\s+edition\b/i,
+    /\bprinted\s+(?:by|in)\b/i,
+    /©|\(c\)\s*\d{4}|\bcopyright\b/i,
+    /\bcreative\s+commons\b/i,
+    /\bthis\s+(?:book|work)\s+may\s+not\s+be\s+sold\b/i,
+    /\b(?:donat(?:e|ion)|sponsor(?:ed|ship)?)\b.*\b(?:please|help|support)\b/i,
+    /\bplease\s+(?:donate|consider\s+donating)\b/i,
+    /\b(?:Private\s+Bag|P\.?O\.?\s+Box|Street\b.*\b(?:Pretoria|Cape\s+Town|Johannesburg|Durban))/i,
+    /\bDepartment\s+of\s+Basic\s+Education\b.*\b(?:Pretoria|Private\s+Bag|Street)\b/i,
+    /\backnowledge?ments?\s*$/i,
+  ];
+
+  const lines = text.split("\n");
+  let consumed = 0;
+  let bodyLine = -1;
+  for (let i = 0; i < lines.length; i++) {
+    consumed += lines[i].length + 1;
+    if (consumed > headLimit) break;
+    if (BODY_MARKER.test(lines[i].trim())) { bodyLine = i; break; }
+  }
+  const headEnd = bodyLine >= 0 ? bodyLine : 0;
+  if (headEnd === 0) return text;
+
+  const head = lines.slice(0, headEnd).filter((l) => {
+    const t = l.trim();
+    if (!t) return false;
+    return !IMPRINT_PATTERNS.some((rx) => rx.test(t));
+  });
+
+  const rebuilt = [...head, ...lines.slice(headEnd)].join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  // Safety: never drop more than 15% of the document.
+  if (rebuilt.length < text.length * 0.85) return text;
+  return rebuilt;
+}
+
