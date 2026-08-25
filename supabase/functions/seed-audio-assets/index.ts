@@ -93,6 +93,23 @@ function chunkText(text: string): string[] {
   return chunks;
 }
 
+// Find the first chunk that looks like real body content (Chapter 1 / Unit 1 /
+// Term 1 / Prologue / numbered heading). Everything before it is front matter
+// (title page, imprint, contact numbers, ISBN, licence blurb, TOC) and is
+// skipped for narration WITHOUT changing chunk indices — the reader and the
+// audio cache stay index-aligned.
+const BODY_START_RE =
+  /\b(chapter\s+(1|one|i)\b|unit\s+1\b|term\s+1\b|prologue\b|introduction\b|1\.1\s)/i;
+
+function findBodyStartChunk(chunks: string[]): number {
+  // Only look at the head of the document so we never skip real content.
+  const limit = Math.min(chunks.length, 40);
+  for (let i = 0; i < limit; i++) {
+    if (BODY_START_RE.test(chunks[i])) return i;
+  }
+  return 0;
+}
+
 class RateLimitedError extends Error {
   constructor(msg: string) { super(msg); this.name = "RateLimitedError"; }
 }
