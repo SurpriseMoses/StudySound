@@ -46,7 +46,7 @@ type Lesson = {
   subject: string;
   language: string | null;
   document_id: string | null;
-  documents: { subject_type: string | null } | null;
+  documents: { subject_type: string | null; license_type?: string | null; source_url?: string | null } | null;
 };
 
 type QuizQ = {
@@ -78,7 +78,7 @@ export default function LessonPlayer() {
       setResolving(true);
       const { data: existing } = await supabase
         .from("lessons")
-        .select("id, title, subject, language, document_id, documents(subject_type)")
+        .select("id, title, subject, language, document_id, documents(subject_type, license_type, source_url)")
         .eq("user_id", user.id)
         .eq("document_id", documentId)
         .order("created_at", { ascending: false })
@@ -121,7 +121,7 @@ export default function LessonPlayer() {
             subject: doc.subject_type ?? "other",
             content_text: "",
           })
-          .select("id, title, subject, language, document_id, documents(subject_type)")
+          .select("id, title, subject, language, document_id, documents(subject_type, license_type, source_url)")
           .single();
         if (created) {
           setLesson(created as Lesson);
@@ -363,7 +363,31 @@ export default function LessonPlayer() {
             </motion.div>
           </AnimatePresence>
         </Tabs>
+
+        {/* Source / License credits */}
+        {(lesson.documents?.source_url || lesson.documents?.license_type) && (
+          <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground">
+            Source:{" "}
+            {lesson.documents?.source_url ? (
+              <a
+                href={lesson.documents.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                original publication
+              </a>
+            ) : (
+              "original publication"
+            )}
+            {lesson.documents?.license_type && (
+              <> · License: {String(lesson.documents.license_type).replace(/_/g, " ").toUpperCase()}</>
+            )}
+            . Front matter (publisher details, imprint pages) is omitted for readability.
+          </p>
+        )}
       </motion.div>
+
     </AppLayout>
   );
 }

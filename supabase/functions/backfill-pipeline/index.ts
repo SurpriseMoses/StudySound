@@ -26,6 +26,8 @@ import {
   deepCrawlFromIndex,
   validateTextbook,
   cleanTextbookPreservingTOC,
+  stripFrontMatter,
+
   MIN_TEXTBOOK_CHARS,
   MIN_CHAPTERS,
 } from "../_shared/deep-crawl.ts";
@@ -250,8 +252,19 @@ async function backfillDoc(
       isLiterature && existingLen >= 20_000 && !hasGutenbergBoilerplate && !hasDirtyLiteratureChunks; // healthy literature clean already
 
     if (skipLiteratureReclean) {
-      out.stages.push({ reclean: `preserved (literature clean_text=${existingLen})` });
+      // Still strip publisher/imprint front matter from the head of the
+      // existing clean_text — bounded, so body text is never touched.
+      const trimmed = stripFrontMatter(doc.clean_text ?? "");
+      if (trimmed && trimmed.length < existingLen) {
+        await admin.from("documents").update({ clean_text: trimmed, char_count: trimmed.length }).eq("id", doc.id);
+        cleanText = trimmed;
+        cleaningChanged = true;
+        out.stages.push({ reclean: `front-matter trimmed (${existingLen} -> ${trimmed.length})` });
+      } else {
+        out.stages.push({ reclean: `preserved (literature clean_text=${existingLen})` });
+      }
     } else {
+
       let cleaned: string;
       if (!isLiterature) {
         // Textbooks: preserve TOC + chapter/section headings + numbering.
