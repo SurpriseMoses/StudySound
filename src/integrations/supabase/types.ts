@@ -567,6 +567,53 @@ export type Database = {
           },
         ]
       }
+      document_figures: {
+        Row: {
+          bytes: number | null
+          caption: string | null
+          created_at: string
+          document_id: string
+          height: number | null
+          id: string
+          label: string | null
+          page_number: number
+          storage_path: string
+          width: number | null
+        }
+        Insert: {
+          bytes?: number | null
+          caption?: string | null
+          created_at?: string
+          document_id: string
+          height?: number | null
+          id?: string
+          label?: string | null
+          page_number?: number
+          storage_path: string
+          width?: number | null
+        }
+        Update: {
+          bytes?: number | null
+          caption?: string | null
+          created_at?: string
+          document_id?: string
+          height?: number | null
+          id?: string
+          label?: string | null
+          page_number?: number
+          storage_path?: string
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_figures_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           char_count: number
