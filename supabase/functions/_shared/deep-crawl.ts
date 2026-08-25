@@ -602,6 +602,14 @@ export async function tryGeminiPdfText(
 ): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number } | null> {
   const key = Deno.env.get("Gemini_Secret_Key");
   if (!key) return null;
+  // Very large scanned textbooks can exhaust Edge Function memory when pdf-lib
+  // tries to load/split them. For those, use Gemini Files directly and accept a
+  // substantial partial extraction rather than crashing before saving progress.
+  if (bytes.byteLength > 40 * 1024 * 1024) {
+    const text = await geminiExtractPdfBytes(bytes, key);
+    if (text.length >= minChars) return { text, pageCount: 0, pdfUrl, bytes: bytes.byteLength };
+    return null;
+  }
   // Small PDFs: one shot. Anything sizeable goes straight to page slicing so we
   // don't lose the tail of the book to the output-token ceiling.
   if (bytes.byteLength <= 8 * 1024 * 1024) {

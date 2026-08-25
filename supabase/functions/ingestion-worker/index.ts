@@ -60,11 +60,33 @@ const PROGRESS: Record<string, number> = {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    let body: { job_id?: string; cron?: boolean; max_steps?: number } = {};
+    let body: { job_id?: string; cron?: boolean; max_steps?: number; raw_text_override?: string } = {};
     try { body = await req.json(); } catch { /* cron may pass empty */ }
 
     let job = await pickJob(body.job_id);
     if (!job) return json({ skipped: "no_pending_jobs" });
+
+    // Repair path for oversized PDFs that exceed Edge Function memory during
+    // extraction. Admin tooling can provide already-extracted text, then the
+    // normal structure/clean/chunk/embed/publish pipeline resumes idempotently.
+    if (body.raw_text_override && body.raw_text_override.trim().length >= 2_000) {
+      const text = body.raw_text_override.replace(/\u0000/g, "").trim().slice(0, 4_000_000);
+      await admin.from("ingestion_jobs").update({
+        input_raw_text: text,
+        state: "parsing",
+        progress: PROGRESS.parsing,
+        attempts: 0,
+        last_error: null,
+        started_at: job.started_at ?? new Date().toISOString(),
+      }).eq("id", job.id);
+      await admin.from("ingestion_stage_logs").insert({
+        job_id: job.id,
+        stage: "parsing",
+        status: "info",
+        message: `manual text override accepted (${text.length} chars)`,
+      });
+      job = { ...job, input_raw_text: text, state: "parsing", progress: PROGRESS.parsing, attempts: 0, last_error: null };
+    }
 
     // Default to advancing many stages per invocation so jobs don't crawl
     // through one stage per cron minute. Individual stages bail out early
@@ -406,7 +428,7 @@ async function stageClean(job: any): Promise<AdvanceResult> {
   // Decide cleaner: textbooks (science/maths/etc.) preserve TOC + headings;
   // literature/novels use the line-noise stripper.
   const subjectLow = String(job.subject ?? "").toLowerCase();
-  const isTextbook = /math|physic|chem|biolog|life scien|natural scien|science|geograph|history|economics|account|business/.test(subjectLow);
+  const isTextbook = /math|physic|chem|biolog|life scien|natural scien|science|geograph|history|economics|account|business|technology/.test(subjectLow);
 
   let cleaned: string;
   if (isTextbook) {
