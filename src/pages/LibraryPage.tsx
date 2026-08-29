@@ -18,8 +18,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { subjects, getSubjectById } from "@/lib/subjects";
 import { CreditEstimator } from "@/components/CreditEstimator";
 import {
-  docMatchesSubject, categorizeDoc, CATEGORY_ORDER, isStudyGuide, type DocLite, type Category,
+  docMatchesSubject, categorizeDoc, CATEGORY_ORDER, isStudyGuide, studyGuideDownloadUrl,
+  type DocLite, type Category,
 } from "@/lib/subject-docs";
+
 
 
 type Lesson = {
@@ -469,7 +471,8 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
 }
 
 function StudyGuideCard({ doc }: { doc: SeededDoc }) {
-  const href = doc.source_url ?? null;
+  const href = studyGuideDownloadUrl(doc);
+
   return (
     <Card className="rounded-2xl">
       <CardContent className="p-4 flex items-center gap-3">
