@@ -155,7 +155,7 @@ export default function Dashboard() {
       }
 
       if (!cancelled) {
-        setProfile(prof as ProfileBits | null);
+        setProfile((prev) => prof ?? prev);
         setCont(chosen);
         setHasLessons((lessonCount ?? 0) > 0);
         setRecs(recDocs);
