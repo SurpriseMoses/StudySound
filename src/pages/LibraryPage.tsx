@@ -469,7 +469,8 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
 }
 
 function StudyGuideCard({ doc }: { doc: SeededDoc }) {
-  const href = doc.source_url ?? null;
+  const href = studyGuideDownloadUrl(doc);
+
   return (
     <Card className="rounded-2xl">
       <CardContent className="p-4 flex items-center gap-3">
