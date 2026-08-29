@@ -83,12 +83,21 @@ export default function Dashboard() {
     (async () => {
       setProfileLoading(true);
 
-      // Profile
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("display_name, credits_balance, selected_subjects, plan")
-        .eq("user_id", user.id)
-        .maybeSingle();
+      // Profile (retry a few times so a transient backend hiccup doesn't
+      // blank the greeting/subjects and fall back to "Learner")
+      let prof: ProfileBits | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("display_name, credits_balance, selected_subjects, plan")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (cancelled) return;
+        if (!error) { prof = (data as ProfileBits | null) ?? null; break; }
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        if (cancelled) return;
+      }
+
 
       // Most recent progress → lesson
       const { data: prog } = await supabase
