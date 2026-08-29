@@ -18,8 +18,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { subjects, getSubjectById } from "@/lib/subjects";
 import { CreditEstimator } from "@/components/CreditEstimator";
 import {
-  docMatchesSubject, categorizeDoc, CATEGORY_ORDER, isStudyGuide, type DocLite, type Category,
+  docMatchesSubject, categorizeDoc, CATEGORY_ORDER, isStudyGuide, studyGuideDownloadUrl,
+  type DocLite, type Category,
 } from "@/lib/subject-docs";
+
 
 
 type Lesson = {
