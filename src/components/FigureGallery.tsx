@@ -81,14 +81,14 @@ export default function FigureGallery({ documentId, text, chunkIndex = 0, totalC
         .slice(0, 6);
       if (hits.length) return hits;
     }
-    // Fallback: unlabelled page scans (study guides) — show the pages that fall
-    // inside this section's slice of the book.
-    const unlabelled = rows.filter((r) => !r.label);
-    if (!unlabelled.length || totalChunks < 1) return [];
-    const maxPage = unlabelled[unlabelled.length - 1].page_number || 1;
+    // Fallback (study guides / books without printed figure references):
+    // show the figures whose pages fall inside this section's slice of the book.
+    if (totalChunks < 1) return [];
+    const maxPage = rows[rows.length - 1].page_number || 1;
     const from = (chunkIndex / totalChunks) * maxPage;
     const to = ((chunkIndex + 1) / totalChunks) * maxPage;
-    return unlabelled.filter((r) => r.page_number >= from && r.page_number <= to).slice(0, 4);
+    return rows.filter((r) => r.page_number >= from && r.page_number <= to).slice(0, 4);
+
   }, [rows, keys, chunkIndex, totalChunks]);
 
 
