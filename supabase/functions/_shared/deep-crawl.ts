@@ -783,11 +783,11 @@ export function cleanTextbookPreservingTOC(raw: string): string {
  * text can ever be removed. License metadata is preserved separately on the
  * document row (license_type / source_url), not in the readable text.
  */
-export function stripFrontMatter(text: string, headLimit = 9_000): string {
+export function stripFrontMatter(text: string, headLimit = 20_000): string {
   if (!text || text.length < 1_000) return text;
 
   const BODY_MARKER =
-    /^(?:#\s*)?(?:chapter\s+(?:1|one|i)\b|unit\s+1\b|term\s+1\b|module\s+1\b|topic\s+1\b|lesson\s+1\b|prologue\b|introduction\b|contents\b|table\s+of\s+contents\b|1\.1\b|1\s+[A-Z])/i;
+    /^(?:#+\s*)?(?:chapter\s+(?:1|one|i)\b|section\s+1\b|unit\s+1\b|term\s+1\b|module\s+1\b|topic\s+1\b|lesson\s+1\b|prologue\b|introduction\b|contents\b|table\s+of\s+contents\b|1\.1\b|1\s+[A-Z])/i;
 
   const IMPRINT_PATTERNS: RegExp[] = [
     /\bISBN\b/i,
@@ -795,17 +795,24 @@ export function stripFrontMatter(text: string, headLimit = 9_000): string {
     /\b(?:e-?mail|email)\s*:/i,
     /^\s*(?:https?:\/\/|www\.)\S+\s*$/i,
     /^\s*\S+@\S+\.\S+\s*$/,
+    /@\S+\.(?:gov|org|com|za)\b/i,
     /\bpublished\s+by\b/i,
     /\ball\s+rights\s+reserved\b/i,
     /\b(?:first|second|third|fourth)\s+edition\b/i,
     /\bprinted\s+(?:by|in)\b/i,
     /©|\(c\)\s*\d{4}|\bcopyright\b/i,
     /\bcreative\s+commons\b/i,
-    /\bthis\s+(?:book|work)\s+may\s+not\s+be\s+sold\b/i,
+    /\b(?:this\s+(?:book|work|content)\s+may\s+not\s+be\s+sold|may\s+not\s+be\s+sold\s+or\s+used\s+for\s+commercial)/i,
+    /\b(?:contributors?|authors?|editors?|designers?|illustrators?|proofreaders?|expert\s+readers?)\s*:/i,
+    /\bseries\s+managing\s+editor\b/i,
+    /\b(?:layout\s+and\s+typesetting|text\s+design|cover\s+illustration|computer\s+graphics)\b/i,
+    /\bcontact\s+person\b/i,
+    /\bministerial\s+foreword\b|\bforeword\s+by\s+the\s+minister\b/i,
+    /\b(?:developed\s+and\s+)?funded\s+(?:as\s+an\s+ongoing\s+project|by)\b/i,
     /\b(?:donat(?:e|ion)|sponsor(?:ed|ship)?)\b.*\b(?:please|help|support)\b/i,
     /\bplease\s+(?:donate|consider\s+donating)\b/i,
     /\b(?:Private\s+Bag|P\.?O\.?\s+Box|Street\b.*\b(?:Pretoria|Cape\s+Town|Johannesburg|Durban))/i,
-    /\bDepartment\s+of\s+Basic\s+Education\b.*\b(?:Pretoria|Private\s+Bag|Street)\b/i,
+    /\bDepartment\s+of\s+Basic\s+Education\b/i,
     /\backnowledge?ments?\s*$/i,
   ];
 
@@ -820,6 +827,17 @@ export function stripFrontMatter(text: string, headLimit = 9_000): string {
   const headEnd = bodyLine >= 0 ? bodyLine : 0;
   if (headEnd === 0) return text;
 
+  const headText = lines.slice(0, headEnd).join("\n");
+  const signals = IMPRINT_PATTERNS.reduce((n, rx) => n + (rx.test(headText) ? 1 : 0), 0);
+
+  // When the head is clearly a publisher block (cover, credits, ISBN, licence,
+  // ministerial foreword), drop it wholesale rather than line-by-line — those
+  // pages carry no learning content.
+  if (signals >= 2 && headText.length <= 25_000) {
+    const body = lines.slice(headEnd).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    if (body.length >= text.length * 0.85) return body;
+  }
+
   const head = lines.slice(0, headEnd).filter((l) => {
     const t = l.trim();
     if (!t) return false;
@@ -831,4 +849,5 @@ export function stripFrontMatter(text: string, headLimit = 9_000): string {
   if (rebuilt.length < text.length * 0.85) return text;
   return rebuilt;
 }
+
 
