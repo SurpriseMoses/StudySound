@@ -221,7 +221,7 @@ export default function Listen({ lessonId: lessonIdProp, embedded = false }: Lis
                 </p>
               )}
 
-              <FigureGallery documentId={lesson?.document_id} text={chunkText} />
+              <FigureGallery documentId={lesson?.document_id} text={chunkText} chunkIndex={chunkIndex} totalChunks={totalChunks} />
 
               <AudioSection
                 key={`${lessonId}-${chunkIndex}-${language}`}
