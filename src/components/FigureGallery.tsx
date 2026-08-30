@@ -134,9 +134,10 @@ export default function FigureGallery({ documentId, text, chunkIndex = 0, totalC
               />
             </button>
             <figcaption className="px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{f.label}</span>
-              {f.caption ? ` — ${f.caption}` : null}
+              <span className="font-medium text-foreground">{f.label ?? `Page ${f.page_number}`}</span>
+              {f.caption && f.label ? ` — ${f.caption}` : null}
             </figcaption>
+
           </figure>
         ))}
       </div>
