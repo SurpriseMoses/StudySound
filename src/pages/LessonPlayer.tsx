@@ -453,7 +453,7 @@ function ListenTab(props: {
             </p>
           )}
 
-          <FigureGallery documentId={documentId} text={chunkText} />
+          <FigureGallery documentId={documentId} text={chunkText} chunkIndex={chunkIndex} totalChunks={totalChunks} />
 
           <AudioSection
             key={`${lessonId}-${chunkIndex}-${language}`}
