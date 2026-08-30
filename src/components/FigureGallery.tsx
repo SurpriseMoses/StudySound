@@ -32,13 +32,16 @@ function referencedKeys(text: string): Set<string> {
 interface FigureGalleryProps {
   documentId?: string | null;
   text: string;
+  /** Used to show page scans for books whose figures have no printed labels. */
+  chunkIndex?: number;
+  totalChunks?: number;
 }
 
 /**
  * Shows the original textbook diagrams for whichever figures the current
  * section of text refers to. Renders nothing when the book has no figures.
  */
-export default function FigureGallery({ documentId, text }: FigureGalleryProps) {
+export default function FigureGallery({ documentId, text, chunkIndex = 0, totalChunks = 1 }: FigureGalleryProps) {
   const [rows, setRows] = useState<FigureRow[]>([]);
   const [figures, setFigures] = useState<Figure[]>([]);
   const [zoom, setZoom] = useState<Figure | null>(null);
@@ -53,7 +56,6 @@ export default function FigureGallery({ documentId, text }: FigureGalleryProps) 
         .from("document_figures")
         .select("id,label,caption,storage_path,page_number")
         .eq("document_id", documentId)
-        .not("label", "is", null)
         .order("page_number", { ascending: true })
         .limit(2000);
       if (cancelled) return;
@@ -64,18 +66,31 @@ export default function FigureGallery({ documentId, text }: FigureGalleryProps) 
   }, [documentId]);
 
   const matches = useMemo(() => {
-    if (!rows.length || keys.size === 0) return [];
-    const seen = new Set<string>();
-    return rows
-      .filter((r) => {
-        const k = labelKey(r.label);
-        if (!k || !keys.has(k)) return false;
-        if (seen.has(k + r.storage_path)) return false;
-        seen.add(k + r.storage_path);
-        return true;
-      })
-      .slice(0, 6);
-  }, [rows, keys]);
+    if (!rows.length) return [];
+    const labelled = rows.filter((r) => r.label);
+    if (labelled.length && keys.size > 0) {
+      const seen = new Set<string>();
+      const hits = labelled
+        .filter((r) => {
+          const k = labelKey(r.label);
+          if (!k || !keys.has(k)) return false;
+          if (seen.has(k + r.storage_path)) return false;
+          seen.add(k + r.storage_path);
+          return true;
+        })
+        .slice(0, 6);
+      if (hits.length) return hits;
+    }
+    // Fallback: unlabelled page scans (study guides) — show the pages that fall
+    // inside this section's slice of the book.
+    const unlabelled = rows.filter((r) => !r.label);
+    if (!unlabelled.length || totalChunks < 1) return [];
+    const maxPage = unlabelled[unlabelled.length - 1].page_number || 1;
+    const from = (chunkIndex / totalChunks) * maxPage;
+    const to = ((chunkIndex + 1) / totalChunks) * maxPage;
+    return unlabelled.filter((r) => r.page_number >= from && r.page_number <= to).slice(0, 4);
+  }, [rows, keys, chunkIndex, totalChunks]);
+
 
   useEffect(() => {
     if (!matches.length) { setFigures([]); return; }
