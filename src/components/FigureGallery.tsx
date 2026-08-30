@@ -81,15 +81,15 @@ export default function FigureGallery({ documentId, text, chunkIndex = 0, totalC
         .slice(0, 6);
       if (hits.length) return hits;
     }
-    // Fallback (study guides / books without printed figure references):
-    // show the figures whose pages fall inside this section's slice of the book.
+    // Fallback: spread the book's figures evenly across its sections so every
+    // section shows the diagrams that belong to roughly that part of the book.
     if (totalChunks < 1) return [];
-    const maxPage = rows[rows.length - 1].page_number || 1;
-    const from = (chunkIndex / totalChunks) * maxPage;
-    const to = ((chunkIndex + 1) / totalChunks) * maxPage;
-    return rows.filter((r) => r.page_number >= from && r.page_number <= to).slice(0, 4);
+    const start = Math.floor((chunkIndex / totalChunks) * rows.length);
+    const end = Math.max(start + 1, Math.floor(((chunkIndex + 1) / totalChunks) * rows.length));
+    return rows.slice(Math.min(start, Math.max(0, rows.length - 1)), Math.min(end, rows.length)).slice(0, 4);
 
   }, [rows, keys, chunkIndex, totalChunks]);
+
 
 
   useEffect(() => {
