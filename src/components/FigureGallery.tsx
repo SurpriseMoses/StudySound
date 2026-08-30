@@ -152,8 +152,9 @@ export default function FigureGallery({ documentId, text, chunkIndex = 0, totalC
                 className="w-full h-auto rounded-md"
               />
               <figcaption className="text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">{zoom.label}</span>
-                {zoom.caption ? ` — ${zoom.caption}` : null}
+                <span className="font-medium text-foreground">{zoom.label ?? `Page ${zoom.page_number}`}</span>
+                {zoom.caption && zoom.label ? ` — ${zoom.caption}` : null}
+
                 <span className="ml-2 opacity-70 inline-flex items-center gap-1">
                   <ImageOff className="w-3 h-3" aria-hidden /> page {zoom.page_number}
                 </span>
