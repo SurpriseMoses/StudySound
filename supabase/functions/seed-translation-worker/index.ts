@@ -478,15 +478,21 @@ async function submitNextBatch(admin: any, apiKey: string, cache: Map<string, Do
 
     if (quotaOut || rateLimited) {
       await admin.from("translation_worker_state").update({
+        // Credit exhaustion is a circuit breaker: stop all future UI/cron ticks
+        // until an administrator explicitly resumes after topping up billing.
+        ...(quotaOut ? { is_running: false, current_document_id: null, current_queue_id: null, current_language: null } : {}),
         last_error: quotaOut
-          ? "Gemini quota/credits exhausted — top up the Gemini API billing to resume translation seeding."
+          ? "Gemini prepaid credits are depleted. Translation seeding is paused; top up Gemini API billing, then press Start to resume."
           : "Gemini rate limited — retrying automatically.",
       }).eq("id", 1);
       return {
         submitted: 0,
         reason: quotaOut ? "gemini_quota_exhausted" : "gemini_rate_limited",
+        paused: quotaOut,
         retry_after_seconds: Math.round(backoffMs / 1000),
-        message: msg.slice(0, 300),
+        message: quotaOut
+          ? "Gemini prepaid credits are depleted. Translation seeding has been paused; top up billing, then resume the worker."
+          : "Gemini is rate limited. Translation seeding will retry automatically after backoff.",
       };
     }
     throw e;
