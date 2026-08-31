@@ -28,7 +28,7 @@ const PER_MINUTE_SOFT_LIMIT = 5;
 const LANG_NAMES: Record<string, string> = {
   en: "English", af: "Afrikaans", zu: "isiZulu", xh: "isiXhosa",
   nso: "Sepedi (Northern Sotho)", tn: "Setswana", ts: "Xitsonga",
-  ve: "Tshivenda", nr: "isiNdebele", fr: "French",
+  ve: "Tshivenda", nr: "isiNdebele", st: "Sesotho", ss: "siSwati", fr: "French",
 };
 
 function chunkText(text: string, size = CHUNK_SIZE): string[] {
