@@ -464,15 +464,34 @@ async function submitNextBatch(admin: any, apiKey: string, cache: Map<string, Do
     jobName = submitted.name;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // Submit failed — return rows to pending with backoff.
+    // 429 = rate limited OR prepaid credits depleted (RESOURCE_EXHAUSTED). Both are
+    // non-code failures: park the rows and stop cleanly instead of throwing a 500.
+    const quotaOut = /RESOURCE_EXHAUSTED|prepayment credits are depleted|billing/i.test(msg);
+    const rateLimited = / 429:/.test(msg);
+    const backoffMs = quotaOut ? 30 * 60_000 : rateLimited ? 5 * 60_000 : 60_000;
     await admin.from("translation_seed_queue").update({
       status: "pending",
       started_at: null,
-      delayed_until: new Date(Date.now() + 60_000).toISOString(),
+      delayed_until: new Date(Date.now() + backoffMs).toISOString(),
       last_error: `batch submit failed: ${msg.slice(0, 300)}`,
     }).in("id", Array.from(claimedSet));
+
+    if (quotaOut || rateLimited) {
+      await admin.from("translation_worker_state").update({
+        last_error: quotaOut
+          ? "Gemini quota/credits exhausted — top up the Gemini API billing to resume translation seeding."
+          : "Gemini rate limited — retrying automatically.",
+      }).eq("id", 1);
+      return {
+        submitted: 0,
+        reason: quotaOut ? "gemini_quota_exhausted" : "gemini_rate_limited",
+        retry_after_seconds: Math.round(backoffMs / 1000),
+        message: msg.slice(0, 300),
+      };
+    }
     throw e;
   }
+
 
   // Mark rows 'batched' with their slot index.
   for (let i = 0; i < finalTodo.length; i++) {
