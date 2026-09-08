@@ -305,11 +305,17 @@ export default function LessonPlayer() {
                 </div>
               </div>
             </div>
-            <LanguagePickerWithHint
-              language={language}
-              onChange={setLanguage}
-            />
-
+            <div className="flex items-center gap-2 flex-wrap">
+              <LessonContents
+                documentId={lesson.document_id}
+                currentIndex={chunkIndex}
+                onJump={(i) => setChunkIndex(i)}
+              />
+              <LanguagePickerWithHint
+                language={language}
+                onChange={setLanguage}
+              />
+            </div>
           </div>
         </div>
 
