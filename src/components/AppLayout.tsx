@@ -150,9 +150,32 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
+        <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto pb-24 lg:pb-8">
           {children}
         </div>
+
+        {/* Mobile bottom bar */}
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-background/95 backdrop-blur border-t">
+          <ul className="flex items-stretch justify-around">
+            {bottomNavItems.map(item => {
+              const isActive = location.pathname === item.path;
+              return (
+                <li key={item.path} className="flex-1">
+                  <Link
+                    to={item.path}
+                    className={cn(
+                      "flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors",
+                      isActive ? "text-primary" : "text-muted-foreground"
+                    )}
+                  >
+                    <item.icon className="w-5 h-5" />
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
       </main>
 
       <DailyRewardModal open={open} result={result} onClose={dismiss} />
