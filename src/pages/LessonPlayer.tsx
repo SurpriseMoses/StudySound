@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AppLayout from "@/components/AppLayout";
 import FigureGallery from "@/components/FigureGallery";
+import LessonContents from "@/components/LessonContents";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -305,11 +306,17 @@ export default function LessonPlayer() {
                 </div>
               </div>
             </div>
-            <LanguagePickerWithHint
-              language={language}
-              onChange={setLanguage}
-            />
-
+            <div className="flex items-center gap-2 flex-wrap">
+              <LessonContents
+                documentId={lesson.document_id}
+                currentIndex={chunkIndex}
+                onJump={(i) => setChunkIndex(i)}
+              />
+              <LanguagePickerWithHint
+                language={language}
+                onChange={setLanguage}
+              />
+            </div>
           </div>
         </div>
 
