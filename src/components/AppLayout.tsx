@@ -28,6 +28,14 @@ const navItems = [
   { path: "/profile", label: "Profile", icon: User },
 ];
 
+const bottomNavItems = [
+  { path: "/dashboard", label: "Home", icon: Home },
+  { path: "/subjects", label: "Subjects", icon: BookOpen },
+  { path: "/upload", label: "Upload", icon: Upload },
+  { path: "/library", label: "Library", icon: Library },
+  { path: "/profile", label: "Profile", icon: User },
+];
+
 function AppLayoutInner({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
