@@ -360,21 +360,31 @@ export default function LessonPlayer() {
               transition={{ duration: 0.2 }}
             >
               {activeTab === "listen" && (
-                <ListenTab
-                  lessonId={lesson.id}
-                  documentId={lesson.document_id}
-                  language={language}
-                  chunkIndex={chunkIndex}
-                  totalChunks={totalChunks}
-                  chunkText={chunkText}
-                  goChunk={goChunk}
-                  onMeta={({ text, totalChunks: t }) => {
-                    setChunkText(text);
-                    setTotalChunks(t);
-                  }}
-                  onProgress={handleAudioProgress}
-                  onChunkEnded={handleChunkEnded}
-                />
+                !online && lesson.document_id ? (
+                  <OfflineListen
+                    documentId={lesson.document_id}
+                    language={language}
+                    chunkIndex={chunkIndex}
+                    onSeekChunk={goChunk}
+                    onTotalChunks={setTotalChunks}
+                  />
+                ) : (
+                  <ListenTab
+                    lessonId={lesson.id}
+                    documentId={lesson.document_id}
+                    language={language}
+                    chunkIndex={chunkIndex}
+                    totalChunks={totalChunks}
+                    chunkText={chunkText}
+                    goChunk={goChunk}
+                    onMeta={({ text, totalChunks: t }) => {
+                      setChunkText(text);
+                      setTotalChunks(t);
+                    }}
+                    onProgress={handleAudioProgress}
+                    onChunkEnded={handleChunkEnded}
+                  />
+                )
               )}
               {activeTab === "visuals" && lesson.document_id && (
                 <StoryModeTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />
