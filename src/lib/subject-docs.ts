@@ -132,8 +132,13 @@ export function categorizeDoc(doc: DocLite): Category {
   if (kinds.includes("poetry") || kinds.includes("poem")) return "Poetry";
   if (kinds.includes("short-story") || kinds.includes("shortstory")) return "Short Stories";
   if (kinds.includes("textbook") || kinds.includes("workbook")) return "Textbooks";
+  // Curriculum books carry a grade + subject (e.g. "Mathematics Grade 10").
+  const t = doc.tags;
+  const hasGrade = !!(t && typeof t === "object" && !Array.isArray(t) && (t as any).grade);
+  if (hasGrade || /\bgrade\s*\d{1,2}\b/i.test(doc.title || "") || doc.doc_type) return "Textbooks";
   if (kinds.includes("novel") || (doc.subject_type || "").toLowerCase() === "novel") return "Novels";
   return "Other";
+
 }
 
 export const CATEGORY_ORDER: Category[] = ["Novels", "Drama", "Poetry", "Short Stories", "Textbooks", "Other"];
