@@ -25,6 +25,9 @@ import { useLessonProgress } from "@/hooks/use-lesson-progress";
 import StoryModeTab from "@/components/StoryModeTab";
 import { AudioSection } from "@/components/AudioSection";
 import { TranslationSection } from "@/components/TranslationSection";
+import OfflineDownloadButton, { OfflineBanner } from "@/components/OfflineDownloadButton";
+import OfflineListen from "@/components/OfflineListen";
+import { useOnline } from "@/hooks/use-online";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -67,6 +70,7 @@ export default function LessonPlayer() {
   const { claim: claimDailyReward } = useDailyRewardContext();
   const { awardXp, flushLevelUp } = useProgressionContext();
   const [searchParams, setSearchParams] = useSearchParams();
+  const online = useOnline();
 
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab: Tab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "listen";
@@ -312,6 +316,15 @@ export default function LessonPlayer() {
                 currentIndex={chunkIndex}
                 onJump={(i) => setChunkIndex(i)}
               />
+              {online && (
+                <OfflineDownloadButton
+                  documentId={lesson.document_id}
+                  lessonId={lesson.id}
+                  title={lesson.title}
+                  subject={lesson.subject}
+                  language={language}
+                />
+              )}
               <LanguagePickerWithHint
                 language={language}
                 onChange={setLanguage}
@@ -319,6 +332,10 @@ export default function LessonPlayer() {
             </div>
           </div>
         </div>
+
+        {!online && <OfflineBanner />}
+
+
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={onTabChange}>
@@ -343,21 +360,31 @@ export default function LessonPlayer() {
               transition={{ duration: 0.2 }}
             >
               {activeTab === "listen" && (
-                <ListenTab
-                  lessonId={lesson.id}
-                  documentId={lesson.document_id}
-                  language={language}
-                  chunkIndex={chunkIndex}
-                  totalChunks={totalChunks}
-                  chunkText={chunkText}
-                  goChunk={goChunk}
-                  onMeta={({ text, totalChunks: t }) => {
-                    setChunkText(text);
-                    setTotalChunks(t);
-                  }}
-                  onProgress={handleAudioProgress}
-                  onChunkEnded={handleChunkEnded}
-                />
+                !online && lesson.document_id ? (
+                  <OfflineListen
+                    documentId={lesson.document_id}
+                    language={language}
+                    chunkIndex={chunkIndex}
+                    onSeekChunk={goChunk}
+                    onTotalChunks={setTotalChunks}
+                  />
+                ) : (
+                  <ListenTab
+                    lessonId={lesson.id}
+                    documentId={lesson.document_id}
+                    language={language}
+                    chunkIndex={chunkIndex}
+                    totalChunks={totalChunks}
+                    chunkText={chunkText}
+                    goChunk={goChunk}
+                    onMeta={({ text, totalChunks: t }) => {
+                      setChunkText(text);
+                      setTotalChunks(t);
+                    }}
+                    onProgress={handleAudioProgress}
+                    onChunkEnded={handleChunkEnded}
+                  />
+                )
               )}
               {activeTab === "visuals" && lesson.document_id && (
                 <StoryModeTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />

@@ -21,6 +21,8 @@ import {
   docMatchesSubject, categorizeDoc, CATEGORY_ORDER, isStudyGuide, studyGuideDownloadUrl,
   type DocLite, type Category,
 } from "@/lib/subject-docs";
+import OfflineSavedList from "@/components/OfflineSavedList";
+import { listBooks } from "@/lib/offline-store";
 
 
 
@@ -174,7 +176,8 @@ export default function LibraryPage() {
   }, [seededVisible]);
 
 
-  const downloaded = lessons.filter(l => l.is_downloaded);
+  const [savedOfflineCount, setSavedOfflineCount] = useState(0);
+  useEffect(() => { listBooks().then(b => setSavedOfflineCount(b.length)); }, []);
   const visibleLessons = filterBySearch(lessons);
 
   const heading = activeSubjectIds.length === 0
@@ -262,7 +265,7 @@ export default function LibraryPage() {
             <TabsTrigger value="library">Library ({seededVisible.length})</TabsTrigger>
             <TabsTrigger value="guides">Study Guides ({studyGuides.length})</TabsTrigger>
             <TabsTrigger value="mine">My Lessons ({visibleLessons.length})</TabsTrigger>
-            <TabsTrigger value="downloaded">Offline ({downloaded.length})</TabsTrigger>
+            <TabsTrigger value="downloaded">Offline ({savedOfflineCount})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="library" className="mt-4 space-y-6">
@@ -312,13 +315,7 @@ export default function LibraryPage() {
           </TabsContent>
 
           <TabsContent value="downloaded" className="mt-4 space-y-3">
-            {downloaded.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">
-                No downloaded lessons yet. Generate audio on a lesson to make it available offline.
-              </p>
-            ) : (
-              downloaded.map(l => <LessonCard key={l.id} lesson={l} />)
-            )}
+            <OfflineSavedList />
           </TabsContent>
         </Tabs>
       </motion.div>
