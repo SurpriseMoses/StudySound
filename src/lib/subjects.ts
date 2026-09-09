@@ -26,10 +26,16 @@ export const subjects: Subject[] = [
 
   // STEM — NO visual support
   { id: "mathematics", name: "Mathematics", icon: "📐", category: "stem", supportsVisuals: false, description: "Algebra, geometry, calculus & statistics", color: "hsl(200 50% 45%)" },
+  { id: "mathematical-literacy", name: "Mathematical Literacy", icon: "🔢", category: "stem", supportsVisuals: false, description: "Everyday maths, finance & data handling", color: "hsl(190 45% 42%)" },
   { id: "physical-sciences", name: "Physical Sciences", icon: "⚛️", category: "stem", supportsVisuals: false, description: "Physics & chemistry fundamentals", color: "hsl(180 40% 40%)" },
-  { id: "accounting", name: "Accounting", icon: "📊", category: "stem", supportsVisuals: false, description: "Financial accounting & business studies", color: "hsl(220 30% 45%)" },
+  { id: "natural-sciences", name: "Natural Sciences", icon: "🔬", category: "sciences", supportsVisuals: true, description: "Senior phase science: matter, life & energy", color: "hsl(160 50% 40%)" },
+  { id: "technology", name: "Technology", icon: "🛠️", category: "stem", supportsVisuals: true, description: "Design, structures, systems & processing", color: "hsl(24 60% 45%)" },
+  { id: "accounting", name: "Accounting", icon: "📊", category: "stem", supportsVisuals: false, description: "Financial accounting & bookkeeping", color: "hsl(220 30% 45%)" },
+  { id: "business-studies", name: "Business Studies", icon: "💼", category: "stem", supportsVisuals: false, description: "Business ventures, roles & operations", color: "hsl(210 35% 48%)" },
+  { id: "economics", name: "Economics", icon: "📈", category: "stem", supportsVisuals: false, description: "Micro & macroeconomics, markets & trade", color: "hsl(45 55% 45%)" },
   { id: "computer-science", name: "Computer Science", icon: "💻", category: "stem", supportsVisuals: false, description: "Programming, algorithms & IT", color: "hsl(250 45% 50%)" },
 ];
+
 
 export const getSubjectById = (id: string) => subjects.find(s => s.id === id);
 export const getSubjectsByCategory = (cat: SubjectCategory) => subjects.filter(s => s.category === cat);
