@@ -268,7 +268,7 @@ export default function LibraryPage() {
         )}
 
         {/* Tabs: Library (seeded) vs My Lessons */}
-        <Tabs defaultValue="library">
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="library">Library ({seededVisible.length})</TabsTrigger>
             <TabsTrigger value="guides">Study Guides ({studyGuides.length})</TabsTrigger>
@@ -280,7 +280,12 @@ export default function LibraryPage() {
             {loading ? (
               <LoadingState />
             ) : seededVisible.length === 0 ? (
-              <EmptyLibrary subjectId={activeSubjectIds[0]} uploadHref={uploadHref} />
+              <EmptyLibrary
+                subjectId={activeSubjectIds[0]}
+                uploadHref={uploadHref}
+                guideCount={studyGuides.length}
+                onOpenGuides={() => setTab("guides")}
+              />
             ) : (
               CATEGORY_ORDER.filter(cat => grouped.has(cat)).map(cat => (
                 <CategoryRow key={cat} title={cat} docs={grouped.get(cat)!} />
