@@ -176,6 +176,14 @@ export default function LibraryPage() {
   }, [seededVisible]);
 
 
+  // If a subject only has study guides, open that tab instead of an empty Library tab.
+  const [tab, setTab] = useState("library");
+  useEffect(() => {
+    if (loading) return;
+    if (seededVisible.length === 0 && studyGuides.length > 0) setTab("guides");
+    else setTab("library");
+  }, [loading, seededVisible.length, studyGuides.length]);
+
   const [savedOfflineCount, setSavedOfflineCount] = useState(0);
   useEffect(() => { listBooks().then(b => setSavedOfflineCount(b.length)); }, []);
   const visibleLessons = filterBySearch(lessons);
