@@ -25,6 +25,9 @@ import { useLessonProgress } from "@/hooks/use-lesson-progress";
 import StoryModeTab from "@/components/StoryModeTab";
 import { AudioSection } from "@/components/AudioSection";
 import { TranslationSection } from "@/components/TranslationSection";
+import OfflineDownloadButton, { OfflineBanner } from "@/components/OfflineDownloadButton";
+import OfflineListen from "@/components/OfflineListen";
+import { useOnline } from "@/hooks/use-online";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -67,6 +70,7 @@ export default function LessonPlayer() {
   const { claim: claimDailyReward } = useDailyRewardContext();
   const { awardXp, flushLevelUp } = useProgressionContext();
   const [searchParams, setSearchParams] = useSearchParams();
+  const online = useOnline();
 
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab: Tab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "listen";
