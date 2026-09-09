@@ -392,18 +392,27 @@ function BookCard({ doc }: { doc: SeededDoc }) {
   );
 }
 
-function EmptyLibrary({ subjectId, uploadHref }: { subjectId?: string; uploadHref: string }) {
+function EmptyLibrary({ subjectId, uploadHref, guideCount = 0, onOpenGuides }: {
+  subjectId?: string; uploadHref: string; guideCount?: number; onOpenGuides?: () => void;
+}) {
   return (
     <Card>
       <CardContent className="p-8 text-center">
         <FileText className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-        <h3 className="font-semibold mb-1">No content available {subjectId ? `for ${subjectName(subjectId)}` : ""} yet</h3>
+        <h3 className="font-semibold mb-1">No books {subjectId ? `for ${subjectName(subjectId)}` : ""} yet</h3>
         <p className="text-sm text-muted-foreground mb-4">
-          Be the first — upload a textbook, novel, or notes to start learning.
+          {guideCount > 0
+            ? `But ${guideCount} free study guide${guideCount > 1 ? "s" : ""} ${guideCount > 1 ? "are" : "is"} available to read and download.`
+            : "Be the first — upload a textbook, novel, or notes to start learning."}
         </p>
         <div className="flex flex-wrap gap-2 justify-center">
+          {guideCount > 0 && (
+            <Button size="sm" className="gap-2 rounded-xl" onClick={onOpenGuides}>
+              <GraduationCap className="w-4 h-4" /> View study guides
+            </Button>
+          )}
           <Link to={uploadHref}>
-            <Button size="sm" className="gap-2 rounded-xl">
+            <Button size="sm" variant={guideCount > 0 ? "outline" : "default"} className="gap-2 rounded-xl">
               <Plus className="w-4 h-4" /> Upload a textbook
             </Button>
           </Link>
