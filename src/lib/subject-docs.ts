@@ -22,10 +22,67 @@ const tagKinds = (tags: any): string[] => {
   return out;
 };
 
+// Free-text signals we can match a curriculum subject name against:
+// doc_type ("Life Sciences"), tags.subject, and the title ("Mathematics Grade 10").
+const subjectText = (doc: DocLite): string => {
+  const parts: string[] = [doc.doc_type ?? "", doc.title ?? ""];
+  const t = doc.tags;
+  if (t && typeof t === "object" && !Array.isArray(t)) {
+    for (const k of ["subject", "doc_type", "kind"]) {
+      const v = (t as any)[k];
+      if (typeof v === "string") parts.push(v);
+    }
+  }
+  return parts.join(" | ").toLowerCase();
+};
+
+// Subject id → regexes that identify the curriculum subject in free text.
+// Order matters where names overlap (Mathematical Literacy vs Mathematics).
+const SUBJECT_PATTERNS: Record<string, RegExp[]> = {
+  "english": [/\benglish\b/, /\bhome language\b/, /first additional language/],
+  "history": [/\bhistory\b/],
+  "geography": [/\bgeography\b/],
+  "life-sciences": [/life sciences?/, /\bbiology\b/],
+  "natural-sciences": [/natural sciences?/],
+  "physical-sciences": [/physical sciences?/, /\bphysics\b/, /\bchemistry\b/],
+  "mathematical-literacy": [/mathematical literacy/, /maths? literacy/],
+  "mathematics": [/\bmathematics\b/, /\bmaths?\b/],
+  "technology": [/\btechnology\b/],
+  "accounting": [/\baccounting\b/],
+  "business-studies": [/business studies/, /\bbusiness\b/],
+  "economics": [/\beconomics\b/, /economic and management sciences/],
+  "computer-science": [/computer science/, /information technology/, /\bcat\b/, /programming/],
+  "afrikaans": [/\bafrikaans\b/],
+  "isizulu": [/isizulu/, /\bzulu\b/],
+  "french": [/\bfrench\b/],
+  "art": [/visual arts?/, /\bart\b/],
+  "music": [/\bmusic\b/],
+};
+
+function textSubjectId(doc: DocLite): string | null {
+  const text = subjectText(doc);
+  // Most specific first so "Mathematical Literacy" never lands on Mathematics.
+  const order = [
+    "mathematical-literacy", "life-sciences", "natural-sciences", "physical-sciences",
+    "business-studies", "computer-science", "economics", "accounting", "technology",
+    "geography", "history", "mathematics", "afrikaans", "isizulu", "french",
+    "english", "art", "music",
+  ];
+  for (const id of order) {
+    if ((SUBJECT_PATTERNS[id] ?? []).some(re => re.test(text))) return id;
+  }
+  return null;
+}
+
 // Subject id → predicate
 export function docMatchesSubject(doc: DocLite, subjectId: string): boolean {
   const st = (doc.subject_type || "").toLowerCase();
   const kinds = tagKinds(doc.tags);
+
+  // Curriculum textbooks & study guides: match on their subject name.
+  const byText = textSubjectId(doc);
+  if (byText) return byText === subjectId;
+
   switch (subjectId) {
     case "english":
       return st === "novel" || kinds.some(k => ["novel", "play", "drama", "poetry", "short-story", "shortstory"].includes(k));
@@ -40,7 +97,15 @@ export function docMatchesSubject(doc: DocLite, subjectId: string): boolean {
     case "mathematics":
       return kinds.includes("math") || kinds.includes("mathematics");
     case "accounting":
-      return kinds.includes("accounting") || kinds.includes("business");
+      return kinds.includes("accounting");
+    case "business-studies":
+      return kinds.includes("business") || kinds.includes("business-studies");
+    case "economics":
+      return kinds.includes("economics") || kinds.includes("ems");
+    case "natural-sciences":
+      return kinds.includes("natural-sciences");
+    case "technology":
+      return kinds.includes("technology");
     case "computer-science":
       return kinds.includes("computer-science") || kinds.includes("cs") || kinds.includes("programming");
     case "afrikaans":
@@ -57,6 +122,7 @@ export function docMatchesSubject(doc: DocLite, subjectId: string): boolean {
       return st === "other";
   }
 }
+
 
 export type Category = "Novels" | "Drama" | "Poetry" | "Textbooks" | "Short Stories" | "Other";
 
