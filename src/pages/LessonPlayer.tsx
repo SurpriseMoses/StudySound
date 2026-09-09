@@ -316,6 +316,15 @@ export default function LessonPlayer() {
                 currentIndex={chunkIndex}
                 onJump={(i) => setChunkIndex(i)}
               />
+              {online && (
+                <OfflineDownloadButton
+                  documentId={lesson.document_id}
+                  lessonId={lesson.id}
+                  title={lesson.title}
+                  subject={lesson.subject}
+                  language={language}
+                />
+              )}
               <LanguagePickerWithHint
                 language={language}
                 onChange={setLanguage}
@@ -323,6 +332,10 @@ export default function LessonPlayer() {
             </div>
           </div>
         </div>
+
+        {!online && <OfflineBanner />}
+
+
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={onTabChange}>
