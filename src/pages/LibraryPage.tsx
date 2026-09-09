@@ -176,7 +176,8 @@ export default function LibraryPage() {
   }, [seededVisible]);
 
 
-  const downloaded = lessons.filter(l => l.is_downloaded);
+  const [savedOfflineCount, setSavedOfflineCount] = useState(0);
+  useEffect(() => { listBooks().then(b => setSavedOfflineCount(b.length)); }, []);
   const visibleLessons = filterBySearch(lessons);
 
   const heading = activeSubjectIds.length === 0
@@ -264,7 +265,7 @@ export default function LibraryPage() {
             <TabsTrigger value="library">Library ({seededVisible.length})</TabsTrigger>
             <TabsTrigger value="guides">Study Guides ({studyGuides.length})</TabsTrigger>
             <TabsTrigger value="mine">My Lessons ({visibleLessons.length})</TabsTrigger>
-            <TabsTrigger value="downloaded">Offline ({downloaded.length})</TabsTrigger>
+            <TabsTrigger value="downloaded">Offline ({savedOfflineCount})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="library" className="mt-4 space-y-6">
