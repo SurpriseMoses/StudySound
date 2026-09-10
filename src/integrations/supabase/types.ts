@@ -368,6 +368,57 @@ export type Database = {
           },
         ]
       }
+      credit_purchases: {
+        Row: {
+          amount_zar: number
+          bonus_credits: number
+          created_at: string
+          credited: boolean
+          credits: number
+          currency: string
+          id: string
+          pack_id: string
+          paystack_payload: Json | null
+          provider: string
+          reference: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_zar: number
+          bonus_credits?: number
+          created_at?: string
+          credited?: boolean
+          credits: number
+          currency?: string
+          id?: string
+          pack_id: string
+          paystack_payload?: Json | null
+          provider?: string
+          reference: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_zar?: number
+          bonus_credits?: number
+          created_at?: string
+          credited?: boolean
+          credits?: number
+          currency?: string
+          id?: string
+          pack_id?: string
+          paystack_payload?: Json | null
+          provider?: string
+          reference?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       credit_transactions: {
         Row: {
           amount: number

@@ -16,6 +16,7 @@ import LessonPlayer from "./pages/LessonPlayer";
 import LibraryPage from "./pages/LibraryPage";
 import Plans from "./pages/Plans";
 import TopUp from "./pages/TopUp";
+import PaymentCallback from "./pages/PaymentCallback";
 import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -65,6 +66,7 @@ const App = () => (
             <Route path="/library" element={protect(<LibraryPage />)} />
             <Route path="/profile" element={protect(<Profile />)} />
             <Route path="/topup" element={protect(<TopUp />)} />
+            <Route path="/payment/callback" element={protect(<PaymentCallback />)} />
 
             {/* Admin */}
             <Route

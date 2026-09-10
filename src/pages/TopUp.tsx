@@ -10,20 +10,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { CreditEstimator } from "@/components/CreditEstimator";
 
-type Pack = {
-  id: string;
-  credits: number;
-  bonus?: number;
-  price: string;
-  tagline: string;
-  popular?: boolean;
-};
+import { CREDIT_PACKS, type CreditPack as Pack } from "@/lib/credit-packs";
+import { toast } from "@/hooks/use-toast";
 
-const packs: Pack[] = [
-  { id: "starter", credits: 40, price: "R50", tagline: "1–2 study sessions, great for quick revision" },
-  { id: "popular", credits: 100, bonus: 10, price: "R100", tagline: "2–3 lessons or books, most popular choice", popular: true },
-  { id: "power", credits: 220, price: "R200", tagline: "5–6 lessons or full study coverage" },
-];
+const packs = CREDIT_PACKS;
 
 const contextCopy: Record<string, { title: string; sub: string }> = {
   audio: { title: "Continue listening", sub: "Top up to unlock the next section" },
@@ -57,20 +47,27 @@ export default function TopUp() {
 
   const handleCheckout = async (pack: Pack) => {
     setProcessing(pack.id);
-    // TODO: real Flutterwave checkout. For now, optimistic UI for animation.
-    await new Promise((r) => setTimeout(r, 700));
-    const total = pack.credits + (pack.bonus ?? 0);
-    setBalance((b) => (b ?? 0) + total);
-    setProcessing(null);
-    setSuccess({ credits: total });
-    // Auto-return after success
-    setTimeout(() => {
-      if (docId) {
-        navigate(ctx === "default" ? `/lesson/${docId}` : `/lesson/${docId}?tab=${ctx}`);
-      } else {
-        navigate(-1);
+    try {
+      const callback = new URL("/payment/callback", window.location.origin);
+      if (docId) callback.searchParams.set("doc", docId);
+      if (ctx !== "default") callback.searchParams.set("from", ctx);
+
+      const { data, error } = await supabase.functions.invoke("paystack-initialize", {
+        body: { pack_id: pack.id, callback_url: callback.toString() },
+      });
+      if (error) throw error;
+      if (data?.error || !data?.authorization_url) {
+        throw new Error(data?.error || "Could not start checkout");
       }
-    }, 1600);
+      window.location.href = data.authorization_url as string;
+    } catch (e) {
+      setProcessing(null);
+      toast({
+        title: "Payment could not start",
+        description: e instanceof Error ? e.message : "Please try again in a moment.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
