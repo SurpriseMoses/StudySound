@@ -10,20 +10,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { CreditEstimator } from "@/components/CreditEstimator";
 
-type Pack = {
-  id: string;
-  credits: number;
-  bonus?: number;
-  price: string;
-  tagline: string;
-  popular?: boolean;
-};
+import { CREDIT_PACKS, type CreditPack as Pack } from "@/lib/credit-packs";
+import { toast } from "@/hooks/use-toast";
 
-const packs: Pack[] = [
-  { id: "starter", credits: 40, price: "R50", tagline: "1–2 study sessions, great for quick revision" },
-  { id: "popular", credits: 100, bonus: 10, price: "R100", tagline: "2–3 lessons or books, most popular choice", popular: true },
-  { id: "power", credits: 220, price: "R200", tagline: "5–6 lessons or full study coverage" },
-];
+const packs = CREDIT_PACKS;
 
 const contextCopy: Record<string, { title: string; sub: string }> = {
   audio: { title: "Continue listening", sub: "Top up to unlock the next section" },
