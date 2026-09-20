@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { User, Globe, BookOpen, TrendingUp, Pencil, Loader2 } from "lucide-react";
+import { User, Globe, BookOpen, TrendingUp, Pencil, Loader2, Check } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,7 @@ import ProgressionPanel from "@/components/ProgressionPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { getSubjectById } from "@/lib/subjects";
+import { getSubjectById, subjects } from "@/lib/subjects";
 
 const PROVINCES = [
   "Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal", "Limpopo",
@@ -39,6 +39,8 @@ export default function Profile() {
   const [profile, setProfile] = useState<ProfileRow>(EMPTY);
   const [form, setForm] = useState<ProfileRow>(EMPTY);
   const [editing, setEditing] = useState(false);
+  const [editingSubjects, setEditingSubjects] = useState(false);
+  const [subjectDraft, setSubjectDraft] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -93,6 +95,12 @@ export default function Profile() {
       province: form.province || null,
     }, () => setEditing(false));
   };
+
+  const toggleSubject = (id: string) =>
+    setSubjectDraft((d) => (d.includes(id) ? d.filter((x) => x !== id) : [...d, id]));
+
+  const saveSubjects = () =>
+    save({ selected_subjects: subjectDraft }, () => setEditingSubjects(false));
 
   const subjectNames = (profile.selected_subjects ?? []).map((id) => {
     const s = getSubjectById(id);
@@ -238,16 +246,58 @@ export default function Profile() {
 
             <Card>
               <CardContent className="p-5">
-                <h2 className="font-display font-semibold flex items-center gap-2 mb-4">
-                  <BookOpen className="w-4 h-4" /> My Subjects
-                </h2>
-                <div className="space-y-2">
-                  {subjectNames.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No subjects selected yet.</p>
-                  ) : subjectNames.map(s => (
-                    <div key={s} className="text-sm py-1.5">{s}</div>
-                  ))}
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <h2 className="font-display font-semibold flex items-center gap-2">
+                    <BookOpen className="w-4 h-4" /> My Subjects
+                  </h2>
+                  {!editingSubjects ? (
+                    <Button size="sm" variant="outline" onClick={() => {
+                      setSubjectDraft(profile.selected_subjects ?? []);
+                      setEditingSubjects(true);
+                    }}>
+                      <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
+                    </Button>
+                  ) : null}
                 </div>
+
+                {editingSubjects ? (
+                  <>
+                    <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
+                      {subjects.map((s) => {
+                        const active = subjectDraft.includes(s.id);
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => toggleSubject(s.id)}
+                            className={`w-full flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                              active ? "border-primary bg-primary/10" : "border-border hover:bg-muted"
+                            }`}
+                          >
+                            <span>{s.icon} {s.name}</span>
+                            {active && <Check className="w-4 h-4 text-primary shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex gap-2 pt-4">
+                      <Button size="sm" onClick={saveSubjects} disabled={saving}>
+                        {saving && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />} Save
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingSubjects(false)} disabled={saving}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    {subjectNames.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No subjects selected yet.</p>
+                    ) : subjectNames.map(s => (
+                      <div key={s} className="text-sm py-1.5">{s}</div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
