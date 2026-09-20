@@ -196,7 +196,9 @@ export default function LibraryPage() {
   useEffect(() => { listBooks().then(b => setSavedOfflineCount(b.length)); }, []);
   const visibleLessons = filterBySearch(lessons);
 
-  const heading = activeSubjectIds.length === 0
+  const heading = visualsOnly
+    ? "Story Mode novels"
+    : activeSubjectIds.length === 0
     ? "Library"
     : activeSubjectIds.length === 1
     ? subjectName(activeSubjectIds[0])
