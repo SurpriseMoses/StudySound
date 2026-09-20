@@ -158,12 +158,18 @@ export default function LibraryPage() {
 
   // Filter seeded docs by active subjects
   const subjectFilteredSeeded = useMemo(() => {
-    if (activeSubjectIds.length === 0) return seeded;
-    return seeded.filter(d => activeSubjectIds.some(sid => docMatchesSubject(d, sid)));
-  }, [seeded, activeSubjectIds]);
+    const base = visualsOnly
+      ? seeded.filter(d => d.subject_type === "novel" && !isStudyGuide(d))
+      : seeded;
+    if (activeSubjectIds.length === 0) return base;
+    return base.filter(d => activeSubjectIds.some(sid => docMatchesSubject(d, sid)));
+  }, [seeded, activeSubjectIds, visualsOnly]);
 
   const allVisible = filterBySearch(subjectFilteredSeeded);
-  const studyGuides = useMemo(() => allVisible.filter(isStudyGuide), [allVisible]);
+  const studyGuides = useMemo(
+    () => (visualsOnly ? [] : allVisible.filter(isStudyGuide)),
+    [allVisible, visualsOnly],
+  );
   const seededVisible = useMemo(() => allVisible.filter(d => !isStudyGuide(d)), [allVisible]);
 
   // Group by category
