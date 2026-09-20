@@ -377,8 +377,10 @@ export type Database = {
           credits: number
           currency: string
           id: string
+          kind: string
           pack_id: string
           paystack_payload: Json | null
+          plan_id: string | null
           provider: string
           reference: string
           status: string
@@ -393,8 +395,10 @@ export type Database = {
           credits: number
           currency?: string
           id?: string
+          kind?: string
           pack_id: string
           paystack_payload?: Json | null
+          plan_id?: string | null
           provider?: string
           reference: string
           status?: string
@@ -409,8 +413,10 @@ export type Database = {
           credits?: number
           currency?: string
           id?: string
+          kind?: string
           pack_id?: string
           paystack_payload?: Json | null
+          plan_id?: string | null
           provider?: string
           reference?: string
           status?: string
@@ -1198,6 +1204,27 @@ export type Database = {
           },
         ]
       }
+      payment_plan_codes: {
+        Row: {
+          amount_zar: number
+          created_at: string
+          plan_code: string
+          plan_id: string
+        }
+        Insert: {
+          amount_zar: number
+          created_at?: string
+          plan_code: string
+          plan_id: string
+        }
+        Update: {
+          amount_zar?: number
+          created_at?: string
+          plan_code?: string
+          plan_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -1529,6 +1556,45 @@ export type Database = {
           last_heartbeat?: string | null
           total_processed?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          created_at: string
+          current_period_end: string | null
+          id: string
+          paystack_customer_code: string | null
+          paystack_email_token: string | null
+          paystack_subscription_code: string | null
+          plan: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_period_end?: string | null
+          id?: string
+          paystack_customer_code?: string | null
+          paystack_email_token?: string | null
+          paystack_subscription_code?: string | null
+          plan: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_period_end?: string | null
+          id?: string
+          paystack_customer_code?: string | null
+          paystack_email_token?: string | null
+          paystack_subscription_code?: string | null
+          plan?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }

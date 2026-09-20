@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 type State =
   | { kind: "checking" }
-  | { kind: "success"; credits: number; balance: number | null }
+  | { kind: "success"; credits: number; balance: number | null; plan: string | null }
   | { kind: "failed"; message: string };
 
 export default function PaymentCallback() {
@@ -47,6 +47,7 @@ export default function PaymentCallback() {
         kind: "success",
         credits: data.credits ?? 0,
         balance: data.balance ?? null,
+        plan: data.kind === "subscription" ? (data.plan_id ?? null) : null,
       });
       setTimeout(() => {
         if (docId) navigate(from ? `/lesson/${docId}?tab=${from}` : `/lesson/${docId}`);
@@ -83,8 +84,16 @@ export default function PaymentCallback() {
               >
                 <PartyPopper className="w-9 h-9" />
               </motion.div>
-              <h1 className="text-2xl md:text-3xl font-display font-bold">Credits added</h1>
+              <h1 className="text-2xl md:text-3xl font-display font-bold">
+                {state.plan ? "Plan activated" : "Credits added"}
+              </h1>
               <p className="text-muted-foreground text-sm mt-2">
+                {state.plan && (
+                  <>
+                    Your <strong className="text-foreground capitalize">{state.plan}</strong> plan is
+                    live.{" "}
+                  </>
+                )}
                 <strong className="text-foreground">+{state.credits}</strong> credits are in your
                 balance
                 {state.balance !== null && (

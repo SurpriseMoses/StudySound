@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
     const admin = adminClient();
     const { data: purchase } = await admin
       .from("credit_purchases")
-      .select("id, user_id, credits, bonus_credits, status, credited")
+      .select("id, user_id, credits, bonus_credits, status, credited, kind, plan_id")
       .eq("reference", reference)
       .maybeSingle();
 
@@ -60,6 +60,8 @@ Deno.serve(async (req) => {
       credited: result.credited,
       credits: purchase.credits + (purchase.bonus_credits ?? 0),
       balance: profile?.credits_balance ?? null,
+      kind: purchase.kind ?? "credits",
+      plan_id: purchase.plan_id ?? null,
     });
   } catch (e) {
     console.error("paystack-verify error", e);
