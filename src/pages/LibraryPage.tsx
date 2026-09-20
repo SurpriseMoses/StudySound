@@ -216,7 +216,9 @@ export default function LibraryPage() {
           <div>
             <h1 className="text-2xl font-display font-bold mb-1">{heading}</h1>
             <p className="text-muted-foreground text-sm">
-              Explore books, audio lessons, and translations.
+              {visualsOnly
+                ? "Visuals are available for English novels only for now. Pick a novel to open Story Mode."
+                : "Explore books, audio lessons, and translations."}
             </p>
             {activeSubjectIds.length > 1 && (
               <div className="flex flex-wrap gap-1.5 mt-2">
