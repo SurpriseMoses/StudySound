@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
     if (userErr || !userData?.user) return json({ error: "Invalid token" }, 401);
     const user = userData.user;
 
-    const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
+    const secret = Deno.env.get("PAYSTACK_SECRET_KEY") ?? Deno.env.get("Patsack_Secret_Key");
     if (!secret) return json({ error: "Payments are not configured yet" }, 503);
 
     const body = await req.json().catch(() => ({}));

@@ -22,7 +22,7 @@ export function json(body: unknown, status = 200) {
 }
 
 export async function paystackVerify(reference: string) {
-  const key = Deno.env.get("PAYSTACK_SECRET_KEY");
+  const key = Deno.env.get("PAYSTACK_SECRET_KEY") ?? Deno.env.get("Patsack_Secret_Key");
   if (!key) throw new Error("PAYSTACK_SECRET_KEY not configured");
   const res = await fetch(
     `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
