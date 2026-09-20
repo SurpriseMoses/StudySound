@@ -281,6 +281,10 @@ export default function LessonPlayer() {
     );
   }
 
+  // Story Mode (visuals) is novels-only for now.
+  const isNovel = lesson.documents?.subject_type === "novel";
+  const shownTab: Tab = !isNovel && activeTab === "visuals" ? "listen" : activeTab;
+
   return (
     <AppLayout>
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
