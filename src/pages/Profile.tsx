@@ -1,15 +1,104 @@
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { User, Globe, BookOpen, TrendingUp } from "lucide-react";
+import { User, Globe, BookOpen, TrendingUp, Pencil, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
 import AppLayout from "@/components/AppLayout";
 import ProgressionPanel from "@/components/ProgressionPanel";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
+import { getSubjectById } from "@/lib/subjects";
+
+const PROVINCES = [
+  "Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal", "Limpopo",
+  "Mpumalanga", "Northern Cape", "North West", "Western Cape",
+];
+
+type ProfileRow = {
+  display_name: string | null;
+  grade: string | null;
+  school: string | null;
+  city: string | null;
+  province: string | null;
+  preferred_language: string | null;
+  selected_subjects: string[] | null;
+};
+
+const EMPTY: ProfileRow = {
+  display_name: "", grade: "", school: "", city: "", province: "",
+  preferred_language: "en", selected_subjects: [],
+};
 
 export default function Profile() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [profile, setProfile] = useState<ProfileRow>(EMPTY);
+  const [form, setForm] = useState<ProfileRow>(EMPTY);
+  const [editing, setEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("display_name, grade, school, city, province, preferred_language, selected_subjects")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data) {
+        const row: ProfileRow = { ...EMPTY, ...data };
+        setProfile(row);
+        setForm(row);
+      }
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const set = (key: keyof ProfileRow, value: string) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const save = async (fields: Partial<ProfileRow>, done?: () => void) => {
+    if (!user) return;
+    setSaving(true);
+    const { error } = await supabase.from("profiles").update(fields).eq("user_id", user.id);
+    setSaving(false);
+    if (error) {
+      toast({ title: "Couldn't save", description: error.message, variant: "destructive" });
+      return;
+    }
+    setProfile((p) => ({ ...p, ...fields }));
+    toast({ title: "Saved" });
+    done?.();
+  };
+
+  const savePersonal = () => {
+    const name = (form.display_name ?? "").trim();
+    if (!name) {
+      toast({ title: "Name is required", variant: "destructive" });
+      return;
+    }
+    save({
+      display_name: name,
+      grade: (form.grade ?? "").trim() || null,
+      school: (form.school ?? "").trim() || null,
+      city: (form.city ?? "").trim() || null,
+      province: form.province || null,
+    }, () => setEditing(false));
+  };
+
+  const subjectNames = (profile.selected_subjects ?? []).map((id) => {
+    const s = getSubjectById(id);
+    return s ? `${s.icon} ${s.name}` : id;
+  });
+
   return (
     <AppLayout>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
@@ -20,27 +109,73 @@ export default function Profile() {
             <ProgressionPanel />
             <Card>
               <CardContent className="p-6 space-y-4">
-                <h2 className="font-display font-semibold flex items-center gap-2">
-                  <User className="w-4 h-4" /> Personal Info
-                </h2>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label>Full Name</Label>
-                    <Input defaultValue="Thabo Mokoena" className="mt-1" />
-                  </div>
-                  <div>
-                    <Label>Email</Label>
-                    <Input defaultValue="thabo@school.co.za" className="mt-1" />
-                  </div>
-                  <div>
-                    <Label>Grade</Label>
-                    <Input defaultValue="Grade 10" className="mt-1" />
-                  </div>
-                  <div>
-                    <Label>School</Label>
-                    <Input defaultValue="Greenfield High" className="mt-1" />
-                  </div>
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="font-display font-semibold flex items-center gap-2">
+                    <User className="w-4 h-4" /> Personal Info
+                  </h2>
+                  {!editing && (
+                    <Button size="sm" variant="outline" onClick={() => { setForm(profile); setEditing(true); }}>
+                      <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
+                    </Button>
+                  )}
                 </div>
+
+                {loading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                  </div>
+                ) : editing ? (
+                  <>
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Full Name</Label>
+                        <Input value={form.display_name ?? ""} onChange={(e) => set("display_name", e.target.value)} className="mt-1" />
+                      </div>
+                      <div>
+                        <Label>Grade</Label>
+                        <Input value={form.grade ?? ""} onChange={(e) => set("grade", e.target.value)} placeholder="e.g. Grade 10" className="mt-1" />
+                      </div>
+                      <div>
+                        <Label>School</Label>
+                        <Input value={form.school ?? ""} onChange={(e) => set("school", e.target.value)} placeholder="e.g. Greenfield High" className="mt-1" />
+                      </div>
+                      <div>
+                        <Label>City / Town</Label>
+                        <Input value={form.city ?? ""} onChange={(e) => set("city", e.target.value)} placeholder="e.g. Polokwane" className="mt-1" />
+                      </div>
+                      <div>
+                        <Label>Province</Label>
+                        <Select value={form.province ?? ""} onValueChange={(v) => set("province", v)}>
+                          <SelectTrigger className="mt-1"><SelectValue placeholder="Select province" /></SelectTrigger>
+                          <SelectContent>
+                            {PROVINCES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={savePersonal} disabled={saving}>
+                        {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} Save Changes
+                      </Button>
+                      <Button variant="ghost" onClick={() => { setForm(profile); setEditing(false); }}>Cancel</Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                    {[
+                      { label: "Full Name", value: profile.display_name },
+                      { label: "Grade", value: profile.grade },
+                      { label: "School", value: profile.school },
+                      { label: "City / Town", value: profile.city },
+                      { label: "Province", value: profile.province },
+                    ].map((f) => (
+                      <div key={f.label}>
+                        <p className="text-muted-foreground text-xs">{f.label}</p>
+                        <p className="font-medium mt-0.5">{f.value || "—"}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -52,7 +187,10 @@ export default function Profile() {
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
                     <Label>Preferred Narration Language</Label>
-                    <Select defaultValue="en">
+                    <Select
+                      value={profile.preferred_language ?? "en"}
+                      onValueChange={(v) => save({ preferred_language: v })}
+                    >
                       <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="en">English</SelectItem>
@@ -70,19 +208,7 @@ export default function Profile() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label>Voice Tone</Label>
-                    <Select defaultValue="natural">
-                      <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="natural">Natural</SelectItem>
-                        <SelectItem value="calm">Calm</SelectItem>
-                        <SelectItem value="energetic">Energetic</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
-                <Button>Save Changes</Button>
               </CardContent>
             </Card>
           </div>
@@ -116,7 +242,9 @@ export default function Profile() {
                   <BookOpen className="w-4 h-4" /> My Subjects
                 </h2>
                 <div className="space-y-2">
-                  {["📖 English", "🏛️ History", "🧬 Life Sciences"].map(s => (
+                  {subjectNames.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No subjects selected yet.</p>
+                  ) : subjectNames.map(s => (
                     <div key={s} className="text-sm py-1.5">{s}</div>
                   ))}
                 </div>

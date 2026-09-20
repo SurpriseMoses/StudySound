@@ -1228,6 +1228,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          city: string | null
           cooldown_until: string | null
           created_at: string
           credits_balance: number
@@ -1235,6 +1236,7 @@ export type Database = {
           display_name: string | null
           flagged_reason: string | null
           free_credits_expires_at: string | null
+          grade: string | null
           id: string
           is_flagged: boolean
           last_reward_date: string | null
@@ -1242,6 +1244,8 @@ export type Database = {
           onboarding_completed: boolean | null
           plan: Database["public"]["Enums"]["subscription_plan"] | null
           preferred_language: string | null
+          province: string | null
+          school: string | null
           selected_subjects: string[] | null
           streak_grace_used: boolean
           updated_at: string
@@ -1250,6 +1254,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          city?: string | null
           cooldown_until?: string | null
           created_at?: string
           credits_balance?: number
@@ -1257,6 +1262,7 @@ export type Database = {
           display_name?: string | null
           flagged_reason?: string | null
           free_credits_expires_at?: string | null
+          grade?: string | null
           id?: string
           is_flagged?: boolean
           last_reward_date?: string | null
@@ -1264,6 +1270,8 @@ export type Database = {
           onboarding_completed?: boolean | null
           plan?: Database["public"]["Enums"]["subscription_plan"] | null
           preferred_language?: string | null
+          province?: string | null
+          school?: string | null
           selected_subjects?: string[] | null
           streak_grace_used?: boolean
           updated_at?: string
@@ -1272,6 +1280,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          city?: string | null
           cooldown_until?: string | null
           created_at?: string
           credits_balance?: number
@@ -1279,6 +1288,7 @@ export type Database = {
           display_name?: string | null
           flagged_reason?: string | null
           free_credits_expires_at?: string | null
+          grade?: string | null
           id?: string
           is_flagged?: boolean
           last_reward_date?: string | null
@@ -1286,6 +1296,8 @@ export type Database = {
           onboarding_completed?: boolean | null
           plan?: Database["public"]["Enums"]["subscription_plan"] | null
           preferred_language?: string | null
+          province?: string | null
+          school?: string | null
           selected_subjects?: string[] | null
           streak_grace_used?: boolean
           updated_at?: string
