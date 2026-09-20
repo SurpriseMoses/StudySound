@@ -34,6 +34,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Safety net: if subjects were picked during sign-up but never landed on the
+  // profile (older accounts), copy them across once the user is signed in.
+  useEffect(() => {
+    if (!user) return;
+    const fromSignup = (user.user_metadata?.selected_subjects ?? []) as string[];
+    if (!Array.isArray(fromSignup) || fromSignup.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("selected_subjects")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data && (!data.selected_subjects || data.selected_subjects.length === 0)) {
+        await supabase
+          .from("profiles")
+          .update({ selected_subjects: fromSignup, onboarding_completed: true })
+          .eq("user_id", user.id);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [user]);
+
   const signOut = async () => {
     await supabase.auth.signOut();
   };
