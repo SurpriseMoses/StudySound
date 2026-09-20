@@ -22,6 +22,14 @@ export const subjects: Subject[] = [
   // Languages — visual support
   { id: "afrikaans", name: "Afrikaans", icon: "🇿🇦", category: "languages", supportsVisuals: true, description: "Afrikaans literature & language study", color: "hsl(200 60% 45%)" },
   { id: "isizulu", name: "isiZulu", icon: "🇿🇦", category: "languages", supportsVisuals: true, description: "isiZulu literature & language study", color: "hsl(120 50% 40%)" },
+  { id: "isixhosa", name: "isiXhosa", icon: "🇿🇦", category: "languages", supportsVisuals: true, description: "isiXhosa literature & language study", color: "hsl(100 45% 42%)" },
+  { id: "sepedi", name: "Sepedi", icon: "🇿🇦", category: "languages", supportsVisuals: true, description: "Sepedi literature & language study", color: "hsl(150 45% 40%)" },
+  { id: "sesotho", name: "Sesotho", icon: "🇿🇦", category: "languages", supportsVisuals: true, description: "Sesotho literature & language study", color: "hsl(90 45% 42%)" },
+  { id: "setswana", name: "Setswana", icon: "🇿🇦", category: "languages", supportsVisuals: true, description: "Setswana literature & language study", color: "hsl(170 50% 40%)" },
+  { id: "siswati", name: "siSwati", icon: "🇿🇦", category: "languages", supportsVisuals: true, description: "siSwati literature & language study", color: "hsl(30 70% 50%)" },
+  { id: "tshivenda", name: "Tshivenda", icon: "🇿🇦", category: "languages", supportsVisuals: true, description: "Tshivenda literature & language study", color: "hsl(280 50% 55%)" },
+  { id: "xitsonga", name: "Xitsonga", icon: "🇿🇦", category: "languages", supportsVisuals: true, description: "Xitsonga literature & language study", color: "hsl(350 60% 52%)" },
+  { id: "isindebele", name: "isiNdebele", icon: "🇿🇦", category: "languages", supportsVisuals: true, description: "isiNdebele literature & language study", color: "hsl(55 70% 45%)" },
   { id: "french", name: "French", icon: "🇫🇷", category: "languages", supportsVisuals: true, description: "French literature & language study", color: "hsl(220 70% 50%)" },
 
   // STEM — NO visual support
