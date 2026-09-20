@@ -52,6 +52,8 @@ export default function LibraryPage() {
   const [params] = useSearchParams();
   const subjectParam = params.get("subject");
   const subjectsParam = params.get("subjects");
+  // Visuals / Story Mode is novels-only for now.
+  const visualsOnly = params.get("visuals") === "1";
 
   const activeSubjectIds = useMemo(() => {
     if (subjectParam) return [subjectParam];
@@ -156,12 +158,18 @@ export default function LibraryPage() {
 
   // Filter seeded docs by active subjects
   const subjectFilteredSeeded = useMemo(() => {
-    if (activeSubjectIds.length === 0) return seeded;
-    return seeded.filter(d => activeSubjectIds.some(sid => docMatchesSubject(d, sid)));
-  }, [seeded, activeSubjectIds]);
+    const base = visualsOnly
+      ? seeded.filter(d => d.subject_type === "novel" && !isStudyGuide(d))
+      : seeded;
+    if (activeSubjectIds.length === 0) return base;
+    return base.filter(d => activeSubjectIds.some(sid => docMatchesSubject(d, sid)));
+  }, [seeded, activeSubjectIds, visualsOnly]);
 
   const allVisible = filterBySearch(subjectFilteredSeeded);
-  const studyGuides = useMemo(() => allVisible.filter(isStudyGuide), [allVisible]);
+  const studyGuides = useMemo(
+    () => (visualsOnly ? [] : allVisible.filter(isStudyGuide)),
+    [allVisible, visualsOnly],
+  );
   const seededVisible = useMemo(() => allVisible.filter(d => !isStudyGuide(d)), [allVisible]);
 
   // Group by category
@@ -188,7 +196,9 @@ export default function LibraryPage() {
   useEffect(() => { listBooks().then(b => setSavedOfflineCount(b.length)); }, []);
   const visibleLessons = filterBySearch(lessons);
 
-  const heading = activeSubjectIds.length === 0
+  const heading = visualsOnly
+    ? "Story Mode novels"
+    : activeSubjectIds.length === 0
     ? "Library"
     : activeSubjectIds.length === 1
     ? subjectName(activeSubjectIds[0])
@@ -206,7 +216,9 @@ export default function LibraryPage() {
           <div>
             <h1 className="text-2xl font-display font-bold mb-1">{heading}</h1>
             <p className="text-muted-foreground text-sm">
-              Explore books, audio lessons, and translations.
+              {visualsOnly
+                ? "Visuals are available for English novels only for now. Pick a novel to open Story Mode."
+                : "Explore books, audio lessons, and translations."}
             </p>
             {activeSubjectIds.length > 1 && (
               <div className="flex flex-wrap gap-1.5 mt-2">
@@ -271,7 +283,9 @@ export default function LibraryPage() {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="library">Library ({seededVisible.length})</TabsTrigger>
-            <TabsTrigger value="guides">Study Guides ({studyGuides.length})</TabsTrigger>
+            {!visualsOnly && (
+              <TabsTrigger value="guides">Study Guides ({studyGuides.length})</TabsTrigger>
+            )}
             <TabsTrigger value="mine">My Lessons ({visibleLessons.length})</TabsTrigger>
             <TabsTrigger value="downloaded">Offline ({savedOfflineCount})</TabsTrigger>
           </TabsList>

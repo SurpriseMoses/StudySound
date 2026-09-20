@@ -281,6 +281,10 @@ export default function LessonPlayer() {
     );
   }
 
+  // Story Mode (visuals) is novels-only for now.
+  const isNovel = lesson.documents?.subject_type === "novel";
+  const shownTab: Tab = !isNovel && activeTab === "visuals" ? "listen" : activeTab;
+
   return (
     <AppLayout>
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
@@ -338,14 +342,16 @@ export default function LessonPlayer() {
 
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={onTabChange}>
+        <Tabs value={shownTab} onValueChange={onTabChange}>
           <TabsList className="mb-5">
             <TabsTrigger value="listen" className="gap-1.5">
               <Headphones className="w-4 h-4" /> Listen
             </TabsTrigger>
-            <TabsTrigger value="visuals" className="gap-1.5">
-              <ImageIcon className="w-4 h-4" /> Story Mode
-            </TabsTrigger>
+            {isNovel && (
+              <TabsTrigger value="visuals" className="gap-1.5">
+                <ImageIcon className="w-4 h-4" /> Story Mode
+              </TabsTrigger>
+            )}
             <TabsTrigger value="quiz" className="gap-1.5">
               <Brain className="w-4 h-4" /> Quiz
             </TabsTrigger>
@@ -353,13 +359,13 @@ export default function LessonPlayer() {
 
           <AnimatePresence mode="wait">
             <motion.div
-              key={activeTab}
+              key={shownTab}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
             >
-              {activeTab === "listen" && (
+              {shownTab === "listen" && (
                 !online && lesson.document_id ? (
                   <OfflineListen
                     documentId={lesson.document_id}
@@ -386,10 +392,10 @@ export default function LessonPlayer() {
                   />
                 )
               )}
-              {activeTab === "visuals" && lesson.document_id && (
+              {shownTab === "visuals" && isNovel && lesson.document_id && (
                 <StoryModeTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />
               )}
-              {activeTab === "quiz" && lesson.document_id && (
+              {shownTab === "quiz" && lesson.document_id && (
                 <QuizTab
                   documentId={lesson.document_id}
                   lessonId={lesson.id}

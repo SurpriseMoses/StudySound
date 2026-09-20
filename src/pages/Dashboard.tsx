@@ -50,8 +50,8 @@ const QUICK_ACTIONS = [
     icon: ImageIcon,
     label: "Generate Visual",
     cost: "1 credit",
-    desc: "AI scenes for your lesson",
-    path: "/library",
+    desc: "Story scenes for English novels",
+    path: "/library?visuals=1",
     tone: "from-secondary/15 to-secondary/5 text-secondary border-secondary/20",
   },
   {
