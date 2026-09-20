@@ -8,6 +8,13 @@
       "when": 1789903597629,
       "tag": "0000_plan_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789905227606,
+      "tag": "0001_signup_copies_selected_subjects",
+      "breakpoints": true
     }
   ]
 }
