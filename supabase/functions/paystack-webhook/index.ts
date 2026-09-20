@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
+    const secret = Deno.env.get("PAYSTACK_SECRET_KEY") ?? Deno.env.get("Patsack_Secret_Key");
     if (!secret) return json({ error: "not configured" }, 503);
 
     const raw = await req.text();
