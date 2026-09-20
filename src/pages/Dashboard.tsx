@@ -357,7 +357,7 @@ export default function Dashboard() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {userSubjects.map((s) => (
-                <Link key={s.id} to={`/subjects?focus=${s.id}`}>
+                <Link key={s.id} to={`/library?subject=${encodeURIComponent(s.id)}`}>
                   <Card className="rounded-2xl hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer h-full">
                     <CardContent className="p-4 flex flex-col gap-2">
                       <div
