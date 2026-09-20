@@ -52,6 +52,8 @@ export default function LibraryPage() {
   const [params] = useSearchParams();
   const subjectParam = params.get("subject");
   const subjectsParam = params.get("subjects");
+  // Visuals / Story Mode is novels-only for now.
+  const visualsOnly = params.get("visuals") === "1";
 
   const activeSubjectIds = useMemo(() => {
     if (subjectParam) return [subjectParam];
