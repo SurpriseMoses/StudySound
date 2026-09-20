@@ -365,7 +365,7 @@ export default function LessonPlayer() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
             >
-              {activeTab === "listen" && (
+              {shownTab === "listen" && (
                 !online && lesson.document_id ? (
                   <OfflineListen
                     documentId={lesson.document_id}
@@ -392,10 +392,10 @@ export default function LessonPlayer() {
                   />
                 )
               )}
-              {activeTab === "visuals" && lesson.document_id && (
+              {shownTab === "visuals" && isNovel && lesson.document_id && (
                 <StoryModeTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />
               )}
-              {activeTab === "quiz" && lesson.document_id && (
+              {shownTab === "quiz" && lesson.document_id && (
                 <QuizTab
                   documentId={lesson.document_id}
                   lessonId={lesson.id}
