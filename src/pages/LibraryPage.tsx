@@ -283,7 +283,9 @@ export default function LibraryPage() {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="library">Library ({seededVisible.length})</TabsTrigger>
-            <TabsTrigger value="guides">Study Guides ({studyGuides.length})</TabsTrigger>
+            {!visualsOnly && (
+              <TabsTrigger value="guides">Study Guides ({studyGuides.length})</TabsTrigger>
+            )}
             <TabsTrigger value="mine">My Lessons ({visibleLessons.length})</TabsTrigger>
             <TabsTrigger value="downloaded">Offline ({savedOfflineCount})</TabsTrigger>
           </TabsList>
