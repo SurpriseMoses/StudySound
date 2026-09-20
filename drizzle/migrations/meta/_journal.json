@@ -22,6 +22,13 @@
       "when": 1789907420902,
       "tag": "0002_add_profile_personal_info",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789907441779,
+      "tag": "0003_handle_new_user_grade",
+      "breakpoints": true
     }
   ]
 }
