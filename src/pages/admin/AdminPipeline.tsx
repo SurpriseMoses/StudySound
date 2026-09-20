@@ -31,8 +31,8 @@ const RECLEAN_LANGUAGES = [
   { code: "ss", label: "siSwati" },
 ];
 
-type Lang = "zu" | "xh" | "tn" | "nso" | "ve" | "nr" | "st" | "ss";
-const ALL_LANGS: Lang[] = ["zu", "xh", "tn", "nso", "ve", "nr", "st", "ss"];
+type Lang = "zu" | "xh" | "tn" | "nso" | "af" | "ts" | "ve" | "nr" | "st" | "ss";
+const ALL_LANGS: Lang[] = ["zu", "xh", "tn", "nso", "af", "ts", "ve", "nr", "st", "ss"];
 const LANG_LABEL: Record<string, string> = {
   zu: "isiZulu", xh: "isiXhosa", tn: "Setswana", nso: "Sepedi (Northern Sotho)",
   st: "Sesotho", ss: "siSwati", af: "Afrikaans", ts: "Xitsonga", ve: "Tshivenda", nr: "isiNdebele",
