@@ -6,6 +6,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -29,6 +30,9 @@ export default function QuestionEditorDialog({
   const [explanation, setExplanation] = useState("");
   const [working, setWorking] = useState("");
   const [difficulty, setDifficulty] = useState("medium");
+  const [marks, setMarks] = useState("");
+  const [guidance, setGuidance] = useState("");
+  const [verified, setVerified] = useState(false);
   const [reason, setReason] = useState("");
 
   useEffect(() => {
@@ -39,6 +43,9 @@ export default function QuestionEditorDialog({
     setExplanation(question.explanation ?? "");
     setWorking(question.working ?? "");
     setDifficulty(question.difficulty);
+    setMarks(question.mark_allocation != null ? String(question.mark_allocation) : "");
+    setGuidance(question.marking_guidance ?? "");
+    setVerified(!!question.answer_verified);
     setReason("");
   }, [question]);
 
@@ -60,6 +67,9 @@ export default function QuestionEditorDialog({
           explanation,
           working: working || null,
           difficulty,
+          mark_allocation: marks ? Number(marks) : null,
+          marking_guidance: guidance || null,
+          answer_verified: verified,
         },
       });
       toast({ title: "Question updated", description: "The previous version was kept in history." });
@@ -146,6 +156,33 @@ export default function QuestionEditorDialog({
               <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional note" />
             </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Marks</Label>
+              <Input
+                type="number"
+                min={1}
+                value={marks}
+                onChange={(e) => setMarks(e.target.value)}
+                placeholder="e.g. 2"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Marking guidance</Label>
+              <Input value={guidance} onChange={(e) => setGuidance(e.target.value)} placeholder="How marks are awarded" />
+            </div>
+          </div>
+
+          <label className="flex items-start gap-2 rounded-md border p-3">
+            <Checkbox checked={verified} onCheckedChange={(v) => setVerified(!!v)} className="mt-0.5" />
+            <span className="text-sm">
+              I have checked this answer myself
+              <span className="block text-xs text-muted-foreground">
+                Required before publishing Mathematics and Physical Sciences questions.
+              </span>
+            </span>
+          </label>
         </div>
 
         <DialogFooter>

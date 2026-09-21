@@ -35,7 +35,27 @@ export interface BankQuestion {
   times_served: number;
   times_answered: number;
   times_correct: number;
+  ai_validated?: boolean | null;
+  validation_status?: string | null;
+  validation?: Record<string, unknown> | null;
+  answer_verified?: boolean | null;
+  question_origin?: string | null;
+  mark_allocation?: number | null;
+  marking_guidance?: string | null;
+  expected_answer_points?: string[] | null;
+  assessment_reference?: string | null;
   documents?: { title: string; grade_level: string | null; subject_type: string | null } | null;
+}
+
+const STRICT_SUBJECTS = ["mathematics", "physical science", "physical sciences", "mathematical literacy", "accounting"];
+
+/** AI generated → AI validated → Admin approved → Published */
+function trustStage(q: BankQuestion): { label: string; tone: string } {
+  if (q.status === "published") return { label: "Published", tone: "bg-success/15 text-success" };
+  if (q.status === "approved") return { label: "Admin approved", tone: "bg-primary/15 text-primary" };
+  if (q.validation_status === "failed") return { label: "Validation failed", tone: "bg-destructive/15 text-destructive" };
+  if (q.ai_validated || q.validation_status === "passed") return { label: "AI validated", tone: "bg-accent/15 text-accent" };
+  return { label: "AI generated", tone: "bg-muted text-muted-foreground" };
 }
 
 export default function QuestionCard({
@@ -50,6 +70,11 @@ export default function QuestionCard({
 }) {
   const [open, setOpen] = useState(false);
   const success = q.times_answered > 0 ? Math.round((q.times_correct / q.times_answered) * 100) : null;
+  const stage = trustStage(q);
+  const subjectText = `${q.subject ?? ""} ${q.documents?.subject_type ?? ""}`.toLowerCase();
+  const strict = STRICT_SUBJECTS.some((s) => subjectText.includes(s));
+  const needsAnswerCheck = strict && !q.answer_verified && q.status !== "published";
+  const notes = Array.isArray((q.validation as any)?.notes) ? ((q.validation as any).notes as string[]) : [];
 
   return (
     <Card>
@@ -62,12 +87,21 @@ export default function QuestionCard({
             <p className="text-sm font-medium">{q.question}</p>
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               <Badge className={STATUS_TONE[q.status]} variant="secondary">{prettify(q.status)}</Badge>
+              <Badge className={stage.tone} variant="secondary">{stage.label}</Badge>
               <Badge variant="outline">{prettify(q.difficulty)}</Badge>
               <Badge variant="outline">{prettify(q.question_type)}</Badge>
               {q.skill && <Badge variant="outline">{prettify(q.skill)}</Badge>}
+              {q.question_origin && <Badge variant="outline">{prettify(q.question_origin)}</Badge>}
+              {q.mark_allocation ? <Badge variant="outline">{q.mark_allocation} marks</Badge> : null}
+              {q.answer_verified && <Badge variant="outline">Answer checked</Badge>}
               {q.manually_edited && <Badge variant="outline">Edited</Badge>}
               <span className="text-xs text-muted-foreground">v{q.version}</span>
             </div>
+            {needsAnswerCheck && (
+              <p className="text-xs text-destructive mt-1.5">
+                Stricter review: this {q.subject ?? "subject"} answer must be checked before publishing.
+              </p>
+            )}
             <div className="text-xs text-muted-foreground mt-1.5 truncate">
               {q.documents?.title ?? ""}
               {q.chunk_index != null && ` · section ${q.chunk_index + 1}`}
@@ -113,6 +147,18 @@ export default function QuestionCard({
             {q.explanation && <p className="text-xs"><span className="text-muted-foreground">Explanation: </span>{q.explanation}</p>}
             {q.source_reference && (
               <p className="text-xs text-muted-foreground">Source: “{q.source_reference}”</p>
+            )}
+            {q.marking_guidance && (
+              <p className="text-xs"><span className="text-muted-foreground">Marking guidance: </span>{q.marking_guidance}</p>
+            )}
+            {q.expected_answer_points?.length ? (
+              <p className="text-xs text-muted-foreground">Expected points: {q.expected_answer_points.join("; ")}</p>
+            ) : null}
+            {q.assessment_reference && (
+              <p className="text-xs text-muted-foreground">Assessment reference: {q.assessment_reference}</p>
+            )}
+            {notes.length > 0 && (
+              <p className="text-xs text-muted-foreground">Validation notes: {notes.join("; ")}</p>
             )}
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {q.subject && <span>{q.subject}</span>}

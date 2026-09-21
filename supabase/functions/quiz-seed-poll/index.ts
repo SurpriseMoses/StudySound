@@ -4,7 +4,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { pollBatch, extractText } from "../_shared/gemini-batch.ts";
 import {
-  NEAR_DUPLICATE_THRESHOLD, questionHash, similarity, subjectKindFor,
+  NEAR_DUPLICATE_THRESHOLD, questionHash, questionOriginFor, similarity, subjectKindFor,
   validateQuestion, type QuizSettings,
 } from "../_shared/quiz-bank.ts";
 
@@ -191,10 +191,18 @@ Deno.serve(async (req) => {
             assessment_skill: v.assessment_skill,
             cognitive_level: v.cognitive_level,
             command_word: v.command_word,
+            mark_allocation: v.mark_allocation,
+            marking_guidance: v.marking_guidance,
+            expected_answer_points: v.expected_answer_points,
             exam_alignment_level: job.exam_alignment_level ?? "low",
+            question_origin: questionOriginFor(job.exam_alignment_level ?? "low"),
+            assessment_reference_type: job.exam_alignment_level === "high" ? "official assessment patterns" : null,
             source_material_type: kind === "literature" ? "textbook section" : "CAPS + textbook section",
+            validation: v.validation,
+            validation_status: v.validation_status,
+            answer_verified: v.answer_verified,
             status: "draft",
-            ai_validated: true,
+            ai_validated: v.validation_status === "passed",
             generation_job_id: job.id,
             created_by: job.created_by,
           });

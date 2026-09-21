@@ -43,6 +43,13 @@
       "when": 1790005306669,
       "tag": "0005_quiz_bump_served",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790009216119,
+      "tag": "0006_quiz_bank_curriculum_assessment",
+      "breakpoints": true
     }
   ]
 }

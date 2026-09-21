@@ -85,6 +85,37 @@ Deno.serve(async (req) => {
       .from("documents").select("id, title, subject_type, doc_type, grade_level, tags").in("id", docIds);
     const docMap = new Map((docs ?? []).map((d: any) => [d.id, d]));
 
+    // Curriculum topics + official assessment patterns for the books in this job.
+    const subjects = [...new Set((docs ?? []).map((d: any) => d.tags?.subject).filter(Boolean))] as string[];
+    const grades = [...new Set((docs ?? []).map((d: any) => d.grade_level).filter(Boolean))] as string[];
+    const [{ data: curriculumRows }, { data: patternRows }] = await Promise.all([
+      subjects.length
+        ? admin.from("curriculum_config")
+          .select("subject, grade, topic, subtopic, learning_objective, command_words")
+          .in("subject", subjects).eq("is_active", true).limit(400)
+        : Promise.resolve({ data: [] as any[] }),
+      subjects.length
+        ? admin.from("assessment_patterns")
+          .select("subject, grade, topic, question_type, command_word, cognitive_demand, marks, pattern_summary")
+          .in("subject", subjects).limit(400)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+    const curriculumFor = (subject: string | null, grade: string | null) =>
+      ((curriculumRows ?? []) as any[])
+        .filter((r) => r.subject === subject && (!r.grade || !grade || String(r.grade) === String(grade)))
+        .map((r) => ({
+          topic: r.topic, subtopic: r.subtopic, learning_objective: r.learning_objective,
+          command_words: r.command_words ?? [],
+        }));
+    const patternsFor = (subject: string | null, grade: string | null) =>
+      ((patternRows ?? []) as any[])
+        .filter((r) => r.subject === subject && (!r.grade || !grade || String(r.grade) === String(grade)))
+        .map((r) =>
+          r.pattern_summary ??
+          `${r.topic ?? "topic"}: ${r.question_type ?? "question"} using "${r.command_word ?? "—"}" at ${r.cognitive_demand ?? "mixed"} demand${r.marks ? ` (${r.marks} marks)` : ""}`
+        );
+    void grades;
+
     const requests: BatchRequestItem[] = [];
     const submittedItems: { id: string; position: number }[] = [];
 
@@ -112,6 +143,12 @@ Deno.serve(async (req) => {
         skillMix: (job as any).skill_mix ?? {},
         questionTypes: (job as any).question_types ?? ["multiple_choice"],
         examAlignmentLevel: (job as any).exam_alignment_level ?? "low",
+        cognitiveMix: (job as any).cognitive_mix ??
+          (settings.cognitive_mix_by_subject ?? {})[subject ?? ""] ?? {},
+        curriculumTopics: curriculumFor(subject, doc?.grade_level ?? null),
+        assessmentPatterns: patternsFor(subject, doc?.grade_level ?? null),
+        curriculumSystem: doc?.tags?.curriculum ?? "CAPS",
+        curriculumVersion: doc?.tags?.curriculum_version ?? null,
       };
 
       requests.push({

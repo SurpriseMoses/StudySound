@@ -11,7 +11,7 @@ import { quizPlay } from "@/lib/quiz-bank";
 
 interface PlayQuestion {
   position: number;
-  id: string;
+  question_id: string;
   question: string;
   question_type: string;
   options: string[] | null;
@@ -19,9 +19,22 @@ interface PlayQuestion {
   difficulty: string;
   skill: string | null;
   topic: string | null;
+  cognitive_level?: string | null;
+  command_word?: string | null;
+  mark_allocation?: number | null;
+  caps_topic?: string | null;
+  practice_label?: string | null;
 }
 
 interface Preset { id: string; label: string; questions: number }
+
+type ModeId = "learning" | "exam" | "mixed";
+
+const MODE_COPY: Record<ModeId, { label: string; blurb: string }> = {
+  learning: { label: "Learning practice", blurb: "Understand the section — recall and understanding first." },
+  exam: { label: "Exam practice", blurb: "CAPS exam-style questions with command words and marks. Practice only." },
+  mixed: { label: "Mixed practice", blurb: "A blend of learning and exam-style questions." },
+};
 
 export default function BankQuiz({
   documentId, chunkIndex, language = "en",
@@ -34,6 +47,7 @@ export default function BankQuiz({
   const [loading, setLoading] = useState(true);
   const [avail, setAvail] = useState<any>(null);
   const [preset, setPreset] = useState<string>("standard");
+  const [mode, setMode] = useState<ModeId>("learning");
   const [scope, setScope] = useState<"section" | "book">(typeof chunkIndex === "number" ? "section" : "book");
   const [starting, setStarting] = useState(false);
 
@@ -78,7 +92,8 @@ export default function BankQuiz({
         chunk_index: typeof chunkIndex === "number" ? chunkIndex : null,
         language,
         preset,
-        idempotency_key: `${documentId}-${scope}-${chunkIndex ?? "all"}-${preset}-${Date.now()}`,
+        mode,
+        idempotency_key: `${documentId}-${scope}-${chunkIndex ?? "all"}-${preset}-${mode}-${Date.now()}`,
       });
       if (res.error === "no_questions") {
         toast({ title: "No questions yet", description: res.message });
@@ -141,7 +156,7 @@ export default function BankQuiz({
   const flag = async () => {
     if (!current) return;
     try {
-      await quizPlay("flag", { question_id: current.id, reason: "learner_report" });
+      await quizPlay("flag", { question_id: current.question_id, reason: "learner_report" });
       toast({ title: "Thanks — we'll check this question" });
     } catch (e) {
       toast({ title: "Could not report this", description: (e as Error).message, variant: "destructive" });
@@ -202,7 +217,11 @@ export default function BankQuiz({
       <div className="space-y-4">
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Question {idx + 1} of {questions.length}</span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {current.practice_label && <Badge variant="secondary">{current.practice_label}</Badge>}
+            {current.mark_allocation ? (
+              <Badge variant="outline">{current.mark_allocation} mark{current.mark_allocation === 1 ? "" : "s"}</Badge>
+            ) : null}
             <Badge variant="outline">{current.difficulty}</Badge>
             <Button size="icon" variant="ghost" onClick={flag} title="Report a problem">
               <Flag className="w-3.5 h-3.5" />
@@ -306,6 +325,33 @@ export default function BankQuiz({
                 ))}
               </div>
             )}
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Choose how you want to practise</p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(["learning", "exam", "mixed"] as const).map((m) => {
+                  const label = (avail?.modes ?? {})[m]?.label ?? MODE_COPY[m].label;
+                  const disabled = m === "exam" && (avail?.exam_questions ?? 0) === 0;
+                  return (
+                    <button
+                      key={m}
+                      disabled={disabled}
+                      onClick={() => setMode(m)}
+                      className={`rounded-md border p-3 text-left transition-colors disabled:opacity-50 ${
+                        mode === m ? "border-primary bg-primary/10" : "border-border hover:bg-muted"
+                      }`}
+                    >
+                      <div className="text-sm font-medium">{label}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {disabled ? "No exam-style questions here yet" : MODE_COPY[m].blurb}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {presets.map((p) => (

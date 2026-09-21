@@ -30,6 +30,13 @@ interface BankQuestion {
   difficulty: string;
   skill: string | null;
   topic: string | null;
+  cognitive_level?: string | null;
+  command_word?: string | null;
+  mark_allocation?: number | null;
+  marking_guidance?: string | null;
+  question_origin?: string | null;
+  exam_alignment_level?: string | null;
+  caps_topic?: string | null;
 }
 
 /** Public shape sent to the learner — never includes the answer. */
@@ -44,6 +51,16 @@ function publicQuestion(q: BankQuestion, position: number) {
     difficulty: q.difficulty,
     skill: q.skill,
     topic: q.topic,
+    cognitive_level: q.cognitive_level ?? null,
+    command_word: q.command_word ?? null,
+    mark_allocation: q.mark_allocation ?? null,
+    caps_topic: q.caps_topic ?? null,
+    // Learner-facing label — practice only, never a prediction of a real exam.
+    practice_label: q.exam_alignment_level === "high"
+      ? "Exam-style practice"
+      : q.exam_alignment_level === "medium"
+        ? "CAPS-aligned practice"
+        : "Learning practice",
   };
 }
 
@@ -111,12 +128,25 @@ Deno.serve(async (req) => {
           .eq("chunk_index", chunkIndex);
         sectionCount = count ?? 0;
       }
+      // How many published questions are exam-style (CAPS exam-aligned practice)?
+      let examQ = admin
+        .from("quiz_questions")
+        .select("id", { count: "exact", head: true })
+        .eq("document_id", documentId)
+        .eq("status", "published")
+        .eq("language", body.language ?? "en")
+        .in("exam_alignment_level", ["medium", "high"]);
+      if (typeof chunkIndex === "number") examQ = examQ.eq("chunk_index", chunkIndex);
+      const { count: examCount } = await examQ;
+
       const { data: profile } = await admin
         .from("profiles").select("credits_balance").eq("user_id", user.id).maybeSingle();
       return json({
         book_questions: bookCount ?? 0,
         section_questions: sectionCount,
+        exam_questions: examCount ?? 0,
         presets: settings.presets,
+        modes: settings.mode_presets ?? {},
         credit_costs: settings.credit_costs,
         balance: (profile as any)?.credits_balance ?? 0,
       });
@@ -130,6 +160,8 @@ Deno.serve(async (req) => {
       const language = body.language ?? "en";
       const presetId = body.preset ?? "standard";
       const idempotencyKey = (body.idempotency_key as string | undefined) ?? null;
+      const modeId = ["learning", "exam", "mixed"].includes(body.mode) ? body.mode as string : "learning";
+      const modePreset = (settings.mode_presets ?? {})[modeId];
 
       const preset = settings.presets.find((p) => p.id === presetId) ?? settings.presets[1] ?? { id: "standard", label: "Standard Quiz", questions: 10 };
       const wanted = preset.questions;
@@ -150,22 +182,34 @@ Deno.serve(async (req) => {
         }
       }
 
-      // ---- pool selection: respect book / section / difficulty / skill / topic
-      let pool = admin
-        .from("quiz_questions")
-        .select("id, version, chunk_index, question, question_type, options, items, correct_order, correct_answer, acceptable_answers, explanation, working, difficulty, skill, topic")
-        .eq("document_id", documentId)
-        .eq("status", "published")
-        .eq("language", language)
-        .limit(600);
-      if (scope === "section" && typeof chunkIndex === "number") pool = pool.eq("chunk_index", chunkIndex);
-      if (body.difficulty) pool = pool.eq("difficulty", body.difficulty);
-      if (body.skill) pool = pool.eq("skill", body.skill);
-      if (body.topic) pool = pool.eq("topic", body.topic);
+      // ---- pool selection: respect book / section / difficulty / skill / topic / mode
+      const buildPool = (restrictToExam: boolean) => {
+        let p = admin
+          .from("quiz_questions")
+          .select("id, version, chunk_index, question, question_type, options, items, correct_order, correct_answer, acceptable_answers, explanation, working, difficulty, skill, topic, cognitive_level, command_word, mark_allocation, marking_guidance, question_origin, exam_alignment_level, caps_topic")
+          .eq("document_id", documentId)
+          .eq("status", "published")
+          .eq("language", language)
+          .limit(600);
+        if (scope === "section" && typeof chunkIndex === "number") p = p.eq("chunk_index", chunkIndex);
+        if (body.difficulty) p = p.eq("difficulty", body.difficulty);
+        if (body.skill) p = p.eq("skill", body.skill);
+        if (body.topic) p = p.eq("topic", body.topic);
+        if (body.caps_topic) p = p.eq("caps_topic", body.caps_topic);
+        if (restrictToExam) p = p.in("exam_alignment_level", ["medium", "high"]);
+        return p;
+      };
 
-      const { data: poolRows, error: poolErr } = await pool;
+      const restrictExam = modeId === "exam";
+      const { data: poolRows, error: poolErr } = await buildPool(restrictExam);
       if (poolErr) throw poolErr;
       let candidates = (poolRows ?? []) as unknown as BankQuestion[];
+
+      // Exam Practice falls back to the full pool only if nothing exam-style exists.
+      if (restrictExam && candidates.length === 0) {
+        const { data: fallback } = await buildPool(false);
+        candidates = (fallback ?? []) as unknown as BankQuestion[];
+      }
 
       if (candidates.length === 0) {
         return json({
@@ -188,12 +232,25 @@ Deno.serve(async (req) => {
       const seen = new Map<string, { times_seen: number; last_seen_at: string | null }>();
       for (const r of (exposure ?? []) as any[]) seen.set(r.question_id, r);
 
+      // Cognitive-demand weighting from the selected practice mode (configurable).
+      const cognitiveMix: Record<string, number> = modePreset?.cognitive_mix ?? {};
+      const cognitiveWeight = (level?: string | null) => {
+        if (!level) return 0;
+        const key = level.toLowerCase().replace(/\s+/g, "_");
+        const target = cognitiveMix[key];
+        return typeof target === "number" ? target / 100 : 0;
+      };
+
       const scored = shuffle(candidates).map((q) => {
         const rate = q.skill ? skillRate.get(q.skill) : undefined;
         const weakness = rate === undefined ? 0.35 : 1 - rate; // unknown skills get mild priority
         const ex = seen.get(q.id);
         const freshness = ex ? 1 / (1 + ex.times_seen) : 1;
-        return { q, score: weakness * 0.6 + freshness * 0.4 + Math.random() * 0.15 };
+        const cognitive = cognitiveWeight((q as any).cognitive_level);
+        return {
+          q,
+          score: weakness * 0.55 + freshness * 0.3 + cognitive * 0.15 + Math.random() * 0.15,
+        };
       }).sort((a, b) => b.score - a.score);
 
       // ---- honour the configured difficulty spread where the pool allows
@@ -246,6 +303,7 @@ Deno.serve(async (req) => {
         chunk_index: scope === "section" ? (chunkIndex ?? null) : null,
         scope,
         preset: preset.id,
+        mode: modeId,
         language,
         total_questions: finalQuestions.length,
         credits_charged: effectiveCost,
@@ -287,7 +345,16 @@ Deno.serve(async (req) => {
           feature_type: "quiz",
           document_id: documentId,
           request_id: `quiz-attempt-${attemptId}`,
-          metadata: { reference_type: "quiz_attempt", reference_id: attemptId, questions: finalQuestions.length, preset: preset.id },
+          metadata: {
+            reference_type: "quiz_attempt",
+            reference_id: attemptId,
+            questions: finalQuestions.length,
+            preset: preset.id,
+            preset_label: preset.label,
+            mode: modeId,
+            mode_label: modePreset?.label ?? "Reading Practice",
+            configured_rate: settings.credit_costs?.[String(preset.questions)] ?? null,
+          },
           unlocks: 1,
         });
         await admin.from("user_usage").insert({
@@ -341,6 +408,8 @@ Deno.serve(async (req) => {
         credits_charged: effectiveCost,
         new_balance: balance - effectiveCost,
         preset: preset,
+        mode: modeId,
+        mode_label: modePreset?.label ?? "Reading Practice",
         questions: finalQuestions.map((q, i) => publicQuestion(q, i)),
       });
     }

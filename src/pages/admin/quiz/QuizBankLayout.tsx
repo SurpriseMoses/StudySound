@@ -8,6 +8,7 @@ const tabs = [
   { to: "/admin/quiz-bank/jobs", label: "Seed Jobs", end: false },
   { to: "/admin/quiz-bank/review", label: "Review Queue", end: false },
   { to: "/admin/quiz-bank/templates", label: "Quiz Templates", end: false },
+  { to: "/admin/quiz-bank/curriculum", label: "Curriculum & Assessment", end: false },
   { to: "/admin/quiz-bank/settings", label: "Quiz Settings", end: false },
 ];
 
