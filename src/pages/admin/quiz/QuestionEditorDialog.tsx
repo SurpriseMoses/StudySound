@@ -29,6 +29,9 @@ export default function QuestionEditorDialog({
   const [explanation, setExplanation] = useState("");
   const [working, setWorking] = useState("");
   const [difficulty, setDifficulty] = useState("medium");
+  const [marks, setMarks] = useState("");
+  const [guidance, setGuidance] = useState("");
+  const [verified, setVerified] = useState(false);
   const [reason, setReason] = useState("");
 
   useEffect(() => {
@@ -39,6 +42,9 @@ export default function QuestionEditorDialog({
     setExplanation(question.explanation ?? "");
     setWorking(question.working ?? "");
     setDifficulty(question.difficulty);
+    setMarks(question.mark_allocation != null ? String(question.mark_allocation) : "");
+    setGuidance(question.marking_guidance ?? "");
+    setVerified(!!question.answer_verified);
     setReason("");
   }, [question]);
 
