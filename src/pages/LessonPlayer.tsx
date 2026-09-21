@@ -110,33 +110,25 @@ export default function LessonPlayer() {
         navigate("/library");
         return;
       }
-      const { data: upload } = await supabase
-        .from("uploads")
-        .select("id")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data: created, error: createErr } = await supabase
+        .from("lessons")
+        .insert({
+          user_id: user.id,
+          document_id: doc.id,
+          upload_id: null,
+          title: doc.title,
+          subject: doc.subject_type ?? "other",
+          content_text: "",
+        })
+        .select("id, title, subject, language, document_id, documents(subject_type, license_type, source_url)")
+        .single();
 
-      if (upload) {
-        const { data: created } = await supabase
-          .from("lessons")
-          .insert({
-            user_id: user.id,
-            document_id: doc.id,
-            upload_id: upload.id,
-            title: doc.title,
-            subject: doc.subject_type ?? "other",
-            content_text: "",
-          })
-          .select("id, title, subject, language, document_id, documents(subject_type, license_type, source_url)")
-          .single();
-        if (created) {
-          setLesson(created as Lesson);
-          setLanguage(created.language ?? "en");
-        }
+      if (created) {
+        setLesson(created as Lesson);
+        setLanguage(created.language ?? "en");
       } else {
-        toast({ title: "Open this from your library or upload a document first.", variant: "destructive" });
+        console.error("lesson create failed", createErr);
+        toast({ title: "Could not open this book. Please try again.", variant: "destructive" });
         navigate("/library");
       }
       setResolving(false);

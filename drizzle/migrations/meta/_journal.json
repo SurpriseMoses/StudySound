@@ -50,6 +50,13 @@
       "when": 1790009216119,
       "tag": "0006_quiz_bank_curriculum_assessment",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790012136381,
+      "tag": "0007_lessons_upload_id_nullable",
+      "breakpoints": true
     }
   ]
 }
