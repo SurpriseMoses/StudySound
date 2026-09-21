@@ -303,9 +303,8 @@ Deno.serve(async (req) => {
           times_seen: (ex?.times_seen ?? 0) + 1,
           last_seen_at: new Date().toISOString(),
         }, { onConflict: "user_id,question_id" });
-        await admin.from("quiz_questions").update({ times_served: undefined }).eq("id", q.id).select("id").limit(0);
       }
-      await admin.rpc("quiz_bump_served", { _ids: finalQuestions.map((q) => q.id) }).catch?.(() => {});
+      await admin.rpc("quiz_bump_served", { _ids: finalQuestions.map((q) => q.id) });
 
       return json({
         attempt_id: attemptId,

@@ -3147,6 +3147,7 @@ export type Database = {
         Returns: boolean
       }
       quiz_bank_overview: { Args: never; Returns: Json }
+      quiz_bump_served: { Args: { _ids: string[] }; Returns: undefined }
       reclaim_stale_ingestion_jobs: {
         Args: { _stale_minutes?: number }
         Returns: number
