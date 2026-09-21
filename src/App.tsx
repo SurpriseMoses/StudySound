@@ -35,6 +35,13 @@ import AdminPipeline from "./pages/admin/AdminPipeline";
 import AdminSeedingStatus from "./pages/admin/AdminSeedingStatus";
 import AdminVisuals from "./pages/admin/AdminVisuals";
 import AdminIngestion from "./pages/admin/AdminIngestion";
+import QuizBankLayout from "./pages/admin/quiz/QuizBankLayout";
+import QuizBankOverview from "./pages/admin/quiz/QuizBankOverview";
+import QuizQuestionBank from "./pages/admin/quiz/QuizQuestionBank";
+import QuizSeedJobs from "./pages/admin/quiz/QuizSeedJobs";
+import QuizReviewQueue from "./pages/admin/quiz/QuizReviewQueue";
+import QuizTemplates from "./pages/admin/quiz/QuizTemplates";
+import QuizSettingsPage from "./pages/admin/quiz/QuizSettingsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -81,6 +88,14 @@ const App = () => (
               <Route path="seed-audio" element={<AdminSeedAudio />} />
               <Route path="seed-translations" element={<AdminSeedTranslations />} />
               <Route path="visuals" element={<AdminVisuals />} />
+              <Route path="quiz-bank" element={<QuizBankLayout />}>
+                <Route index element={<QuizBankOverview />} />
+                <Route path="questions" element={<QuizQuestionBank />} />
+                <Route path="jobs" element={<QuizSeedJobs />} />
+                <Route path="review" element={<QuizReviewQueue />} />
+                <Route path="templates" element={<QuizTemplates />} />
+                <Route path="settings" element={<QuizSettingsPage />} />
+              </Route>
               <Route path="ingestion" element={<AdminIngestion />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="economy" element={<AdminEconomy />} />
