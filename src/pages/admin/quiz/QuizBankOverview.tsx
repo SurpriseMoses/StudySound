@@ -35,14 +35,22 @@ export default function QuizBankOverview() {
   }
 
   const totals = data?.totals ?? {};
-  const byStatus = data?.by_status ?? {};
+  const jobs = data?.jobs ?? {};
+  const byStatus: Record<string, number> = {
+    draft: totals.draft ?? 0,
+    pending_review: totals.pending_review ?? 0,
+    approved: totals.approved ?? 0,
+    published: totals.published ?? 0,
+    rejected: totals.rejected ?? 0,
+    retired: totals.retired ?? 0,
+  };
   const cards = [
-    { label: "Books with questions", value: totals.books ?? 0 },
-    { label: "Total questions", value: totals.questions ?? 0 },
-    { label: "Published", value: byStatus.published ?? 0 },
-    { label: "Awaiting review", value: (byStatus.draft ?? 0) + (byStatus.pending_review ?? 0) },
-    { label: "Quizzes played", value: totals.attempts ?? 0 },
-    { label: "Open flags", value: totals.open_flags ?? 0 },
+    { label: "Books with questions", value: `${data?.books_with_bank ?? 0}/${data?.books_total ?? 0}` },
+    { label: "Total questions", value: totals.total ?? 0 },
+    { label: "Published", value: totals.published ?? 0 },
+    { label: "Awaiting review", value: (totals.draft ?? 0) + (totals.pending_review ?? 0) },
+    { label: "Jobs running", value: jobs.running ?? 0 },
+    { label: "Jobs completed", value: jobs.completed ?? 0 },
   ];
 
   return (
@@ -72,7 +80,9 @@ export default function QuizBankOverview() {
         {cards.map((c) => (
           <Card key={c.label}>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold font-display">{Number(c.value).toLocaleString()}</div>
+              <div className="text-2xl font-bold font-display">
+                {typeof c.value === "number" ? c.value.toLocaleString() : c.value}
+              </div>
               <div className="text-xs text-muted-foreground mt-1">{c.label}</div>
             </CardContent>
           </Card>
@@ -96,21 +106,20 @@ export default function QuizBankOverview() {
         </Card>
 
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Recent seed jobs</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Coverage by book</CardTitle></CardHeader>
           <CardContent className="space-y-2">
-            {(data?.recent_jobs ?? []).length === 0 && (
-              <p className="text-sm text-muted-foreground">No seed jobs yet.</p>
+            {(data?.by_book ?? []).length === 0 && (
+              <p className="text-sm text-muted-foreground">No seeded books yet.</p>
             )}
-            {(data?.recent_jobs ?? []).map((j: any) => (
-              <div key={j.id} className="flex items-center justify-between text-sm gap-2">
-                <span className="truncate">
-                  {j.questions_generated ?? 0}/{j.estimated_questions ?? 0} questions
-                  <span className="text-muted-foreground"> · {new Date(j.created_at).toLocaleDateString()}</span>
+            {(data?.by_book ?? []).slice(0, 8).map((b: any) => (
+              <div key={b.document_id} className="flex items-center justify-between text-sm gap-2">
+                <span className="truncate">{b.title}</span>
+                <span className="text-muted-foreground whitespace-nowrap">
+                  {b.published} published / {b.total}
                 </span>
-                <Badge variant="secondary">{prettify(j.status)}</Badge>
               </div>
             ))}
-            <Link to="/admin/quiz-bank/jobs" className="text-sm text-primary inline-block pt-1">View all jobs</Link>
+            <Link to="/admin/quiz-bank/jobs" className="text-sm text-primary inline-block pt-1">View seed jobs</Link>
           </CardContent>
         </Card>
       </div>

@@ -89,8 +89,10 @@ export default function QuizSeedJobs() {
 
       <div className="space-y-3">
         {jobs.map((j) => {
-          const done = j.sections_completed ?? 0;
           const total = j.total_sections ?? 0;
+          const done = j.generated_questions > 0 && j.target_questions > 0
+            ? Math.min(total, Math.round((j.generated_questions / j.target_questions) * total))
+            : 0;
           const pctDone = total > 0 ? Math.round((done / total) * 100) : 0;
           const running = busy === j.id;
           return (
@@ -115,19 +117,19 @@ export default function QuizSeedJobs() {
                 <Progress value={pctDone} className="h-2" />
                 <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
                   <span>Sections {done}/{total}</span>
-                  <span>Questions {j.questions_generated ?? 0} kept · {j.questions_rejected ?? 0} discarded · {j.duplicates_skipped ?? 0} duplicates</span>
+                  <span>Questions {j.generated_questions ?? 0} kept · {j.invalid_questions ?? 0} discarded · {j.duplicate_questions ?? 0} duplicates</span>
                   <span>Estimated {formatZar(j.estimated_cost_zar)}</span>
-                  {j.gemini_batch_name && <span>Batch active</span>}
+                  {j.batch_name && <span>Batch active</span>}
                 </div>
                 {j.error_message && <p className="text-xs text-destructive">{j.error_message}</p>}
 
                 <div className="flex flex-wrap gap-2">
-                  {!j.gemini_batch_name && !["completed", "cancelled"].includes(j.status) && (
+                  {!j.batch_name && !["completed", "cancelled"].includes(j.status) && (
                     <Button size="sm" variant="outline" disabled={running} onClick={() => submit(j.id)} className="gap-1.5">
                       <Send className="w-3.5 h-3.5" /> Start generation
                     </Button>
                   )}
-                  {j.gemini_batch_name && (
+                  {j.batch_name && (
                     <Button size="sm" variant="outline" disabled={running} onClick={() => poll(j.id)} className="gap-1.5">
                       <RefreshCw className="w-3.5 h-3.5" /> Check progress
                     </Button>
