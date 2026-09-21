@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
     const { data: settingsRow } = await admin.from("quiz_settings").select("*").eq("id", 1).maybeSingle();
     const settings = settingsRow as unknown as QuizSettings;
 
-    const geminiConfigured = !!Deno.env.get("GEMINI_API_KEY");
+    const geminiConfigured = !!(Deno.env.get("Gemini_Secret_Key") ?? Deno.env.get("GEMINI_API_KEY"));
 
     // ------------------------------------------------------- read actions
 

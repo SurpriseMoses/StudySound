@@ -139,8 +139,8 @@ export default function QuizSettingsPage() {
           <div className="space-y-1.5">
             <Label>Rand per US dollar</Label>
             <Input
-              type="number" step="0.1" value={s.model_pricing?.zar_per_usd ?? 18}
-              onChange={(e) => setS({ ...s, model_pricing: { ...s.model_pricing, zar_per_usd: parseFloat(e.target.value || "18") } })}
+              type="number" step="0.1" value={s.model_pricing?.usd_to_zar ?? 18.5}
+              onChange={(e) => setS({ ...s, model_pricing: { ...s.model_pricing, usd_to_zar: parseFloat(e.target.value || "18.5") } })}
             />
           </div>
         </CardContent>
