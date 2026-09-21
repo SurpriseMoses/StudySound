@@ -155,6 +155,33 @@ export default function QuestionEditorDialog({
               <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional note" />
             </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Marks</Label>
+              <Input
+                type="number"
+                min={1}
+                value={marks}
+                onChange={(e) => setMarks(e.target.value)}
+                placeholder="e.g. 2"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Marking guidance</Label>
+              <Input value={guidance} onChange={(e) => setGuidance(e.target.value)} placeholder="How marks are awarded" />
+            </div>
+          </div>
+
+          <label className="flex items-start gap-2 rounded-md border p-3">
+            <Checkbox checked={verified} onCheckedChange={(v) => setVerified(!!v)} className="mt-0.5" />
+            <span className="text-sm">
+              I have checked this answer myself
+              <span className="block text-xs text-muted-foreground">
+                Required before publishing Mathematics and Physical Sciences questions.
+              </span>
+            </span>
+          </label>
         </div>
 
         <DialogFooter>
