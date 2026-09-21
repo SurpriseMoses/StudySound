@@ -148,6 +148,18 @@ export default function QuestionCard({
             {q.source_reference && (
               <p className="text-xs text-muted-foreground">Source: “{q.source_reference}”</p>
             )}
+            {q.marking_guidance && (
+              <p className="text-xs"><span className="text-muted-foreground">Marking guidance: </span>{q.marking_guidance}</p>
+            )}
+            {q.expected_answer_points?.length ? (
+              <p className="text-xs text-muted-foreground">Expected points: {q.expected_answer_points.join("; ")}</p>
+            ) : null}
+            {q.assessment_reference && (
+              <p className="text-xs text-muted-foreground">Assessment reference: {q.assessment_reference}</p>
+            )}
+            {notes.length > 0 && (
+              <p className="text-xs text-muted-foreground">Validation notes: {notes.join("; ")}</p>
+            )}
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {q.subject && <span>{q.subject}</span>}
               {q.grade && <span>Grade {q.grade}</span>}
