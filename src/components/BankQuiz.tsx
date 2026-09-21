@@ -92,7 +92,8 @@ export default function BankQuiz({
         chunk_index: typeof chunkIndex === "number" ? chunkIndex : null,
         language,
         preset,
-        idempotency_key: `${documentId}-${scope}-${chunkIndex ?? "all"}-${preset}-${Date.now()}`,
+        mode,
+        idempotency_key: `${documentId}-${scope}-${chunkIndex ?? "all"}-${preset}-${mode}-${Date.now()}`,
       });
       if (res.error === "no_questions") {
         toast({ title: "No questions yet", description: res.message });
