@@ -1,0 +1,1 @@
+ALTER TABLE public.lessons ALTER COLUMN upload_id DROP NOT NULL;

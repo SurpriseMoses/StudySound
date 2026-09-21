@@ -1363,7 +1363,7 @@ export type Database = {
           subject: string
           title: string
           updated_at: string
-          upload_id: string
+          upload_id: string | null
           user_id: string
         }
         Insert: {
@@ -1379,7 +1379,7 @@ export type Database = {
           subject: string
           title: string
           updated_at?: string
-          upload_id: string
+          upload_id?: string | null
           user_id: string
         }
         Update: {
@@ -1395,7 +1395,7 @@ export type Database = {
           subject?: string
           title?: string
           updated_at?: string
-          upload_id?: string
+          upload_id?: string | null
           user_id?: string
         }
         Relationships: [
