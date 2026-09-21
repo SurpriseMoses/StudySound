@@ -326,6 +326,33 @@ export default function BankQuiz({
               </div>
             )}
 
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Choose how you want to practise</p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(["learning", "exam", "mixed"] as const).map((m) => {
+                  const label = (avail?.modes ?? {})[m]?.label ?? MODE_COPY[m].label;
+                  const disabled = m === "exam" && (avail?.exam_questions ?? 0) === 0;
+                  return (
+                    <button
+                      key={m}
+                      disabled={disabled}
+                      onClick={() => setMode(m)}
+                      className={`rounded-md border p-3 text-left transition-colors disabled:opacity-50 ${
+                        mode === m ? "border-primary bg-primary/10" : "border-border hover:bg-muted"
+                      }`}
+                    >
+                      <div className="text-sm font-medium">{label}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {disabled ? "No exam-style questions here yet" : MODE_COPY[m].blurb}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+
+
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {presets.map((p) => (
                 <button
