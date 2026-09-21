@@ -217,7 +217,11 @@ export default function BankQuiz({
       <div className="space-y-4">
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Question {idx + 1} of {questions.length}</span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {current.practice_label && <Badge variant="secondary">{current.practice_label}</Badge>}
+            {current.mark_allocation ? (
+              <Badge variant="outline">{current.mark_allocation} mark{current.mark_allocation === 1 ? "" : "s"}</Badge>
+            ) : null}
             <Badge variant="outline">{current.difficulty}</Badge>
             <Button size="icon" variant="ghost" onClick={flag} title="Report a problem">
               <Flag className="w-3.5 h-3.5" />
