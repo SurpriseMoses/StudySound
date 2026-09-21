@@ -1373,6 +1373,774 @@ export type Database = {
           },
         ]
       }
+      quiz_bank_attempt_questions: {
+        Row: {
+          answered_at: string | null
+          attempt_id: string
+          created_at: string
+          given_answer: string | null
+          id: string
+          is_correct: boolean | null
+          position: number
+          question_id: string
+          question_snapshot: Json
+          question_version: number
+        }
+        Insert: {
+          answered_at?: string | null
+          attempt_id: string
+          created_at?: string
+          given_answer?: string | null
+          id?: string
+          is_correct?: boolean | null
+          position: number
+          question_id: string
+          question_snapshot: Json
+          question_version?: number
+        }
+        Update: {
+          answered_at?: string | null
+          attempt_id?: string
+          created_at?: string
+          given_answer?: string | null
+          id?: string
+          is_correct?: boolean | null
+          position?: number
+          question_id?: string
+          question_snapshot?: Json
+          question_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_bank_attempt_questions_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "quiz_bank_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_bank_attempt_questions_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "quiz_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_bank_attempts: {
+        Row: {
+          chunk_index: number | null
+          completed_at: string | null
+          correct_count: number
+          created_at: string
+          credits_charged: number
+          document_id: string
+          duration_seconds: number | null
+          id: string
+          idempotency_key: string | null
+          language: string
+          preset: string
+          scope: string
+          score: number | null
+          started_at: string
+          total_questions: number
+          user_id: string
+        }
+        Insert: {
+          chunk_index?: number | null
+          completed_at?: string | null
+          correct_count?: number
+          created_at?: string
+          credits_charged?: number
+          document_id: string
+          duration_seconds?: number | null
+          id?: string
+          idempotency_key?: string | null
+          language?: string
+          preset?: string
+          scope?: string
+          score?: number | null
+          started_at?: string
+          total_questions?: number
+          user_id: string
+        }
+        Update: {
+          chunk_index?: number | null
+          completed_at?: string | null
+          correct_count?: number
+          created_at?: string
+          credits_charged?: number
+          document_id?: string
+          duration_seconds?: number | null
+          id?: string
+          idempotency_key?: string | null
+          language?: string
+          preset?: string
+          scope?: string
+          score?: number | null
+          started_at?: string
+          total_questions?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_bank_attempts_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_flags: {
+        Row: {
+          created_at: string
+          flagged_by: string | null
+          id: string
+          question_id: string
+          reason: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          source: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          flagged_by?: string | null
+          id?: string
+          question_id: string
+          reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          source?: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          flagged_by?: string | null
+          id?: string
+          question_id?: string
+          reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          source?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_flags_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "quiz_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_performance: {
+        Row: {
+          attempts: number
+          chunk_index: number | null
+          correct: number
+          difficulty: string | null
+          document_id: string
+          id: string
+          last_attempt_at: string | null
+          question_type: string | null
+          skill: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempts?: number
+          chunk_index?: number | null
+          correct?: number
+          difficulty?: string | null
+          document_id: string
+          id?: string
+          last_attempt_at?: string | null
+          question_type?: string | null
+          skill?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempts?: number
+          chunk_index?: number | null
+          correct?: number
+          difficulty?: string | null
+          document_id?: string
+          id?: string
+          last_attempt_at?: string | null
+          question_type?: string | null
+          skill?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_performance_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_question_exposure: {
+        Row: {
+          id: string
+          last_seen_at: string | null
+          question_id: string
+          times_correct: number
+          times_seen: number
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          last_seen_at?: string | null
+          question_id: string
+          times_correct?: number
+          times_seen?: number
+          user_id: string
+        }
+        Update: {
+          id?: string
+          last_seen_at?: string | null
+          question_id?: string
+          times_correct?: number
+          times_seen?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_question_exposure_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "quiz_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_question_versions: {
+        Row: {
+          change_reason: string | null
+          created_at: string
+          created_by: string | null
+          generation_job_id: string | null
+          id: string
+          question_id: string
+          snapshot: Json
+          source_content_hash: string | null
+          status: string
+          version: number
+        }
+        Insert: {
+          change_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+          generation_job_id?: string | null
+          id?: string
+          question_id: string
+          snapshot: Json
+          source_content_hash?: string | null
+          status: string
+          version: number
+        }
+        Update: {
+          change_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+          generation_job_id?: string | null
+          id?: string
+          question_id?: string
+          snapshot?: Json
+          source_content_hash?: string | null
+          status?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_question_versions_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "quiz_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_questions: {
+        Row: {
+          acceptable_answers: Json | null
+          ai_validated: boolean
+          assessment_skill: string | null
+          caps_subtopic: string | null
+          caps_topic: string | null
+          chunk_id: string | null
+          chunk_index: number | null
+          cognitive_level: string | null
+          command_word: string | null
+          correct_answer: string | null
+          correct_order: Json | null
+          created_at: string
+          created_by: string | null
+          curriculum_reference: string | null
+          curriculum_system: string | null
+          curriculum_version: string | null
+          difficulty: string
+          document_id: string
+          exam_alignment_level: string
+          explanation: string | null
+          generation_job_id: string | null
+          grade: string | null
+          id: string
+          items: Json | null
+          language: string
+          learning_outcome: string | null
+          manually_edited: boolean
+          options: Json | null
+          phase: string | null
+          question: string
+          question_hash: string
+          question_type: string
+          quiz_bank_version: number
+          replaced_by_id: string | null
+          retired_at: string | null
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          skill: string | null
+          source_content_hash: string | null
+          source_material_type: string | null
+          source_question_id: string | null
+          source_reference: string | null
+          status: string
+          subject: string | null
+          times_answered: number
+          times_correct: number
+          times_served: number
+          topic: string | null
+          translation_version: number | null
+          updated_at: string
+          version: number
+          working: string | null
+        }
+        Insert: {
+          acceptable_answers?: Json | null
+          ai_validated?: boolean
+          assessment_skill?: string | null
+          caps_subtopic?: string | null
+          caps_topic?: string | null
+          chunk_id?: string | null
+          chunk_index?: number | null
+          cognitive_level?: string | null
+          command_word?: string | null
+          correct_answer?: string | null
+          correct_order?: Json | null
+          created_at?: string
+          created_by?: string | null
+          curriculum_reference?: string | null
+          curriculum_system?: string | null
+          curriculum_version?: string | null
+          difficulty?: string
+          document_id: string
+          exam_alignment_level?: string
+          explanation?: string | null
+          generation_job_id?: string | null
+          grade?: string | null
+          id?: string
+          items?: Json | null
+          language?: string
+          learning_outcome?: string | null
+          manually_edited?: boolean
+          options?: Json | null
+          phase?: string | null
+          question: string
+          question_hash: string
+          question_type?: string
+          quiz_bank_version?: number
+          replaced_by_id?: string | null
+          retired_at?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          skill?: string | null
+          source_content_hash?: string | null
+          source_material_type?: string | null
+          source_question_id?: string | null
+          source_reference?: string | null
+          status?: string
+          subject?: string | null
+          times_answered?: number
+          times_correct?: number
+          times_served?: number
+          topic?: string | null
+          translation_version?: number | null
+          updated_at?: string
+          version?: number
+          working?: string | null
+        }
+        Update: {
+          acceptable_answers?: Json | null
+          ai_validated?: boolean
+          assessment_skill?: string | null
+          caps_subtopic?: string | null
+          caps_topic?: string | null
+          chunk_id?: string | null
+          chunk_index?: number | null
+          cognitive_level?: string | null
+          command_word?: string | null
+          correct_answer?: string | null
+          correct_order?: Json | null
+          created_at?: string
+          created_by?: string | null
+          curriculum_reference?: string | null
+          curriculum_system?: string | null
+          curriculum_version?: string | null
+          difficulty?: string
+          document_id?: string
+          exam_alignment_level?: string
+          explanation?: string | null
+          generation_job_id?: string | null
+          grade?: string | null
+          id?: string
+          items?: Json | null
+          language?: string
+          learning_outcome?: string | null
+          manually_edited?: boolean
+          options?: Json | null
+          phase?: string | null
+          question?: string
+          question_hash?: string
+          question_type?: string
+          quiz_bank_version?: number
+          replaced_by_id?: string | null
+          retired_at?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          skill?: string | null
+          source_content_hash?: string | null
+          source_material_type?: string | null
+          source_question_id?: string | null
+          source_reference?: string | null
+          status?: string
+          subject?: string | null
+          times_answered?: number
+          times_correct?: number
+          times_served?: number
+          topic?: string | null
+          translation_version?: number | null
+          updated_at?: string
+          version?: number
+          working?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_questions_chunk_id_fkey"
+            columns: ["chunk_id"]
+            isOneToOne: false
+            referencedRelation: "document_chunks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_questions_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_seed_job_items: {
+        Row: {
+          batch_position: number | null
+          chunk_id: string | null
+          chunk_index: number
+          created_at: string
+          document_id: string
+          duplicate_questions: number
+          error: string | null
+          generated_questions: number
+          id: string
+          invalid_questions: number
+          job_id: string
+          requested_questions: number
+          source_content_hash: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          batch_position?: number | null
+          chunk_id?: string | null
+          chunk_index: number
+          created_at?: string
+          document_id: string
+          duplicate_questions?: number
+          error?: string | null
+          generated_questions?: number
+          id?: string
+          invalid_questions?: number
+          job_id: string
+          requested_questions?: number
+          source_content_hash?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          batch_position?: number | null
+          chunk_id?: string | null
+          chunk_index?: number
+          created_at?: string
+          document_id?: string
+          duplicate_questions?: number
+          error?: string | null
+          generated_questions?: number
+          id?: string
+          invalid_questions?: number
+          job_id?: string
+          requested_questions?: number
+          source_content_hash?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_seed_job_items_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_seed_job_items_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "quiz_seed_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_seed_jobs: {
+        Row: {
+          approved_questions: number
+          batch_name: string | null
+          batch_state: string | null
+          batch_submitted_at: string | null
+          cancel_requested: boolean
+          chunk_indexes: Json | null
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          difficulty_mix: Json
+          document_id: string | null
+          document_ids: Json
+          duplicate_questions: number
+          error_message: string | null
+          estimated_cost_zar: number | null
+          estimated_questions: number
+          exam_alignment_level: string
+          failed_questions: number
+          generated_questions: number
+          generation_mode: string
+          id: string
+          invalid_questions: number
+          language: string
+          model: string | null
+          paused: boolean
+          pricing_snapshot: Json | null
+          published_questions: number
+          question_types: Json
+          questions_per_section: number
+          scope: string
+          skill_mix: Json
+          started_at: string | null
+          status: string
+          target_questions: number
+          total_sections: number
+          updated_at: string
+        }
+        Insert: {
+          approved_questions?: number
+          batch_name?: string | null
+          batch_state?: string | null
+          batch_submitted_at?: string | null
+          cancel_requested?: boolean
+          chunk_indexes?: Json | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          difficulty_mix?: Json
+          document_id?: string | null
+          document_ids?: Json
+          duplicate_questions?: number
+          error_message?: string | null
+          estimated_cost_zar?: number | null
+          estimated_questions?: number
+          exam_alignment_level?: string
+          failed_questions?: number
+          generated_questions?: number
+          generation_mode?: string
+          id?: string
+          invalid_questions?: number
+          language?: string
+          model?: string | null
+          paused?: boolean
+          pricing_snapshot?: Json | null
+          published_questions?: number
+          question_types?: Json
+          questions_per_section?: number
+          scope?: string
+          skill_mix?: Json
+          started_at?: string | null
+          status?: string
+          target_questions?: number
+          total_sections?: number
+          updated_at?: string
+        }
+        Update: {
+          approved_questions?: number
+          batch_name?: string | null
+          batch_state?: string | null
+          batch_submitted_at?: string | null
+          cancel_requested?: boolean
+          chunk_indexes?: Json | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          difficulty_mix?: Json
+          document_id?: string | null
+          document_ids?: Json
+          duplicate_questions?: number
+          error_message?: string | null
+          estimated_cost_zar?: number | null
+          estimated_questions?: number
+          exam_alignment_level?: string
+          failed_questions?: number
+          generated_questions?: number
+          generation_mode?: string
+          id?: string
+          invalid_questions?: number
+          language?: string
+          model?: string | null
+          paused?: boolean
+          pricing_snapshot?: Json | null
+          published_questions?: number
+          question_types?: Json
+          questions_per_section?: number
+          scope?: string
+          skill_mix?: Json
+          started_at?: string | null
+          status?: string
+          target_questions?: number
+          total_sections?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_seed_jobs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_settings: {
+        Row: {
+          auto_publish_approved: boolean
+          credit_costs: Json
+          default_questions_per_section: number
+          generation_enabled: boolean
+          id: number
+          min_section_chars: number
+          model_pricing: Json
+          presets: Json
+          require_review_subjects: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          auto_publish_approved?: boolean
+          credit_costs?: Json
+          default_questions_per_section?: number
+          generation_enabled?: boolean
+          id?: number
+          min_section_chars?: number
+          model_pricing?: Json
+          presets?: Json
+          require_review_subjects?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          auto_publish_approved?: boolean
+          credit_costs?: Json
+          default_questions_per_section?: number
+          generation_enabled?: boolean
+          id?: number
+          min_section_chars?: number
+          model_pricing?: Json
+          presets?: Json
+          require_review_subjects?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      quiz_templates: {
+        Row: {
+          applies_to: string
+          cognitive_mix: Json
+          created_at: string
+          description: string | null
+          difficulty_mix: Json
+          exam_alignment_level: string
+          grade: string | null
+          id: string
+          is_default: boolean
+          name: string
+          question_types: Json
+          questions_per_section: number
+          skill_mix: Json
+          subject: string | null
+          updated_at: string
+        }
+        Insert: {
+          applies_to?: string
+          cognitive_mix?: Json
+          created_at?: string
+          description?: string | null
+          difficulty_mix?: Json
+          exam_alignment_level?: string
+          grade?: string | null
+          id?: string
+          is_default?: boolean
+          name: string
+          question_types?: Json
+          questions_per_section?: number
+          skill_mix?: Json
+          subject?: string | null
+          updated_at?: string
+        }
+        Update: {
+          applies_to?: string
+          cognitive_mix?: Json
+          created_at?: string
+          description?: string | null
+          difficulty_mix?: Json
+          exam_alignment_level?: string
+          grade?: string | null
+          id?: string
+          is_default?: boolean
+          name?: string
+          question_types?: Json
+          questions_per_section?: number
+          skill_mix?: Json
+          subject?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       quizzes: {
         Row: {
           correct_answer: string
@@ -2378,6 +3146,8 @@ export type Database = {
         }
         Returns: boolean
       }
+      quiz_bank_overview: { Args: never; Returns: Json }
+      quiz_bump_served: { Args: { _ids: string[] }; Returns: undefined }
       reclaim_stale_ingestion_jobs: {
         Args: { _stale_minutes?: number }
         Returns: number
