@@ -156,7 +156,7 @@ export default function BankQuiz({
   const flag = async () => {
     if (!current) return;
     try {
-      await quizPlay("flag", { question_id: current.id, reason: "learner_report" });
+      await quizPlay("flag", { question_id: current.question_id, reason: "learner_report" });
       toast({ title: "Thanks — we'll check this question" });
     } catch (e) {
       toast({ title: "Could not report this", description: (e as Error).message, variant: "destructive" });
