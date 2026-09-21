@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Shield, BarChart3, FileAudio, Users, AlertTriangle, ArrowLeft, ShieldAlert, Coins, Trophy, Mic2, Languages, Workflow, Activity, Image as ImageIcon, Inbox } from "lucide-react";
+import { Shield, BarChart3, FileAudio, Users, AlertTriangle, ArrowLeft, ShieldAlert, Coins, Trophy, Mic2, Languages, Workflow, Activity, Image as ImageIcon, Inbox, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -14,6 +14,7 @@ const links = [
   { to: "/admin/seed-audio", label: "Seed audio", icon: Mic2, end: false },
   { to: "/admin/seed-translations", label: "Seed translations", icon: Languages, end: false },
   { to: "/admin/visuals", label: "Visuals", icon: ImageIcon, end: false },
+  { to: "/admin/quiz-bank", label: "Quiz Bank", icon: Brain, end: false },
   { to: "/admin/top-documents", label: "Top documents", icon: Trophy, end: false },
   { to: "/admin/users", label: "Users & roles", icon: Users, end: false },
   { to: "/admin/errors", label: "Error log", icon: AlertTriangle, end: false },

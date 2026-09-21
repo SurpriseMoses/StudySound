@@ -261,11 +261,24 @@ Deno.serve(async (req) => {
 
       // Deduct, rolling back the attempt if the deduction fails.
       if (effectiveCost > 0) {
-        const { error: dedErr } = await admin
-          .from("profiles").update({ credits_balance: balance - effectiveCost }).eq("user_id", user.id).gte("credits_balance", effectiveCost);
-        if (dedErr) {
+        // Conditional update: only succeeds while the wallet still holds the cost,
+        // so two concurrent starts can never overdraw the balance.
+        const { data: charged, error: dedErr } = await admin
+          .from("profiles")
+          .update({ credits_balance: balance - effectiveCost })
+          .eq("user_id", user.id)
+          .eq("credits_balance", balance)
+          .gte("credits_balance", effectiveCost)
+          .select("credits_balance");
+        if (dedErr || !charged || charged.length === 0) {
           await admin.from("quiz_bank_attempts").delete().eq("id", attemptId);
-          throw dedErr;
+          if (dedErr) throw dedErr;
+          return json({
+            error: "insufficient_credits",
+            message: "Your credit balance changed — please try again.",
+            required: cost,
+            balance,
+          }, 200);
         }
         await admin.from("credit_transactions").insert({
           user_id: user.id,
@@ -284,7 +297,7 @@ Deno.serve(async (req) => {
       }
 
       // Lock question ids + versions into the attempt.
-      await admin.from("quiz_bank_attempt_questions").insert(
+      const { error: lockErr } = await admin.from("quiz_bank_attempt_questions").insert(
         finalQuestions.map((q, i) => ({
           attempt_id: attemptId,
           question_id: q.id,
@@ -293,6 +306,23 @@ Deno.serve(async (req) => {
           question_snapshot: q,
         })),
       );
+      if (lockErr) {
+        // Refund and remove the attempt so the learner is never charged for a broken quiz.
+        if (effectiveCost > 0) {
+          await admin.from("profiles").update({ credits_balance: balance }).eq("user_id", user.id);
+          await admin.from("credit_transactions").insert({
+            user_id: user.id,
+            amount: effectiveCost,
+            source: "quiz_refund",
+            feature_type: "quiz",
+            document_id: documentId,
+            request_id: `quiz-refund-${attemptId}`,
+            metadata: { reference_type: "quiz_attempt", reference_id: attemptId, reason: "assembly_failed" },
+          });
+        }
+        await admin.from("quiz_bank_attempts").delete().eq("id", attemptId);
+        throw lockErr;
+      }
 
       // Exposure bookkeeping
       for (const q of finalQuestions) {

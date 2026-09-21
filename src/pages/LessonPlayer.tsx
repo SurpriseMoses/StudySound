@@ -21,6 +21,7 @@ import { CreditEstimator } from "@/components/CreditEstimator";
 import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
 import { useProgressionContext } from "@/contexts/ProgressionContext";
 import QuizBonusCard from "@/components/QuizBonusCard";
+import BankQuiz from "@/components/BankQuiz";
 import { useLessonProgress } from "@/hooks/use-lesson-progress";
 import StoryModeTab from "@/components/StoryModeTab";
 import { AudioSection } from "@/components/AudioSection";
@@ -396,10 +397,10 @@ export default function LessonPlayer() {
                 <StoryModeTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />
               )}
               {shownTab === "quiz" && lesson.document_id && (
-                <QuizTab
+                <BankQuiz
                   documentId={lesson.document_id}
-                  lessonId={lesson.id}
-                  onFirstAnswer={() => claimDailyReward("quiz")}
+                  chunkIndex={typeof chunkIndex === "number" ? chunkIndex : null}
+                  language={language ?? "en"}
                 />
               )}
             </motion.div>
