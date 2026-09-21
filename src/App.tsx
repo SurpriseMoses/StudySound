@@ -38,6 +38,7 @@ import AdminIngestion from "./pages/admin/AdminIngestion";
 import QuizBankLayout from "./pages/admin/quiz/QuizBankLayout";
 import QuizBankOverview from "./pages/admin/quiz/QuizBankOverview";
 import QuizQuestionBank from "./pages/admin/quiz/QuizQuestionBank";
+import CurriculumAssessmentPage from "./pages/admin/quiz/CurriculumAssessmentPage";
 import QuizSeedJobs from "./pages/admin/quiz/QuizSeedJobs";
 import QuizReviewQueue from "./pages/admin/quiz/QuizReviewQueue";
 import QuizTemplates from "./pages/admin/quiz/QuizTemplates";
