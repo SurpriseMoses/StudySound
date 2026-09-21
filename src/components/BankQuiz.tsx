@@ -11,7 +11,7 @@ import { quizPlay } from "@/lib/quiz-bank";
 
 interface PlayQuestion {
   position: number;
-  id: string;
+  question_id: string;
   question: string;
   question_type: string;
   options: string[] | null;
@@ -19,9 +19,22 @@ interface PlayQuestion {
   difficulty: string;
   skill: string | null;
   topic: string | null;
+  cognitive_level?: string | null;
+  command_word?: string | null;
+  mark_allocation?: number | null;
+  caps_topic?: string | null;
+  practice_label?: string | null;
 }
 
 interface Preset { id: string; label: string; questions: number }
+
+type ModeId = "learning" | "exam" | "mixed";
+
+const MODE_COPY: Record<ModeId, { label: string; blurb: string }> = {
+  learning: { label: "Learning practice", blurb: "Understand the section — recall and understanding first." },
+  exam: { label: "Exam practice", blurb: "CAPS exam-style questions with command words and marks. Practice only." },
+  mixed: { label: "Mixed practice", blurb: "A blend of learning and exam-style questions." },
+};
 
 export default function BankQuiz({
   documentId, chunkIndex, language = "en",
@@ -34,6 +47,7 @@ export default function BankQuiz({
   const [loading, setLoading] = useState(true);
   const [avail, setAvail] = useState<any>(null);
   const [preset, setPreset] = useState<string>("standard");
+  const [mode, setMode] = useState<ModeId>("learning");
   const [scope, setScope] = useState<"section" | "book">(typeof chunkIndex === "number" ? "section" : "book");
   const [starting, setStarting] = useState(false);
 
