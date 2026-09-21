@@ -95,6 +95,7 @@ const App = () => (
                 <Route path="jobs" element={<QuizSeedJobs />} />
                 <Route path="review" element={<QuizReviewQueue />} />
                 <Route path="templates" element={<QuizTemplates />} />
+                <Route path="curriculum" element={<CurriculumAssessmentPage />} />
                 <Route path="settings" element={<QuizSettingsPage />} />
               </Route>
               <Route path="ingestion" element={<AdminIngestion />} />
