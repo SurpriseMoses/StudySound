@@ -21,6 +21,7 @@ import { CreditEstimator } from "@/components/CreditEstimator";
 import { useDailyRewardContext } from "@/contexts/DailyRewardContext";
 import { useProgressionContext } from "@/contexts/ProgressionContext";
 import QuizBonusCard from "@/components/QuizBonusCard";
+import BankQuiz from "@/components/BankQuiz";
 import { useLessonProgress } from "@/hooks/use-lesson-progress";
 import StoryModeTab from "@/components/StoryModeTab";
 import { AudioSection } from "@/components/AudioSection";
@@ -398,7 +399,7 @@ export default function LessonPlayer() {
               {shownTab === "quiz" && lesson.document_id && (
                 <BankQuiz
                   documentId={lesson.document_id}
-                  chunkIndex={typeof currentChunk === "number" ? currentChunk : null}
+                  chunkIndex={typeof chunkIndex === "number" ? chunkIndex : null}
                   language={language ?? "en"}
                 />
               )}
