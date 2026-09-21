@@ -30,6 +30,13 @@ interface BankQuestion {
   difficulty: string;
   skill: string | null;
   topic: string | null;
+  cognitive_level?: string | null;
+  command_word?: string | null;
+  mark_allocation?: number | null;
+  marking_guidance?: string | null;
+  question_origin?: string | null;
+  exam_alignment_level?: string | null;
+  caps_topic?: string | null;
 }
 
 /** Public shape sent to the learner — never includes the answer. */
@@ -44,6 +51,16 @@ function publicQuestion(q: BankQuestion, position: number) {
     difficulty: q.difficulty,
     skill: q.skill,
     topic: q.topic,
+    cognitive_level: q.cognitive_level ?? null,
+    command_word: q.command_word ?? null,
+    mark_allocation: q.mark_allocation ?? null,
+    caps_topic: q.caps_topic ?? null,
+    // Learner-facing label — practice only, never a prediction of a real exam.
+    practice_label: q.exam_alignment_level === "high"
+      ? "Exam-style practice"
+      : q.exam_alignment_level === "medium"
+        ? "CAPS-aligned practice"
+        : "Learning practice",
   };
 }
 
