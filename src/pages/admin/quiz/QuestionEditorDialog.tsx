@@ -66,6 +66,9 @@ export default function QuestionEditorDialog({
           explanation,
           working: working || null,
           difficulty,
+          mark_allocation: marks ? Number(marks) : null,
+          marking_guidance: guidance || null,
+          answer_verified: verified,
         },
       });
       toast({ title: "Question updated", description: "The previous version was kept in history." });
