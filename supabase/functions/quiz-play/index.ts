@@ -297,7 +297,7 @@ Deno.serve(async (req) => {
       }
 
       // Lock question ids + versions into the attempt.
-      await admin.from("quiz_bank_attempt_questions").insert(
+      const { error: lockErr } = await admin.from("quiz_bank_attempt_questions").insert(
         finalQuestions.map((q, i) => ({
           attempt_id: attemptId,
           question_id: q.id,
@@ -306,6 +306,23 @@ Deno.serve(async (req) => {
           question_snapshot: q,
         })),
       );
+      if (lockErr) {
+        // Refund and remove the attempt so the learner is never charged for a broken quiz.
+        if (effectiveCost > 0) {
+          await admin.from("profiles").update({ credits_balance: balance }).eq("user_id", user.id);
+          await admin.from("credit_transactions").insert({
+            user_id: user.id,
+            amount: effectiveCost,
+            source: "quiz_refund",
+            feature_type: "quiz",
+            document_id: documentId,
+            request_id: `quiz-refund-${attemptId}`,
+            metadata: { reference_type: "quiz_attempt", reference_id: attemptId, reason: "assembly_failed" },
+          });
+        }
+        await admin.from("quiz_bank_attempts").delete().eq("id", attemptId);
+        throw lockErr;
+      }
 
       // Exposure bookkeeping
       for (const q of finalQuestions) {
