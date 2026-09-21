@@ -396,10 +396,10 @@ export default function LessonPlayer() {
                 <StoryModeTab documentId={lesson.document_id} lessonId={lesson.id} subjectType={lesson.documents?.subject_type ?? null} />
               )}
               {shownTab === "quiz" && lesson.document_id && (
-                <QuizTab
+                <BankQuiz
                   documentId={lesson.document_id}
-                  lessonId={lesson.id}
-                  onFirstAnswer={() => claimDailyReward("quiz")}
+                  chunkIndex={typeof currentChunk === "number" ? currentChunk : null}
+                  language={language ?? "en"}
                 />
               )}
             </motion.div>
