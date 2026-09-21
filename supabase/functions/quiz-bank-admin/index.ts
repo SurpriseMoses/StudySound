@@ -561,8 +561,23 @@ Deno.serve(async (req) => {
       const { data, error } = await admin.from("quiz_questions").update(patch).in("id", ids).select("id, status");
       if (error) throw error;
 
+      // Auto-publish on approval is still subject to the same safety gates:
+      // strict subjects need a checked answer, and failed validation never publishes.
       if (settings.auto_publish_approved && next === "approved") {
-        await admin.from("quiz_questions").update({ status: "published" }).in("id", ids);
+        const verifySubjects = (settings.strict_answer_verification_subjects ?? []).map((s) => s.toLowerCase());
+        const { data: rows } = await admin
+          .from("quiz_questions")
+          .select("id, subject, validation_status, answer_verified, manually_edited")
+          .in("id", ids);
+        const safe = (rows ?? []).filter((r: any) => {
+          if (r.validation_status === "failed") return false;
+          if (!verifySubjects.includes((r.subject ?? "").toLowerCase())) return true;
+          return !!r.answer_verified;
+        }).map((r: any) => r.id);
+        if (safe.length > 0) {
+          await admin.from("quiz_questions").update({ status: "published" }).in("id", safe);
+        }
+        return json({ updated: data?.length ?? 0, auto_published: safe.length, held_back: ids.length - safe.length });
       }
       return json({ updated: data?.length ?? 0 });
     }
