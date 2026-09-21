@@ -12,6 +12,12 @@ export type QuestionType =
   | "inference"
   | "analysis";
 
+export interface ModePreset {
+  label: string;
+  exam_alignment: string[];
+  cognitive_mix: Record<string, number>;
+}
+
 export interface QuizSettings {
   credit_costs: Record<string, number>;
   presets: { id: string; label: string; questions: number }[];
@@ -27,7 +33,26 @@ export interface QuizSettings {
   require_review_subjects: string[];
   auto_publish_approved: boolean;
   generation_enabled: boolean;
+  cognitive_mix_by_subject: Record<string, Record<string, number>>;
+  mode_presets: Record<string, ModePreset>;
+  strict_answer_verification_subjects: string[];
 }
+
+/** CAPS command words grouped by cognitive demand. */
+export const COMMAND_WORDS: Record<string, string[]> = {
+  recall: ["name", "state", "list", "identify", "define", "label", "give"],
+  understanding: ["describe", "explain", "summarise", "classify", "distinguish", "illustrate"],
+  application: ["calculate", "determine", "solve", "show", "apply", "use", "convert", "draw"],
+  analysis: ["analyse", "compare", "contrast", "interpret", "deduce", "account for", "why"],
+  evaluation: ["evaluate", "discuss", "justify", "motivate", "comment", "suggest", "critically"],
+};
+
+export const ALL_COMMAND_WORDS = Object.values(COMMAND_WORDS).flat();
+
+export const COGNITIVE_LEVELS = [
+  "recall", "understanding", "application", "analysis", "evaluation",
+  "knowledge", "routine_procedures", "complex_procedures", "problem_solving", "reasoning",
+];
 
 export interface SectionRow {
   id: string;
@@ -161,6 +186,13 @@ export interface GenContext {
   skillMix: Record<string, number>;
   questionTypes: string[];
   examAlignmentLevel: "low" | "medium" | "high";
+  cognitiveMix?: Record<string, number>;
+  /** CAPS topics/objectives configured for this subject + grade. */
+  curriculumTopics?: { topic: string; subtopic?: string | null; learning_objective?: string | null; command_words?: string[] }[];
+  /** Summarised patterns observed in official assessment material. */
+  assessmentPatterns?: string[];
+  curriculumSystem?: string;
+  curriculumVersion?: string | null;
 }
 
 function mixLine(mix: Record<string, number>): string {
@@ -187,7 +219,8 @@ export function buildSystemPrompt(ctx: GenContext): string {
     `ABSOLUTE RULES`,
     `- Use ONLY the supplied section text. Never introduce facts, names, dates, figures or events that are not present in it.`,
     `- If the section cannot support the requested number of questions, return fewer. Never pad with invented content.`,
-    `- Questions must be original. Never claim or imply a question will appear in a real examination.`,
+    `- Every question must be ORIGINAL. Never copy a question from a past examination paper, exemplar or memorandum, and never reproduce remembered exam wording.`,
+    `- Never state, imply or hint that a question will appear in, or is predicted for, any real examination. You are writing exam-STYLE practice only.`,
     `- Every question needs a correct answer and a 1-2 sentence explanation grounded in the section.`,
     `- Quote or reference the part of the section that supports the answer in "source_reference".`,
     ``,
@@ -197,19 +230,41 @@ export function buildSystemPrompt(ctx: GenContext): string {
     `- Skill distribution: ${mixLine(ctx.skillMix)}`,
     `- Allowed question types: ${ctx.questionTypes.join(", ")}`,
     `- Cognitive demand categories for this subject: ${COGNITIVE_BY_KIND[ctx.subjectKind]}`,
+    ctx.cognitiveMix && Object.keys(ctx.cognitiveMix).length > 0
+      ? `- Cognitive demand distribution: ${mixLine(ctx.cognitiveMix)}`
+      : ``,
     `- Exam alignment level: ${ctx.examAlignmentLevel.toUpperCase()} (${
       ctx.examAlignmentLevel === "high"
-        ? "mirror CAPS command words, cognitive demand and question structures used in official South African assessment material"
+        ? "mirror CAPS command words, cognitive demand, mark allocation and question structures used in official South African assessment material"
         : ctx.examAlignmentLevel === "medium"
           ? "curriculum-aligned and resembling common assessment formats"
           : "learning and comprehension focused"
     })`,
     ``,
+    `CURRICULUM CONTEXT`,
+    `- Curriculum: ${ctx.curriculumSystem ?? "CAPS"}${ctx.curriculumVersion ? ` (${ctx.curriculumVersion})` : ""}`,
+    `- Use official curriculum terminology for this subject and grade.`,
+    `- Set "command_word" to the CAPS command word that opens the question, and "cognitive_level" to its cognitive demand.`,
+    `- Approved command words: ${ALL_COMMAND_WORDS.join(", ")}.`,
+    `- Give a realistic "mark_allocation" (1-6 marks) matching the cognitive demand, plus "marking_guidance" describing how marks are awarded and "expected_answer_points" listing the points a learner must give.`,
+    ctx.curriculumTopics && ctx.curriculumTopics.length > 0
+      ? `- Configured CAPS topics to target where the section supports them:\n${
+        ctx.curriculumTopics.slice(0, 40).map((t) =>
+          `  • ${t.topic}${t.subtopic ? ` › ${t.subtopic}` : ""}${t.learning_objective ? ` — ${t.learning_objective}` : ""}`
+        ).join("\n")
+      }`
+      : ``,
+    ctx.assessmentPatterns && ctx.assessmentPatterns.length > 0
+      ? `- Patterns observed in official assessment material (structure and demand only — never reuse the wording):\n${
+        ctx.assessmentPatterns.slice(0, 30).map((p) => `  • ${p}`).join("\n")
+      }`
+      : ``,
+    ``,
     ctx.subjectKind === "literature"
-      ? `LITERATURE FOCUS: events, characters, relationships, setting, vocabulary in context, cause and effect, themes, inference, literary devices, plot development.`
+      ? `LITERATURE FOCUS: events, characters, relationships, setting, vocabulary in context, cause and effect, themes, inference, literary devices, plot development. Ground every answer in the supplied extract.`
       : `CURRICULUM FOCUS: definitions, concepts, processes, cause and effect, application, interpretation, exam-style reasoning. Use CAPS terminology and populate caps_topic, caps_subtopic, cognitive_level and command_word.`,
     strictStem
-      ? `MATHEMATICS / PHYSICAL SCIENCES: every calculation question must include full step-by-step working in "working", the exact numeric answer with units in "correct_answer", and must be solvable from the section alone.`
+      ? `MATHEMATICS / PHYSICAL SCIENCES: every calculation question must include full step-by-step working in "working", the exact numeric answer with units in "correct_answer", and must be solvable from the section alone. Marking guidance must allocate method and answer marks.`
       : ``,
     ``,
     `MULTIPLE CHOICE RULES: exactly 4 options, exactly one correct, no duplicate options, plausible but clearly wrong distractors, never "all of the above" or "none of the above".`,
@@ -263,6 +318,9 @@ export const GEMINI_RESPONSE_SCHEMA = {
           topic: { type: "string" },
           cognitive_level: { type: "string" },
           command_word: { type: "string" },
+          mark_allocation: { type: "integer" },
+          marking_guidance: { type: "string" },
+          expected_answer_points: { type: "array", items: { type: "string" } },
           caps_topic: { type: "string" },
           caps_subtopic: { type: "string" },
           learning_outcome: { type: "string" },
@@ -299,9 +357,28 @@ export interface RawQuestion {
   caps_subtopic?: unknown;
   learning_outcome?: unknown;
   assessment_skill?: unknown;
+  mark_allocation?: unknown;
+  marking_guidance?: unknown;
+  expected_answer_points?: unknown;
   source_section_id?: unknown;
   source_reference?: unknown;
   language?: unknown;
+}
+
+/** Independent machine checks recorded on every question. */
+export interface ValidationFlags {
+  schema_ok: boolean;
+  answer_present: boolean;
+  options_ok: boolean;
+  source_grounded: boolean;
+  command_word_recognised: boolean;
+  cognitive_level_recognised: boolean;
+  marks_reasonable: boolean;
+  marking_guidance_present: boolean;
+  working_present: boolean;
+  answer_verified: boolean;
+  no_exam_prediction_claim: boolean;
+  notes: string[];
 }
 
 export interface ValidatedQuestion {
@@ -323,7 +400,39 @@ export interface ValidatedQuestion {
   caps_subtopic: string | null;
   learning_outcome: string | null;
   assessment_skill: string | null;
+  mark_allocation: number | null;
+  marking_guidance: string | null;
+  expected_answer_points: string[] | null;
   source_reference: string;
+  validation: ValidationFlags;
+  validation_status: "passed" | "needs_review" | "failed";
+  answer_verified: boolean;
+}
+
+const PREDICTION_RE =
+  /\b(will\s+(?:appear|be)\s+in\s+(?:your|the)\s+exam|predicted\s+exam|guaranteed\s+exam|likely\s+to\s+be\s+your\s+exam)\b/i;
+
+/**
+ * Deterministic arithmetic check for simple numeric answers: pulls the last
+ * expression out of the working and compares it with the stated answer.
+ */
+export function verifyNumericAnswer(working: string | null, answer: string): boolean {
+  if (!working) return false;
+  const target = Number((answer.match(/-?\d+(?:[.,]\d+)?/) ?? [])[0]?.replace(",", "."));
+  if (!Number.isFinite(target)) return false;
+  const lines = working.split(/[\n;]/).map((l) => l.trim()).filter(Boolean);
+  for (const line of lines.reverse()) {
+    const expr = (line.split("=").slice(-2)[0] ?? "").replace(/[^0-9+\-*/(). ]/g, "").trim();
+    if (!expr || !/[0-9]/.test(expr) || !/[+\-*/]/.test(expr)) continue;
+    try {
+      const value = Function(`"use strict";return (${expr});`)() as unknown;
+      if (typeof value === "number" && Number.isFinite(value)) {
+        const tol = Math.max(Math.abs(target) * 0.01, 0.01);
+        if (Math.abs(value - target) <= tol) return true;
+      }
+    } catch { /* not an evaluable expression */ }
+  }
+  return false;
 }
 
 const BANNED_OPTION_RE = /\b(all|none)\s+of\s+the\s+above\b/i;
@@ -423,6 +532,51 @@ export function validateQuestion(
     }
   }
 
+  // ---- independent checks recorded alongside the question (never silently trusted)
+  const command_word = str(raw.command_word) || null;
+  const cognitive_level = str(raw.cognitive_level) || null;
+  const marksRaw = typeof raw.mark_allocation === "number" ? Math.round(raw.mark_allocation) : null;
+  const mark_allocation = marksRaw && marksRaw > 0 && marksRaw <= 12 ? marksRaw : null;
+  const marking_guidance = str(raw.marking_guidance) || null;
+  const expected_answer_points = strArr(raw.expected_answer_points);
+  const looksNumeric = /[0-9]/.test(correct_answer) && question_type !== "true_false";
+  const notes: string[] = [];
+
+  const validation: ValidationFlags = {
+    schema_ok: true,
+    answer_present: correct_answer.length > 0,
+    options_ok: options === null || options.length >= 2,
+    source_grounded: true,
+    command_word_recognised: !!command_word &&
+      ALL_COMMAND_WORDS.some((w) => command_word.toLowerCase().includes(w)),
+    cognitive_level_recognised: !!cognitive_level &&
+      COGNITIVE_LEVELS.includes(cognitive_level.toLowerCase().replace(/\s+/g, "_")),
+    marks_reasonable: mark_allocation !== null,
+    marking_guidance_present: !!marking_guidance || expected_answer_points.length > 0,
+    working_present: !!working,
+    answer_verified: looksNumeric ? verifyNumericAnswer(working, correct_answer) : !looksNumeric,
+    no_exam_prediction_claim: !PREDICTION_RE.test(`${question} ${explanation} ${marking_guidance ?? ""}`),
+    notes,
+  };
+
+  if (!validation.no_exam_prediction_claim) {
+    return { ok: false, reason: "question claims or implies it will appear in a real examination" };
+  }
+  if (!validation.command_word_recognised) notes.push("command word not recognised");
+  if (!validation.cognitive_level_recognised) notes.push("cognitive level not recognised");
+  if (!validation.marks_reasonable) notes.push("no mark allocation");
+  if (!validation.marking_guidance_present) notes.push("no marking guidance");
+  if (looksNumeric && !validation.answer_verified) notes.push("numeric answer could not be verified from the working");
+
+  // STEM/calculation work is never auto-trusted: it must be checked by an admin.
+  const mustVerify = opts.strictStem && looksNumeric;
+  const validation_status: "passed" | "needs_review" | "failed" =
+    mustVerify && !validation.answer_verified
+      ? "needs_review"
+      : notes.length === 0
+        ? "passed"
+        : "needs_review";
+
   return {
     ok: true,
     value: {
@@ -438,15 +592,28 @@ export function validateQuestion(
       difficulty,
       skill: str(raw.skill) || null,
       topic: str(raw.topic) || null,
-      cognitive_level: str(raw.cognitive_level) || null,
-      command_word: str(raw.command_word) || null,
+      cognitive_level,
+      command_word,
       caps_topic: str(raw.caps_topic) || null,
       caps_subtopic: str(raw.caps_subtopic) || null,
       learning_outcome: str(raw.learning_outcome) || null,
       assessment_skill: str(raw.assessment_skill) || null,
+      mark_allocation,
+      marking_guidance,
+      expected_answer_points: expected_answer_points.length > 0 ? expected_answer_points : null,
       source_reference,
+      validation,
+      validation_status,
+      answer_verified: validation.answer_verified,
     },
   };
+}
+
+/** Learner-facing origin label derived from the configured exam alignment. */
+export function questionOriginFor(examAlignmentLevel: string): string {
+  if (examAlignmentLevel === "high") return "exam_aligned";
+  if (examAlignmentLevel === "medium") return "curriculum_aligned";
+  return "learning";
 }
 
 // ---------------------------------------------------------------- misc

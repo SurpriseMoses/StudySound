@@ -14,6 +14,89 @@ export type Database = {
   }
   public: {
     Tables: {
+      assessment_patterns: {
+        Row: {
+          cognitive_demand: string | null
+          command_word: string | null
+          created_at: string
+          created_by: string | null
+          curriculum_reference: string | null
+          exam_session: string | null
+          grade: string | null
+          id: string
+          marks: number | null
+          notes: string | null
+          occurrences: number
+          paper_number: string | null
+          pattern_summary: string | null
+          question_type: string | null
+          section: string | null
+          skill_assessed: string | null
+          source_document_id: string | null
+          subject: string | null
+          subtopic: string | null
+          topic: string | null
+          updated_at: string
+          year: number | null
+        }
+        Insert: {
+          cognitive_demand?: string | null
+          command_word?: string | null
+          created_at?: string
+          created_by?: string | null
+          curriculum_reference?: string | null
+          exam_session?: string | null
+          grade?: string | null
+          id?: string
+          marks?: number | null
+          notes?: string | null
+          occurrences?: number
+          paper_number?: string | null
+          pattern_summary?: string | null
+          question_type?: string | null
+          section?: string | null
+          skill_assessed?: string | null
+          source_document_id?: string | null
+          subject?: string | null
+          subtopic?: string | null
+          topic?: string | null
+          updated_at?: string
+          year?: number | null
+        }
+        Update: {
+          cognitive_demand?: string | null
+          command_word?: string | null
+          created_at?: string
+          created_by?: string | null
+          curriculum_reference?: string | null
+          exam_session?: string | null
+          grade?: string | null
+          id?: string
+          marks?: number | null
+          notes?: string | null
+          occurrences?: number
+          paper_number?: string | null
+          pattern_summary?: string | null
+          question_type?: string | null
+          section?: string | null
+          skill_assessed?: string | null
+          source_document_id?: string | null
+          subject?: string | null
+          subtopic?: string | null
+          topic?: string | null
+          updated_at?: string
+          year?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_patterns_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audio_assets: {
         Row: {
           char_count: number
@@ -469,6 +552,134 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      curriculum_config: {
+        Row: {
+          assessment_skill: string | null
+          cognitive_demand: string | null
+          command_words: Json
+          created_at: string
+          created_by: string | null
+          curriculum_system: string
+          curriculum_version: string | null
+          exam_alignment_level: string
+          grade: string
+          id: string
+          is_active: boolean
+          learning_objective: string | null
+          phase: string | null
+          subject: string
+          subtopic: string | null
+          topic: string
+          typical_marks: number | null
+          updated_at: string
+        }
+        Insert: {
+          assessment_skill?: string | null
+          cognitive_demand?: string | null
+          command_words?: Json
+          created_at?: string
+          created_by?: string | null
+          curriculum_system?: string
+          curriculum_version?: string | null
+          exam_alignment_level?: string
+          grade: string
+          id?: string
+          is_active?: boolean
+          learning_objective?: string | null
+          phase?: string | null
+          subject: string
+          subtopic?: string | null
+          topic: string
+          typical_marks?: number | null
+          updated_at?: string
+        }
+        Update: {
+          assessment_skill?: string | null
+          cognitive_demand?: string | null
+          command_words?: Json
+          created_at?: string
+          created_by?: string | null
+          curriculum_system?: string
+          curriculum_version?: string | null
+          exam_alignment_level?: string
+          grade?: string
+          id?: string
+          is_active?: boolean
+          learning_objective?: string | null
+          phase?: string | null
+          subject?: string
+          subtopic?: string | null
+          topic?: string
+          typical_marks?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      curriculum_reference_docs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          curriculum_system: string
+          curriculum_version: string | null
+          document_id: string | null
+          grade: string | null
+          id: string
+          is_active: boolean
+          notes: string | null
+          phase: string | null
+          reference_type: string
+          source_url: string | null
+          subject: string | null
+          title: string
+          updated_at: string
+          year: number | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          curriculum_system?: string
+          curriculum_version?: string | null
+          document_id?: string | null
+          grade?: string | null
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          phase?: string | null
+          reference_type?: string
+          source_url?: string | null
+          subject?: string | null
+          title: string
+          updated_at?: string
+          year?: number | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          curriculum_system?: string
+          curriculum_version?: string | null
+          document_id?: string | null
+          grade?: string | null
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          phase?: string | null
+          reference_type?: string
+          source_url?: string | null
+          subject?: string | null
+          title?: string
+          updated_at?: string
+          year?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "curriculum_reference_docs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       curriculum_tags: {
         Row: {
@@ -1439,6 +1650,7 @@ export type Database = {
           id: string
           idempotency_key: string | null
           language: string
+          mode: string
           preset: string
           scope: string
           score: number | null
@@ -1457,6 +1669,7 @@ export type Database = {
           id?: string
           idempotency_key?: string | null
           language?: string
+          mode?: string
           preset?: string
           scope?: string
           score?: number | null
@@ -1475,6 +1688,7 @@ export type Database = {
           id?: string
           idempotency_key?: string | null
           language?: string
+          mode?: string
           preset?: string
           scope?: string
           score?: number | null
@@ -1672,6 +1886,9 @@ export type Database = {
         Row: {
           acceptable_answers: Json | null
           ai_validated: boolean
+          answer_verified: boolean
+          assessment_pattern_reference: string | null
+          assessment_reference_type: string | null
           assessment_skill: string | null
           caps_subtopic: string | null
           caps_topic: string | null
@@ -1689,6 +1906,7 @@ export type Database = {
           difficulty: string
           document_id: string
           exam_alignment_level: string
+          expected_answer_points: Json | null
           explanation: string | null
           generation_job_id: string | null
           grade: string | null
@@ -1697,10 +1915,13 @@ export type Database = {
           language: string
           learning_outcome: string | null
           manually_edited: boolean
+          mark_allocation: number | null
+          marking_guidance: string | null
           options: Json | null
           phase: string | null
           question: string
           question_hash: string
+          question_origin: string
           question_type: string
           quiz_bank_version: number
           replaced_by_id: string | null
@@ -1721,12 +1942,17 @@ export type Database = {
           topic: string | null
           translation_version: number | null
           updated_at: string
+          validation: Json
+          validation_status: string
           version: number
           working: string | null
         }
         Insert: {
           acceptable_answers?: Json | null
           ai_validated?: boolean
+          answer_verified?: boolean
+          assessment_pattern_reference?: string | null
+          assessment_reference_type?: string | null
           assessment_skill?: string | null
           caps_subtopic?: string | null
           caps_topic?: string | null
@@ -1744,6 +1970,7 @@ export type Database = {
           difficulty?: string
           document_id: string
           exam_alignment_level?: string
+          expected_answer_points?: Json | null
           explanation?: string | null
           generation_job_id?: string | null
           grade?: string | null
@@ -1752,10 +1979,13 @@ export type Database = {
           language?: string
           learning_outcome?: string | null
           manually_edited?: boolean
+          mark_allocation?: number | null
+          marking_guidance?: string | null
           options?: Json | null
           phase?: string | null
           question: string
           question_hash: string
+          question_origin?: string
           question_type?: string
           quiz_bank_version?: number
           replaced_by_id?: string | null
@@ -1776,12 +2006,17 @@ export type Database = {
           topic?: string | null
           translation_version?: number | null
           updated_at?: string
+          validation?: Json
+          validation_status?: string
           version?: number
           working?: string | null
         }
         Update: {
           acceptable_answers?: Json | null
           ai_validated?: boolean
+          answer_verified?: boolean
+          assessment_pattern_reference?: string | null
+          assessment_reference_type?: string | null
           assessment_skill?: string | null
           caps_subtopic?: string | null
           caps_topic?: string | null
@@ -1799,6 +2034,7 @@ export type Database = {
           difficulty?: string
           document_id?: string
           exam_alignment_level?: string
+          expected_answer_points?: Json | null
           explanation?: string | null
           generation_job_id?: string | null
           grade?: string | null
@@ -1807,10 +2043,13 @@ export type Database = {
           language?: string
           learning_outcome?: string | null
           manually_edited?: boolean
+          mark_allocation?: number | null
+          marking_guidance?: string | null
           options?: Json | null
           phase?: string | null
           question?: string
           question_hash?: string
+          question_origin?: string
           question_type?: string
           quiz_bank_version?: number
           replaced_by_id?: string | null
@@ -1831,6 +2070,8 @@ export type Database = {
           topic?: string | null
           translation_version?: number | null
           updated_at?: string
+          validation?: Json
+          validation_status?: string
           version?: number
           working?: string | null
         }
@@ -2048,40 +2289,49 @@ export type Database = {
       quiz_settings: {
         Row: {
           auto_publish_approved: boolean
+          cognitive_mix_by_subject: Json
           credit_costs: Json
           default_questions_per_section: number
           generation_enabled: boolean
           id: number
           min_section_chars: number
+          mode_presets: Json
           model_pricing: Json
           presets: Json
           require_review_subjects: Json
+          strict_answer_verification_subjects: Json
           updated_at: string
           updated_by: string | null
         }
         Insert: {
           auto_publish_approved?: boolean
+          cognitive_mix_by_subject?: Json
           credit_costs?: Json
           default_questions_per_section?: number
           generation_enabled?: boolean
           id?: number
           min_section_chars?: number
+          mode_presets?: Json
           model_pricing?: Json
           presets?: Json
           require_review_subjects?: Json
+          strict_answer_verification_subjects?: Json
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
           auto_publish_approved?: boolean
+          cognitive_mix_by_subject?: Json
           credit_costs?: Json
           default_questions_per_section?: number
           generation_enabled?: boolean
           id?: number
           min_section_chars?: number
+          mode_presets?: Json
           model_pricing?: Json
           presets?: Json
           require_review_subjects?: Json
+          strict_answer_verification_subjects?: Json
           updated_at?: string
           updated_by?: string | null
         }

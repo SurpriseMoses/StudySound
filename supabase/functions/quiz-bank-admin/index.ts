@@ -5,6 +5,7 @@
 // templates, upsert_template, generation_status
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
+  COMMAND_WORDS,
   estimateCost,
   pickMeaningfulSections,
   questionHash,
@@ -158,7 +159,8 @@ Deno.serve(async (req) => {
     if (action === "list_questions") {
       const {
         document_id, status, difficulty, skill, question_type, language, search,
-        subject, grade, limit = 50, offset = 0,
+        subject, grade, validation_status, question_origin, cognitive_level,
+        command_word, exam_alignment_level, caps_topic, limit = 50, offset = 0,
       } = body;
       let q = admin
         .from("quiz_questions")
@@ -173,10 +175,120 @@ Deno.serve(async (req) => {
       if (language) q = q.eq("language", language);
       if (subject) q = q.eq("subject", subject);
       if (grade) q = q.eq("grade", grade);
+      if (validation_status) q = q.eq("validation_status", validation_status);
+      if (question_origin) q = q.eq("question_origin", question_origin);
+      if (cognitive_level) q = q.eq("cognitive_level", cognitive_level);
+      if (command_word) q = q.ilike("command_word", `%${command_word}%`);
+      if (exam_alignment_level) q = q.eq("exam_alignment_level", exam_alignment_level);
+      if (caps_topic) q = q.ilike("caps_topic", `%${caps_topic}%`);
       if (search) q = q.ilike("question", `%${search}%`);
       const { data, error, count } = await q;
       if (error) throw error;
       return json({ questions: data ?? [], count: count ?? 0 });
+    }
+
+    // ------------------------------------------ curriculum & assessment config
+
+    if (action === "curriculum_config") {
+      let q = admin.from("curriculum_config").select("*").order("subject").order("grade").order("topic").limit(1000);
+      if (body.subject) q = q.eq("subject", body.subject);
+      if (body.grade) q = q.eq("grade", String(body.grade));
+      const { data, error } = await q;
+      if (error) throw error;
+      return json({ rows: data ?? [], command_words: COMMAND_WORDS });
+    }
+
+    if (action === "upsert_curriculum_config") {
+      const r = body.row ?? {};
+      if (!r.subject || !r.grade || !r.topic) return json({ error: "Subject, grade and topic are required" }, 400);
+      const row = {
+        ...(r.id ? { id: r.id } : {}),
+        phase: r.phase ?? null,
+        grade: String(r.grade),
+        subject: r.subject,
+        curriculum_system: r.curriculum_system ?? "CAPS",
+        curriculum_version: r.curriculum_version ?? null,
+        topic: r.topic,
+        subtopic: r.subtopic ?? null,
+        learning_objective: r.learning_objective ?? null,
+        assessment_skill: r.assessment_skill ?? null,
+        cognitive_demand: r.cognitive_demand ?? null,
+        command_words: r.command_words ?? [],
+        exam_alignment_level: r.exam_alignment_level ?? "medium",
+        typical_marks: r.typical_marks ?? null,
+        is_active: r.is_active ?? true,
+        created_by: user.id,
+        updated_at: new Date().toISOString(),
+      };
+      const { data, error } = await admin.from("curriculum_config").upsert(row).select().maybeSingle();
+      if (error) throw error;
+      return json({ row: data });
+    }
+
+    if (action === "assessment_patterns") {
+      let q = admin.from("assessment_patterns").select("*").order("subject").order("year", { ascending: false }).limit(1000);
+      if (body.subject) q = q.eq("subject", body.subject);
+      if (body.grade) q = q.eq("grade", String(body.grade));
+      const { data, error } = await q;
+      if (error) throw error;
+      return json({ rows: data ?? [] });
+    }
+
+    if (action === "upsert_assessment_pattern") {
+      const r = body.row ?? {};
+      if (!r.subject) return json({ error: "Subject is required" }, 400);
+      const row = {
+        ...(r.id ? { id: r.id } : {}),
+        year: r.year ?? null, exam_session: r.exam_session ?? null,
+        grade: r.grade ? String(r.grade) : null, subject: r.subject,
+        paper_number: r.paper_number ?? null, section: r.section ?? null,
+        topic: r.topic ?? null, subtopic: r.subtopic ?? null,
+        question_type: r.question_type ?? null, command_word: r.command_word ?? null,
+        cognitive_demand: r.cognitive_demand ?? null, marks: r.marks ?? null,
+        skill_assessed: r.skill_assessed ?? null, curriculum_reference: r.curriculum_reference ?? null,
+        pattern_summary: r.pattern_summary ?? null, occurrences: r.occurrences ?? 1,
+        source_document_id: r.source_document_id ?? null, notes: r.notes ?? null,
+        created_by: user.id, updated_at: new Date().toISOString(),
+      };
+      const { data, error } = await admin.from("assessment_patterns").upsert(row).select().maybeSingle();
+      if (error) throw error;
+      return json({ row: data });
+    }
+
+    if (action === "reference_docs") {
+      const { data, error } = await admin
+        .from("curriculum_reference_docs").select("*, documents(title)").order("subject").limit(500);
+      if (error) throw error;
+      return json({ rows: data ?? [] });
+    }
+
+    if (action === "upsert_reference_doc") {
+      const r = body.row ?? {};
+      if (!r.title) return json({ error: "Title is required" }, 400);
+      const row = {
+        ...(r.id ? { id: r.id } : {}),
+        title: r.title, reference_type: r.reference_type ?? "CAPS",
+        curriculum_system: r.curriculum_system ?? "CAPS",
+        curriculum_version: r.curriculum_version ?? null,
+        phase: r.phase ?? null, grade: r.grade ? String(r.grade) : null,
+        subject: r.subject ?? null, year: r.year ?? null,
+        source_url: r.source_url ?? null, document_id: r.document_id ?? null,
+        notes: r.notes ?? null, is_active: r.is_active ?? true,
+        created_by: user.id, updated_at: new Date().toISOString(),
+      };
+      const { data, error } = await admin.from("curriculum_reference_docs").upsert(row).select().maybeSingle();
+      if (error) throw error;
+      return json({ row: data });
+    }
+
+    if (action === "delete_curriculum_row") {
+      const table = body.table as string;
+      if (!["curriculum_config", "assessment_patterns", "curriculum_reference_docs"].includes(table)) {
+        return json({ error: "Unknown table" }, 400);
+      }
+      const { error } = await admin.from(table).delete().eq("id", body.id);
+      if (error) throw error;
+      return json({ ok: true });
     }
 
     if (action === "question_versions") {
@@ -257,6 +369,7 @@ Deno.serve(async (req) => {
         "credit_costs", "presets", "model_pricing", "min_section_chars",
         "default_questions_per_section", "require_review_subjects",
         "auto_publish_approved", "generation_enabled",
+        "cognitive_mix_by_subject", "mode_presets", "strict_answer_verification_subjects",
       ];
       const update: Record<string, unknown> = { updated_by: user.id, updated_at: new Date().toISOString() };
       for (const k of allowed) if (k in patch) update[k] = patch[k];
@@ -402,18 +515,37 @@ Deno.serve(async (req) => {
       const next = statusMap[decision];
       if (!next) return json({ error: "Unknown decision" }, 400);
 
-      // Stricter gate: STEM questions cannot be published straight from draft.
+      // Safety gates: nothing unverified is ever published silently.
       if (decision === "publish") {
         const { data: rows } = await admin
-          .from("quiz_questions").select("id, subject, status").in("id", ids);
+          .from("quiz_questions")
+          .select("id, subject, status, validation_status, answer_verified, manually_edited")
+          .in("id", ids);
         const strictSubjects = (settings.require_review_subjects ?? []).map((s) => s.toLowerCase());
-        const blocked = (rows ?? []).filter((r: any) =>
+        const verifySubjects = (settings.strict_answer_verification_subjects ?? []).map((s) => s.toLowerCase());
+
+        const notApproved = (rows ?? []).filter((r: any) =>
           strictSubjects.includes((r.subject ?? "").toLowerCase()) && r.status !== "approved",
         );
-        if (blocked.length > 0) {
+        if (notApproved.length > 0) {
           return json({
-            error: `${blocked.length} question(s) in a strict-review subject must be approved before publishing.`,
+            error: `${notApproved.length} question(s) in a strict-review subject must be approved by an admin before publishing.`,
           }, 400);
+        }
+
+        const unverified = (rows ?? []).filter((r: any) =>
+          verifySubjects.includes((r.subject ?? "").toLowerCase()) &&
+          r.validation_status !== "passed" && !r.answer_verified && !r.manually_edited,
+        );
+        if (unverified.length > 0) {
+          return json({
+            error: `${unverified.length} question(s) still need their answer and working checked. Open each one, confirm the answer, save it, then publish.`,
+          }, 400);
+        }
+
+        const failed = (rows ?? []).filter((r: any) => r.validation_status === "failed");
+        if (failed.length > 0) {
+          return json({ error: `${failed.length} question(s) failed validation and cannot be published.` }, 400);
         }
       }
 
@@ -459,6 +591,7 @@ Deno.serve(async (req) => {
         "items", "correct_order", "explanation", "working", "difficulty", "skill", "topic",
         "chunk_index", "cognitive_level", "command_word", "caps_topic", "caps_subtopic",
         "learning_outcome", "assessment_skill", "exam_alignment_level", "grade", "subject", "status",
+        "mark_allocation", "marking_guidance", "expected_answer_points", "question_origin",
       ];
       const update: Record<string, unknown> = {
         manually_edited: true,
@@ -469,6 +602,15 @@ Deno.serve(async (req) => {
       for (const k of editable) if (k in patch) update[k] = patch[k];
       if (typeof update.question === "string") {
         update.question_hash = await questionHash(update.question as string);
+      }
+      // An admin who confirms the answer/working records a human verification.
+      if (patch.answer_verified === true) {
+        update.answer_verified = true;
+        update.validation_status = "passed";
+        const flags = { ...((current as any).validation ?? {}) };
+        flags.answer_verified = true;
+        flags.verified_by_admin = true;
+        update.validation = flags;
       }
 
       const { data, error } = await admin.from("quiz_questions").update(update).eq("id", id).select().maybeSingle();
