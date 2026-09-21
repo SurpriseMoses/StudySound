@@ -416,6 +416,67 @@ const PREDICTION_RE =
  * Deterministic arithmetic check for simple numeric answers: pulls the last
  * expression out of the working and compares it with the stated answer.
  */
+/**
+ * Safe arithmetic evaluator (recursive descent over + - * / and parentheses).
+ * Model output is never executed as code.
+ */
+function evalArithmetic(expr: string): number | null {
+  let i = 0;
+  const skip = () => { while (expr[i] === " ") i++; };
+
+  const parseExpr = (): number | null => {
+    let left = parseTerm();
+    if (left === null) return null;
+    for (;;) {
+      skip();
+      const op = expr[i];
+      if (op !== "+" && op !== "-") return left;
+      i++;
+      const right = parseTerm();
+      if (right === null) return null;
+      left = op === "+" ? left + right : left - right;
+    }
+  };
+
+  const parseTerm = (): number | null => {
+    let left = parseFactor();
+    if (left === null) return null;
+    for (;;) {
+      skip();
+      const op = expr[i];
+      if (op !== "*" && op !== "/") return left;
+      i++;
+      const right = parseFactor();
+      if (right === null) return null;
+      if (op === "/" && right === 0) return null;
+      left = op === "*" ? left * right : left / right;
+    }
+  };
+
+  const parseFactor = (): number | null => {
+    skip();
+    if (expr[i] === "-") { i++; const v = parseFactor(); return v === null ? null : -v; }
+    if (expr[i] === "+") { i++; return parseFactor(); }
+    if (expr[i] === "(") {
+      i++;
+      const v = parseExpr();
+      skip();
+      if (expr[i] !== ")") return null;
+      i++;
+      return v;
+    }
+    const m = /^\d+(?:\.\d+)?/.exec(expr.slice(i));
+    if (!m) return null;
+    i += m[0].length;
+    return Number(m[0]);
+  };
+
+  const value = parseExpr();
+  skip();
+  if (i !== expr.length || value === null || !Number.isFinite(value)) return null;
+  return value;
+}
+
 export function verifyNumericAnswer(working: string | null, answer: string): boolean {
   if (!working) return false;
   const target = Number((answer.match(/-?\d+(?:[.,]\d+)?/) ?? [])[0]?.replace(",", "."));
@@ -424,13 +485,11 @@ export function verifyNumericAnswer(working: string | null, answer: string): boo
   for (const line of lines.reverse()) {
     const expr = (line.split("=").slice(-2)[0] ?? "").replace(/[^0-9+\-*/(). ]/g, "").trim();
     if (!expr || !/[0-9]/.test(expr) || !/[+\-*/]/.test(expr)) continue;
-    try {
-      const value = Function(`"use strict";return (${expr});`)() as unknown;
-      if (typeof value === "number" && Number.isFinite(value)) {
-        const tol = Math.max(Math.abs(target) * 0.01, 0.01);
-        if (Math.abs(value - target) <= tol) return true;
-      }
-    } catch { /* not an evaluable expression */ }
+    const value = evalArithmetic(expr);
+    if (value !== null) {
+      const tol = Math.max(Math.abs(target) * 0.01, 0.01);
+      if (Math.abs(value - target) <= tol) return true;
+    }
   }
   return false;
 }
