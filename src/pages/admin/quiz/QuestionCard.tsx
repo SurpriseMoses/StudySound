@@ -35,7 +35,27 @@ export interface BankQuestion {
   times_served: number;
   times_answered: number;
   times_correct: number;
+  ai_validated?: boolean | null;
+  validation_status?: string | null;
+  validation?: Record<string, unknown> | null;
+  answer_verified?: boolean | null;
+  question_origin?: string | null;
+  mark_allocation?: number | null;
+  marking_guidance?: string | null;
+  expected_answer_points?: string[] | null;
+  assessment_reference?: string | null;
   documents?: { title: string; grade_level: string | null; subject_type: string | null } | null;
+}
+
+const STRICT_SUBJECTS = ["mathematics", "physical science", "physical sciences", "mathematical literacy", "accounting"];
+
+/** AI generated → AI validated → Admin approved → Published */
+function trustStage(q: BankQuestion): { label: string; tone: string } {
+  if (q.status === "published") return { label: "Published", tone: "bg-success/15 text-success" };
+  if (q.status === "approved") return { label: "Admin approved", tone: "bg-primary/15 text-primary" };
+  if (q.validation_status === "failed") return { label: "Validation failed", tone: "bg-destructive/15 text-destructive" };
+  if (q.ai_validated || q.validation_status === "passed") return { label: "AI validated", tone: "bg-accent/15 text-accent" };
+  return { label: "AI generated", tone: "bg-muted text-muted-foreground" };
 }
 
 export default function QuestionCard({
