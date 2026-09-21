@@ -70,6 +70,11 @@ export default function QuestionCard({
 }) {
   const [open, setOpen] = useState(false);
   const success = q.times_answered > 0 ? Math.round((q.times_correct / q.times_answered) * 100) : null;
+  const stage = trustStage(q);
+  const subjectText = `${q.subject ?? ""} ${q.documents?.subject_type ?? ""}`.toLowerCase();
+  const strict = STRICT_SUBJECTS.some((s) => subjectText.includes(s));
+  const needsAnswerCheck = strict && !q.answer_verified && q.status !== "published";
+  const notes = Array.isArray((q.validation as any)?.notes) ? ((q.validation as any).notes as string[]) : [];
 
   return (
     <Card>
@@ -82,12 +87,21 @@ export default function QuestionCard({
             <p className="text-sm font-medium">{q.question}</p>
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               <Badge className={STATUS_TONE[q.status]} variant="secondary">{prettify(q.status)}</Badge>
+              <Badge className={stage.tone} variant="secondary">{stage.label}</Badge>
               <Badge variant="outline">{prettify(q.difficulty)}</Badge>
               <Badge variant="outline">{prettify(q.question_type)}</Badge>
               {q.skill && <Badge variant="outline">{prettify(q.skill)}</Badge>}
+              {q.question_origin && <Badge variant="outline">{prettify(q.question_origin)}</Badge>}
+              {q.mark_allocation ? <Badge variant="outline">{q.mark_allocation} marks</Badge> : null}
+              {q.answer_verified && <Badge variant="outline">Answer checked</Badge>}
               {q.manually_edited && <Badge variant="outline">Edited</Badge>}
               <span className="text-xs text-muted-foreground">v{q.version}</span>
             </div>
+            {needsAnswerCheck && (
+              <p className="text-xs text-destructive mt-1.5">
+                Stricter review: this {q.subject ?? "subject"} answer must be checked before publishing.
+              </p>
+            )}
             <div className="text-xs text-muted-foreground mt-1.5 truncate">
               {q.documents?.title ?? ""}
               {q.chunk_index != null && ` · section ${q.chunk_index + 1}`}
