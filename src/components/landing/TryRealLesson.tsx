@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useState, useRef } from "react";
-import { Play, Pause, ArrowRight, Image as ImageIcon, Check, X } from "lucide-react";
+import { Play, Pause, ArrowRight, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -48,7 +48,7 @@ export default function TryRealLesson() {
             Live demo
           </span>
           <h2 className="text-3xl md:text-4xl font-display font-bold">Try a real lesson (free)</h2>
-          <p className="mt-3 text-muted-foreground">A Tale of Two Cities — Chapter 1 Preview</p>
+          <p className="mt-3 text-muted-foreground">A Tale of Two Cities — audio preview</p>
         </div>
 
         <Card className="border-0 shadow-xl">
@@ -85,17 +85,9 @@ export default function TryRealLesson() {
               </div>
             </div>
 
-            {/* Visual scene */}
-            <div className="rounded-xl overflow-hidden border bg-gradient-to-br from-primary/15 via-accent/10 to-secondary/15">
-              <div className="aspect-[16/7] flex items-center justify-center">
-                <ImageIcon className="w-12 h-12 text-primary/50" />
-              </div>
-              <div className="p-3 bg-card border-t">
-                <p className="text-sm italic text-muted-foreground text-center">
-                  Foggy streets of 18th-century London at dawn.
-                </p>
-              </div>
-            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              Real StudySound narration from the book — tap play to listen.
+            </p>
 
             {/* Quiz */}
             <div className="grid md:grid-cols-2 gap-4">
