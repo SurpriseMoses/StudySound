@@ -15,9 +15,11 @@ import PreviewFinalCta from "@/components/preview/PreviewFinalCta";
 // Default seeded document for the public Free Preview ("A Tale of Two Cities — Ch. 1").
 const DEFAULT_PREVIEW_DOC_ID = "11111111-1111-1111-1111-111111111111";
 
-const sampleText = `It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness. The fog crept through the streets of London like a living thing, wrapping itself around lampposts and doorways.
+const sampleText = `The fellow pointed to his joke with immense significance, as is often the way with his tribe. It missed its mark, and completely failed, as is often the way with his tribe too.
 
-In the courtroom, Charles Darnay and Sydney Carton stood as their fates entwined — neither yet aware of the sacrifice that would bind them.`;
+“What now? Are you a subject for the mad hospital?” said the wine-shop keeper, crossing the road, and obliterating the jest with a handful of mud, picked up for the purpose, and smeared over it. “Why do you write in the public streets? Is there--tell me thou--is there no other place to write such words in?”
+
+In his expostulation he dropped his cleaner hand (perhaps accidentally, perhaps not) upon the joker’s heart.`;
 
 const SCENE_CAPTION =
   "The fog crept through the streets of London like a living thing, wrapping itself around lampposts and doorways.";
