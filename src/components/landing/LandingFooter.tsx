@@ -12,6 +12,7 @@ export default function LandingFooter() {
         <nav className="flex gap-4 text-sm text-muted-foreground">
           <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
           <Link to="/terms" className="hover:text-foreground">Terms</Link>
+          <Link to="/support" className="hover:text-foreground">Support</Link>
         </nav>
         <p className="text-sm text-muted-foreground">© 2026 StudySound. Built for learners, by learners.</p>
       </div>
