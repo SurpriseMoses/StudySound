@@ -64,6 +64,13 @@
       "when": 1790383954483,
       "tag": "0008_lockdown_internal_workers_and_quiz_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790437376222,
+      "tag": "0009_admin_read_credit_purchases",
+      "breakpoints": true
     }
   ]
 }

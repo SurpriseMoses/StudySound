@@ -403,7 +403,8 @@ export function AudioSection({
 
           <p className="text-[11px] text-muted-foreground text-center mt-3 flex items-center justify-center gap-1">
             <Coins className="w-3 h-3" />
-            {isUnlocked ? "Unlocked — free replay" : "1 credit per section · replay free"}
+            {isUnlocked ? "Unlocked — free replay" : `${COST} credit per section · replay free`}
+            {typeof check?.credits_balance === "number" && ` · You have ${check.credits_balance} credits`}
           </p>
         </CardContent>
       </Card>
