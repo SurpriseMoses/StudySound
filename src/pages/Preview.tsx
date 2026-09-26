@@ -37,41 +37,12 @@ export default function Preview() {
   const [duration, setDuration] = useState(0);
 
   useEffect(() => {
-    let cancelled = false;
-    setIsLoadingAudio(true);
+    // Free preview uses a pre-recorded real narration clip — no live generation
+    // (avoids provider cost and failures for anonymous visitors).
+    setAudioSrc("/preview-audio.mp3");
+    setPreviewLabel("A Tale of Two Cities — audio preview");
     setAudioError(null);
-    setPreviewLabel("Generating audio…");
-    (async () => {
-      const { data, error } = await supabase.functions.invoke("generate-audio", {
-        body: {
-          document_id: docId,
-          chunk_index: 0,
-          language: "en",
-          speaking_style: "general",
-          preview: true,
-          preview_mode: true,
-        },
-      });
-      if (cancelled) return;
-      if (!error && data?.success && data.audio_url) {
-        const label = data.cache_state === "Cached" ? "Cached preview" : "Generated preview";
-        if (data.cache_state === "Cached") {
-          console.log("Preview audio: cache hit");
-        } else {
-          console.log("Preview audio: saved to cache");
-        }
-        setAudioSrc(data.audio_url);
-        setPreviewLabel(label);
-        setIsLoadingAudio(false);
-      } else {
-        const msg = (data as { error?: string } | null)?.error ?? error?.message ?? "Audio not available";
-        console.error("Preview audio failed:", msg);
-        setAudioError(msg);
-        setPreviewLabel("Audio unavailable");
-        setIsLoadingAudio(false);
-      }
-    })();
-    return () => { cancelled = true; };
+    setIsLoadingAudio(false);
   }, [docId]);
 
   useEffect(() => {
