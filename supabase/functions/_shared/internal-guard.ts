@@ -3,7 +3,7 @@
 // admin user's JWT (manual triggers from the admin UI). Everyone else gets 401/403.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-export function requireInternalOrAdmin(req: Request): Response | null {
+export async function requireInternalOrAdmin(req: Request): Promise<Response | null> {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -14,32 +14,14 @@ export function requireInternalOrAdmin(req: Request): Response | null {
   // Service-role key (used by pg_cron and server-to-server kicks).
   if (token && token === SERVICE_ROLE) return null;
 
+  if (!token) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   // Otherwise require a signed-in admin user.
-  if (!token) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  return null; // async check handled by requireInternalOrAdminAsync
-}
-
-export async function requireInternalOrAdminAsync(req: Request): Promise<Response | null> {
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
-
-  const auth = req.headers.get("Authorization") ?? "";
-  const token = auth.replace(/^Bearer\s+/i, "").trim();
-
-  if (token && token === SERVICE_ROLE) return null;
-  if (!token) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
   try {
     const userClient = createClient(SUPABASE_URL, ANON, {
       global: { headers: { Authorization: auth } },
