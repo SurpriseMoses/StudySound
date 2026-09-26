@@ -57,6 +57,13 @@
       "when": 1790012136381,
       "tag": "0007_lessons_upload_id_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790383954483,
+      "tag": "0008_lockdown_internal_workers_and_quiz_settings",
+      "breakpoints": true
     }
   ]
 }
