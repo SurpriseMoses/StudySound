@@ -36,6 +36,8 @@ import AdminSeedingStatus from "./pages/admin/AdminSeedingStatus";
 import AdminVisuals from "./pages/admin/AdminVisuals";
 import AdminIngestion from "./pages/admin/AdminIngestion";
 import QuizBankLayout from "./pages/admin/quiz/QuizBankLayout";
+import Privacy from "./pages/legal/Privacy";
+import Terms from "./pages/legal/Terms";
 import QuizBankOverview from "./pages/admin/quiz/QuizBankOverview";
 import QuizQuestionBank from "./pages/admin/quiz/QuizQuestionBank";
 import CurriculumAssessmentPage from "./pages/admin/quiz/CurriculumAssessmentPage";
@@ -64,6 +66,8 @@ const App = () => (
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/plans" element={<Plans />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
 
             {/* Protected */}
             <Route path="/onboarding" element={protect(<Onboarding />)} />
