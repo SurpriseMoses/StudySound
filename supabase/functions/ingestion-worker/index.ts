@@ -27,6 +27,7 @@ import {
   MIN_TEXTBOOK_CHARS,
   MIN_CHAPTERS,
 } from "../_shared/deep-crawl.ts";
+import { requireInternalOrAdmin } from "../_shared/internal-guard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -60,6 +61,8 @@ const PROGRESS: Record<string, number> = {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const denied = await requireInternalOrAdmin(req);
+  if (denied) return denied;
   try {
     let body: { job_id?: string; cron?: boolean; max_steps?: number; raw_text_override?: string } = {};
     try { body = await req.json(); } catch { /* cron may pass empty */ }

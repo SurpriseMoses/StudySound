@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
     // Fire-and-forget kick of the worker so the user sees movement immediately.
     fetch(`${SUPABASE_URL}/functions/v1/ingestion-worker`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": ANON },
+      headers: { "Content-Type": "application/json", "apikey": SERVICE_ROLE, "Authorization": `Bearer ${SERVICE_ROLE}` },
       body: JSON.stringify({ job_id: job.id }),
     }).catch(() => {});
 

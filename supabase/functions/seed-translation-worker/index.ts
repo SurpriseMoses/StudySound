@@ -27,6 +27,7 @@ import {
   extractText,
   type BatchRequestItem,
 } from "../_shared/gemini-batch.ts";
+import { requireInternalOrAdmin } from "../_shared/internal-guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -522,6 +523,8 @@ async function submitNextBatch(admin: any, apiKey: string, cache: Map<string, Do
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const denied = await requireInternalOrAdmin(req);
+  if (denied) return denied;
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

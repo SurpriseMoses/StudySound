@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
     // Kick worker to start download+parse on new jobs
     for (const jobId of [...created, ...existing]) {
       fetch(`${SUPABASE_URL}/functions/v1/ingestion-worker`, {
-        method: "POST", headers: { "Content-Type": "application/json", apikey: ANON },
+        method: "POST", headers: { "Content-Type": "application/json", apikey: SERVICE_ROLE, Authorization: `Bearer ${SERVICE_ROLE}` },
         body: JSON.stringify({ job_id: jobId }),
       }).catch(() => {});
     }

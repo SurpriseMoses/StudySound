@@ -31,6 +31,7 @@ import {
   MIN_TEXTBOOK_CHARS,
   MIN_CHAPTERS,
 } from "../_shared/deep-crawl.ts";
+import { requireInternalOrAdmin } from "../_shared/internal-guard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -47,6 +48,8 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const denied = await requireInternalOrAdmin(req);
+  if (denied) return denied;
   const startedAt = Date.now();
   try {
     let body: {
