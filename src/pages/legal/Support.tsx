@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import LegalPage from "@/components/LegalPage";
 
 export default function Support() {
