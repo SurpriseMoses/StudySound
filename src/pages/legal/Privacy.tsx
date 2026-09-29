@@ -4,7 +4,7 @@ export default function Privacy() {
   return (
     <LegalPage
       title="Privacy Policy"
-      updated="26 September 2026"
+      updated="29 September 2026"
       sections={[
         { title: "1. Who we are", body: ["BrainGrasp is an AI-powered learning platform and a product of AcademInnovate (\"we\", \"us\"). It turns South African school textbooks and novels into audio, translations, visuals and practice quizzes. We process personal information in line with the Protection of Personal Information Act, 2013 (POPIA). Additional statutory company and Information Officer details will be published when available."] },
         { title: "2. Information we collect", body: ["Account details: name, email address, password (stored encrypted), grade, school, city, province and chosen subjects.", "Learning activity: lessons opened, listening progress, quiz attempts and scores, streaks and XP.", "Payments: credit purchases and subscription status. Card details are handled by our payment provider, Paystack — we never see or store your full card number.", "Device information: basic technical data such as browser type, used to keep the app working and secure."] },

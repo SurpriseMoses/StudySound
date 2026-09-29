@@ -4,7 +4,7 @@ export default function Support() {
   return (
     <LegalPage
       title="Help & Support"
-      updated="26 September 2026"
+      updated="29 September 2026"
       sections={[
         {
           title: "Get in touch",

@@ -4,7 +4,7 @@ export default function Terms() {
   return (
     <LegalPage
       title="Terms of Use"
-      updated="26 September 2026"
+      updated="29 September 2026"
       sections={[
         { title: "1. Agreement", body: ["By creating an account or using BrainGrasp, a product of AcademInnovate, you agree to these terms. If you are under 18, your parent or guardian must agree on your behalf."] },
         { title: "2. The service", body: ["BrainGrasp offers openly licensed textbooks, study guides and novels as readable lessons, narrated audio, translations into South African languages, visuals and practice quizzes.", "Quizzes are exam-style, CAPS-aligned practice. They are not predicted exam questions and do not guarantee any result. AI-assisted content is reviewed, but may contain mistakes — always check with your teacher and official materials."] },
