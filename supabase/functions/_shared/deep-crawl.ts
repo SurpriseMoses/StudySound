@@ -194,7 +194,7 @@ export async function deepCrawlFromIndex(
   const maxPages = opts.maxPages ?? DEFAULT_MAX_PAGES;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_PAGE_TIMEOUT_MS;
   const totalByteCap = opts.totalByteCap ?? DEFAULT_TOTAL_BYTES;
-  const ua = opts.userAgent ?? "Mozilla/5.0 (compatible; StudySoundBot/1.0)";
+  const ua = opts.userAgent ?? "Mozilla/5.0 (compatible; BrainGraspBot/1.0)";
 
   const diag = {
     rawHtmlBytes: 0,
@@ -296,7 +296,7 @@ export async function tryFetchTextbookPdf(
 ): Promise<{ text: string; pageCount: number; pdfUrl: string; bytes: number } | null> {
   const timeoutMs = opts.timeoutMs ?? 45_000;
   const maxBytes = opts.maxBytes ?? 40 * 1024 * 1024;
-  const ua = opts.userAgent ?? "Mozilla/5.0 (compatible; StudySoundBot/1.0)";
+  const ua = opts.userAgent ?? "Mozilla/5.0 (compatible; BrainGraspBot/1.0)";
   const minChars = opts.minChars ?? 5_000;
   const subj = String(opts.subject ?? "").toLowerCase().trim();
   const grade = String(opts.grade ?? "").trim();
@@ -452,7 +452,7 @@ const GEMINI_EXTRACT_PROMPT =
 /** Upload one PDF payload to Gemini Files and return the extracted text ("" on failure). */
 async function geminiExtractPdfBytes(bytes: Uint8Array, key: string): Promise<string> {
   try {
-    const displayName = `studysound-${crypto.randomUUID()}.pdf`;
+    const displayName = `braingrasp-${crypto.randomUUID()}.pdf`;
     const start = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${key}`, {
       method: "POST",
       headers: {

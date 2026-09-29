@@ -173,7 +173,7 @@ async function backfillDoc(
   ) {
     try {
       const res = await fetch(doc.source_url, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; StudySoundBot/1.0)" },
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; BrainGraspBot/1.0)" },
         redirect: "follow",
       });
       if (res.ok) {

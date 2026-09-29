@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
     for (const item of SEED_LIST) {
       try {
         const resp = await fetch(item.url, {
-          headers: { "User-Agent": "StudySoundSeeder/1.0" },
+          headers: { "User-Agent": "BrainGraspSeeder/1.0" },
         });
         if (!resp.ok) {
           results.push({ title: item.title, status: "fetch_failed",

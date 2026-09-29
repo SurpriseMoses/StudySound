@@ -10,7 +10,7 @@ export default function Support() {
           title: "Get in touch",
           body: [
             "Questions about your account, credits, payments, or something that isn't working? Email us and we'll investigate.",
-            "Support email: support@studysound.co.za (placeholder — will be replaced with the official StudySound support address).",
+            "Support email: braingrasp.ai@gmail.com",
             "Please include the email you signed up with and a short description of the problem. Screenshots help.",
           ],
         },
