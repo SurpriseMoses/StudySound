@@ -1,76 +1,23 @@
-# Grade-by-Grade Batch Ingestion + New SA Languages
+# BrainGrasp Global Branding Migration
 
 ## Goal
-Replace the slow one-stage-per-cron ingestion with a Gemini Batch API pipeline. Run one grade at a time (G8 → G12), covering every remaining DBE (G8–9) and Siyavula (G10–12) subject. Add Tshivenda and isiNdebele to translations everywhere.
+Replace StudySound’s product identity with **BrainGrasp**, use **AcademInnovate** as the parent company where appropriate, and make **braingrasp.ai@gmail.com** the official contact without changing functionality or user data.
 
-## Part A — Batch ingestion pipeline
+## Changes
+- Replace every user-facing StudySound variation across public pages, authentication, onboarding, the signed-in app, admin screens, notices, error/help text, and generated/downloaded labels.
+- Update the homepage, preview, navigation, and calls to action only where branding appears; preserve layouts, styling, positioning, and behavior.
+- Update Privacy, Terms, and Support to identify BrainGrasp as a product operated by AcademInnovate, add the official email, and remove outdated placeholder company/contact wording without inventing registration, address, VAT, or legal details.
+- Update the footer to show **BrainGrasp — a product of AcademInnovate**, the official email, and an appropriate copyright line.
+- Update the browser title, descriptions, social metadata, PWA install name, README, payment checkout labels, AI-generated assessment prompts, and other user-visible backend messages.
+- Search user-displayed database values and safely replace old branding/contact text in existing content where found.
+- Preserve technical identifiers that could affect existing users or integrations, including database/storage names, local browser storage keys, project URLs, API URLs, OAuth callbacks, IDs, and infrastructure-only user-agent strings.
 
-### New table: `ingestion_batch_jobs`
-Tracks a Gemini Batch submission that covers many books at once.
-
-Columns: `id`, `grade`, `stage` (`extract` | `structure` | `clean_tag`), `state` (`pending|submitted|polling|succeeded|failed`), `gemini_batch_name`, `item_count`, `submitted_at`, `finished_at`, `report jsonb`, `created_by`.
-
-Companion `ingestion_batch_items` (job_id, ingestion_job_id, position, status `pending|ok|failed|review_required`, error, result_ref).
-
-Grants + RLS admin-only via `has_role`.
-
-### New edge functions
-- `batch-ingestion-submit`  
-  Input: `{ grade: "8", stage: "extract" }`. Picks all `ingestion_jobs` for that grade currently at the matching stage, downloads the source PDF/HTML (Firecrawl fallback), packages one Gemini Batch request per book (PDF → inlineData for extract; text → prompt for structure/clean_tag), calls `submitBatch` from `_shared/gemini-batch.ts`, records `gemini_batch_name`.
-- `batch-ingestion-poll`  
-  Cron every 60 s. For each `submitted`/`polling` row, calls `pollBatch`. On `SUCCEEDED`: writes results back into each `ingestion_jobs` row (raw_text, structure JSON, curriculum tags, clean_text), advances state to the next stage or `chunking`. Per-item failures set that ingestion_job's state to `review_required` without blocking siblings.
-- `batch-ingestion-report`  
-  Called at end of grade. Returns `{ books_processed, ok, failed, review_required, total_chars, total_chunks, embed_pct }`. Stored in `ingestion_batch_jobs.report`.
-
-### Stage mapping (per book, inside one batch)
-```text
-extract     → gemini-2.5-pro w/ PDF inlineData → raw_text
-structure   → gemini-2.5-flash on raw_text     → chapters/sections JSON
-clean_tag   → gemini-2.5-flash                 → clean_text + curriculum tags
-```
-After `clean_tag` succeeds, existing local chunking + embedding pipeline runs (fast, no batching needed).
-
-### Orchestrator: `run-grade-ingestion`
-Admin-triggered per grade. Steps:
-1. Enumerate DBE (G8–9) or Siyavula (G10–12) subjects still missing/broken for that grade → insert `ingestion_jobs` rows.
-2. Submit `extract` batch → wait for poll to mark succeeded.
-3. Submit `structure` batch → wait.
-4. Submit `clean_tag` batch → wait.
-5. Run chunk + embed for each finished doc.
-6. Emit completion report; ONLY then unlock the next grade button in the UI.
-
-Reuses existing `_shared/gemini-batch.ts` (already handles submit/poll and BATCH_STATE_ normalization).
-
-## Part B — Admin UI (`AdminIngestion.tsx`)
-
-New "Grade Sweep" panel above the existing job list:
-- 5 grade tiles (G8 DBE, G9 DBE, G10 Siyavula, G11 Siyavula, G12 Siyavula).
-- Each tile shows: subjects queued, batch state per stage, progress bar, "Start" button.
-- Tiles are sequentially unlocked (G9 disabled until G8 report exists).
-- Report drawer per grade showing the JSON metrics above + list of `review_required` books with a "Retry" action.
-
-## Part C — Tshivenda & isiNdebele
-
-1. **Language list** — add `{ code: "ve", name: "Tshivenda" }` and `{ code: "nr", name: "isiNdebele" }` to the shared languages array used by Listen/Translation UI and the admin seed queue.
-2. **Translation pipeline** (`_shared/translation-pipeline.ts` + `generate-translation`) — both routes go through Gemini (already handles Xitsonga); add prompt-side glossary lines and language names so quality matches other SA languages.
-3. **Admin seed queue** (`AdminSeedTranslations.tsx`) — add the two codes to the selectable target languages.
-4. **Learner UI** (`TranslationSection.tsx`, language picker in `Listen.tsx`) — add the two options.
-
-No DB migration needed for languages — targets are stored as free-form codes in `translation_assets.language`.
-
-## Out of scope
-- No changes to audio seeding or pricing.
-- No new curriculum taxonomy rows beyond what AI tagging produces.
-- Auto-discovery crawlers for non-DBE/non-Siyavula sources.
+## Verification
+- Run a final case-insensitive search for all specified old names and emails, classify any retained occurrence as infrastructure-only, and remove every remaining user-facing occurrence.
+- Check current build diagnostics and verify key public and signed-in screens render BrainGrasp consistently on desktop and mobile.
+- Confirm navigation, authentication entry points, payments, audio preview, and existing content remain wired as before.
 
 ## Technical notes
-- Batch item payload keeps PDFs ≤20 MB inline; larger PDFs fall back to per-book synchronous Gemini File API upload before batch submission.
-- `pickJob` in existing `ingestion-worker` stays as safety net for one-offs but grade sweeps bypass it.
-- All new edge functions: CORS, admin `has_role` check, structured JSON errors (no 5xx thrown to client).
-
-## Rollout order
-1. DB migration (batch tables) + shared helper wiring.
-2. `batch-ingestion-submit` / `-poll` / `-report` functions.
-3. `run-grade-ingestion` orchestrator + UI panel.
-4. Language additions (small, ship alongside).
-5. Kick G8 as the first live run; verify report before G9.
+- Existing internal keys such as `studysound-offline` and `studysound:*` browser-storage keys stay unchanged to preserve cached downloads, dismissals, and reward state.
+- Infrastructure-only crawler/user-agent identifiers may stay unchanged unless they are safely cosmetic; they are not shown to users.
+- No database schema, table, column, bucket, identifier, deployment URL, payment endpoint, or account data will be renamed.
