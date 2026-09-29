@@ -9,7 +9,7 @@ export default function ClientLeadSection() {
           <h3 className="font-display text-xl md:text-2xl font-bold">Want an app like this for your business?</h3>
           <p className="text-sm opacity-75 mt-1">We build custom AI learning platforms for schools, companies, and creators.</p>
         </div>
-        <a href="mailto:hello@studysound.app">
+        <a href="mailto:braingrasp.ai@gmail.com">
           <Button size="lg" variant="secondary" className="gap-2">
             Let's build it <ArrowRight className="w-4 h-4" />
           </Button>

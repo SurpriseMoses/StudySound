@@ -11,7 +11,7 @@ export default function PreviewFinalCta() {
           Study faster. Understand better.
         </h2>
         <p className="text-base md:text-lg mt-4 text-primary-foreground/85">
-          Join students using StudySound to turn any textbook into a cinematic learning experience.
+          Join students using BrainGrasp to turn any textbook into a cinematic learning experience.
         </p>
         <Link to="/onboarding" className="inline-block mt-7">
           <Button size="lg" variant="secondary" className="h-12 px-7 text-base gap-2 shadow-xl">

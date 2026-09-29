@@ -1,5 +1,5 @@
 // Learner quiz endpoint: assemble a quiz from the published bank, charge the
-// existing StudySound credit wallet atomically, record the attempt with locked
+// existing BrainGrasp credit wallet atomically, record the attempt with locked
 // question versions, grade answers and update adaptive performance data.
 //
 // Actions: availability, start, answer, complete, flag

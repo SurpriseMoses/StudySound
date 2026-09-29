@@ -101,7 +101,7 @@ export default function Onboarding() {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Sparkles className="w-6 h-6 text-primary" />
-            <span className="font-display text-xl font-bold">StudySound</span>
+            <span className="font-display text-xl font-bold">BrainGrasp</span>
           </div>
           <div className="flex items-center justify-center gap-2 mb-2">
             {steps.map((s, i) => (

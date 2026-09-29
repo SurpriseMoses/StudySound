@@ -52,7 +52,7 @@ export function ProtectedTranslation({ text, className }: Props) {
         e.preventDefault();
         const truncated =
           sel.slice(0, MAX_SELECTION_CHARS) +
-          `…\n\n[StudySound — for personal study use only]`;
+          `…\n\n[BrainGrasp — for personal study use only]`;
         e.clipboardData?.setData("text/plain", truncated);
         maybeHint(`Copied first ${MAX_SELECTION_CHARS} characters. Copy smaller sections for notes.`);
       } else {
@@ -60,7 +60,7 @@ export function ProtectedTranslation({ text, className }: Props) {
         e.preventDefault();
         e.clipboardData?.setData(
           "text/plain",
-          sel + `\n— StudySound (personal study)`,
+          sel + `\n— BrainGrasp (personal study)`,
         );
       }
     };
@@ -101,7 +101,7 @@ export function ProtectedTranslation({ text, className }: Props) {
       } as React.CSSProperties}
       // The translated text from the edge function already includes:
       //  - an invisible zero-width watermark (after first sentence)
-      //  - a visible "— StudySound · {name} · for personal study only" footer
+      //  - a visible "— BrainGrasp · {name} · for personal study only" footer
     >
       {text}
     </div>

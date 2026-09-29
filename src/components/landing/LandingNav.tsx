@@ -8,7 +8,7 @@ export default function LandingNav() {
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
           <Sparkles className="w-6 h-6 text-primary" />
-          <span className="font-display text-xl font-bold">StudySound</span>
+          <span className="font-display text-xl font-bold">BrainGrasp</span>
         </Link>
         <div className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
           <a href="#features" className="hover:text-foreground transition-colors">Features</a>

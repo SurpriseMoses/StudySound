@@ -1,4 +1,4 @@
-// Starts a Paystack monthly subscription checkout for a StudySound plan.
+// Starts a Paystack monthly subscription checkout for a BrainGrasp plan.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getPlan } from "../_shared/plans.ts";
 import {

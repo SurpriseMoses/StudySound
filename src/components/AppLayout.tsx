@@ -77,7 +77,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
           <div className="w-9 h-9 rounded-lg bg-sidebar-primary flex items-center justify-center">
             <Sparkles className="w-5 h-5 text-sidebar-primary-foreground" />
           </div>
-          <span className="font-display text-xl font-bold tracking-tight">StudySound</span>
+          <span className="font-display text-xl font-bold tracking-tight">BrainGrasp</span>
           <button className="ml-auto lg:hidden text-sidebar-foreground" onClick={() => setSidebarOpen(false)}>
             <X className="w-5 h-5" />
           </button>
@@ -151,7 +151,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
           </button>
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
-            <span className="font-display font-bold">StudySound</span>
+            <span className="font-display font-bold">BrainGrasp</span>
           </div>
           <div className="ml-auto">
             <FreeCreditsExpiryBadge />

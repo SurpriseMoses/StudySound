@@ -1,6 +1,6 @@
-# StudySound
+# BrainGrasp
 
-StudySound is an AI learning companion for African high-school students. It turns curriculum textbooks and uploaded study material into audio lessons, translations, visual story scenes and quizzes — designed mobile-first for low-data, low-bandwidth conditions.
+BrainGrasp is an AI learning companion for African high-school students. It turns curriculum textbooks and uploaded study material into audio lessons, translations, visual story scenes and quizzes — designed mobile-first for low-data, low-bandwidth conditions.
 
 ## What it does
 
