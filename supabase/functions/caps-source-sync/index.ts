@@ -136,7 +136,7 @@ async function processOne(admin: any, s: any, userId: string, force: boolean) {
     let html = "";
     try {
       const res = await fetch(s.source_url, {
-        headers: { "User-Agent": "StudySoundBot/1.0 (+caps-sync)" },
+        headers: { "User-Agent": "BrainGraspBot/1.0 (+caps-sync)" },
         redirect: "follow",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

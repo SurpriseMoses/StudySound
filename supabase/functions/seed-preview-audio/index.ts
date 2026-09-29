@@ -68,7 +68,7 @@ async function ttsAzure(text: string, lang: string, apiKey: string, mode: "story
       "Ocp-Apim-Subscription-Key": apiKey,
       "Content-Type": "application/ssml+xml",
       "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
-      "User-Agent": "studysound-seed",
+      "User-Agent": "braingrasp-seed",
     },
     body: ssml,
   });

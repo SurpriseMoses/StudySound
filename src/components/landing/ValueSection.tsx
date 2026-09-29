@@ -13,7 +13,7 @@ export default function ValueSection() {
     <section id="features" className="py-16 md:py-20">
       <div className="max-w-6xl mx-auto px-4">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-display font-bold">Why students use StudySound</h2>
+          <h2 className="text-3xl md:text-4xl font-display font-bold">Why students use BrainGrasp</h2>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
           {values.map(v => (

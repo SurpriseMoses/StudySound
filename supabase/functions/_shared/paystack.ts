@@ -65,7 +65,7 @@ export async function ensurePlanCode(plan: PlanDef): Promise<string> {
   const { ok, data } = await paystackFetch("/plan", {
     method: "POST",
     body: JSON.stringify({
-      name: `StudySound ${plan.name}`,
+      name: `BrainGrasp ${plan.name}`,
       amount: Math.round(plan.amountZar * 100),
       interval: "monthly",
       currency: "ZAR",

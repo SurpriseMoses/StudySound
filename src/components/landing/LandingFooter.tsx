@@ -7,14 +7,17 @@ export default function LandingFooter() {
       <div className="max-w-6xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-primary" />
-          <span className="font-display font-bold">StudySound</span>
+          <span className="font-display font-bold">BrainGrasp — a product of AcademInnovate</span>
         </div>
         <nav className="flex gap-4 text-sm text-muted-foreground">
           <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
           <Link to="/terms" className="hover:text-foreground">Terms</Link>
           <Link to="/support" className="hover:text-foreground">Support</Link>
         </nav>
-        <p className="text-sm text-muted-foreground">© 2026 StudySound. Built for learners, by learners.</p>
+        <div className="text-center md:text-right text-sm text-muted-foreground">
+          <a href="mailto:braingrasp.ai@gmail.com" className="hover:text-foreground">braingrasp.ai@gmail.com</a>
+          <p>© 2026 AcademInnovate. Built for learners, by learners.</p>
+        </div>
       </div>
     </footer>
   );

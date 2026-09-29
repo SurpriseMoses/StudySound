@@ -147,7 +147,7 @@ async function ttsAzure(text: string, apiKey: string, mode: "story" | "study", v
         "Ocp-Apim-Subscription-Key": apiKey,
         "Content-Type": "application/ssml+xml",
         "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
-        "User-Agent": "studysound-queue-worker",
+        "User-Agent": "braingrasp-queue-worker",
       },
       body: ssml,
     },

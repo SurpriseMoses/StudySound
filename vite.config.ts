@@ -22,8 +22,8 @@ export default defineConfig(({ mode }) => ({
       filename: "sw.js",
       devOptions: { enabled: false },
       manifest: {
-        name: "StudySound",
-        short_name: "StudySound",
+        name: "BrainGrasp",
+        short_name: "BrainGrasp",
         description: "Textbooks as audio, visuals and quizzes — in 11 South African languages.",
         start_url: "/dashboard",
         scope: "/",

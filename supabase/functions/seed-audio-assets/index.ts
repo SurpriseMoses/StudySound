@@ -130,7 +130,7 @@ async function ttsAzure(text: string, apiKey: string): Promise<ArrayBuffer> {
           "Ocp-Apim-Subscription-Key": apiKey,
           "Content-Type": "application/ssml+xml",
           "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
-          "User-Agent": "studysound-seeder",
+          "User-Agent": "braingrasp-seeder",
         },
         body: ssml,
       },

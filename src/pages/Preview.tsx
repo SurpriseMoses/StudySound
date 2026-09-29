@@ -113,7 +113,7 @@ export default function Preview() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
-            <span className="font-display font-bold">StudySound</span>
+            <span className="font-display font-bold">BrainGrasp</span>
           </Link>
           <Link to="/onboarding">
             <Button size="sm" className="gap-2">

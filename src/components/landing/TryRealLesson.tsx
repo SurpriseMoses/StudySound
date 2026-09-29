@@ -86,7 +86,7 @@ export default function TryRealLesson() {
             </div>
 
             <p className="text-xs text-muted-foreground text-center">
-              Real StudySound narration from the book — tap play to listen.
+              Real BrainGrasp narration from the book — tap play to listen.
             </p>
 
             {/* Quiz */}

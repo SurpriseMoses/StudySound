@@ -213,7 +213,7 @@ const COGNITIVE_BY_KIND: Record<GenContext["subjectKind"], string> = {
 export function buildSystemPrompt(ctx: GenContext): string {
   const strictStem = ctx.subjectKind === "stem";
   return [
-    `You write assessment questions for South African high-school learners on the StudySound platform.`,
+    `You write assessment questions for South African high-school learners on the BrainGrasp platform.`,
     `Book/material: "${ctx.bookTitle}". Subject: ${ctx.subject ?? "general"}. Grade: ${ctx.grade ?? "unspecified"}. Language: ${ctx.language}.`,
     ``,
     `ABSOLUTE RULES`,
