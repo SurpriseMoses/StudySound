@@ -1,6 +1,5 @@
 import LandingNav from "@/components/landing/LandingNav";
 import HeroSection from "@/components/landing/HeroSection";
-import TryRealLesson from "@/components/landing/TryRealLesson";
 import HowItWorks from "@/components/landing/HowItWorks";
 import ValueSection from "@/components/landing/ValueSection";
 import PricingSection from "@/components/landing/PricingSection";
@@ -13,7 +12,6 @@ export default function Landing() {
     <div className="min-h-screen bg-background">
       <LandingNav />
       <HeroSection />
-      <TryRealLesson />
       <HowItWorks />
       <ValueSection />
       <PricingSection />
