@@ -16,7 +16,7 @@ export default function LandingFooter() {
         </nav>
         <div className="text-center md:text-right text-sm text-muted-foreground">
           <a href="mailto:braingrasp.ai@gmail.com" className="hover:text-foreground">braingrasp.ai@gmail.com</a>
-          <p>© 2026 AcademInnovate. Built for learners, by learners.</p>
+          <p>© 2026 AcademInnovate. Built for learners.</p>
         </div>
       </div>
     </footer>
