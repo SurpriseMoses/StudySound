@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function LandingNav() {
@@ -7,7 +6,7 @@ export default function LandingNav() {
     <nav className="sticky top-0 z-50 bg-background/90 backdrop-blur border-b">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
-          <Sparkles className="w-6 h-6 text-primary" />
+          <img src="/icon-192.png" alt="" className="w-8 h-8 shrink-0 object-contain" />
           <span className="font-display text-xl font-bold">BrainGrasp</span>
         </Link>
         <div className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
