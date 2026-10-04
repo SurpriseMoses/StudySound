@@ -1,4 +1,3 @@
-import { Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export default function LandingFooter() {
@@ -6,7 +5,7 @@ export default function LandingFooter() {
     <footer className="border-t py-10">
       <div className="max-w-6xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-primary" />
+          <img src="/icon-192.png" alt="BrainGrasp logo" className="w-6 h-6 rounded" />
           <span className="font-display font-bold">BrainGrasp — a product of AcademInnovate</span>
         </div>
         <nav className="flex gap-4 text-sm text-muted-foreground">

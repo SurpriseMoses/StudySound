@@ -8,7 +8,7 @@ import { PasswordInput } from "@/components/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 const passwordSchema = z.string().min(8, "Min 8 characters").max(72);
 
@@ -59,9 +59,7 @@ export default function ResetPassword() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md space-y-6">
         <div className="flex items-center justify-center gap-2">
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-primary-foreground" />
-          </div>
+          <img src="/icon-192.png" alt="BrainGrasp logo" className="w-10 h-10 rounded-lg" />
           <span className="font-display text-2xl font-bold">BrainGrasp</span>
         </div>
         <Card>
