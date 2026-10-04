@@ -100,7 +100,7 @@ export default function Onboarding() {
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <Sparkles className="w-6 h-6 text-primary" />
+            <img src="/icon-192.png" alt="" className="w-8 h-8 shrink-0 object-contain" />
             <span className="font-display text-xl font-bold">BrainGrasp</span>
           </div>
           <div className="flex items-center justify-center gap-2 mb-2">
