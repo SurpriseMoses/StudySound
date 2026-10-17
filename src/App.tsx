@@ -18,6 +18,7 @@ import Plans from "./pages/Plans";
 import TopUp from "./pages/TopUp";
 import PaymentCallback from "./pages/PaymentCallback";
 import Profile from "./pages/Profile";
+import Rewards from "./pages/Rewards";
 import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -27,6 +28,7 @@ import AdminDocuments from "./pages/admin/AdminDocuments";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminErrors from "./pages/admin/AdminErrors";
 import AdminEconomy from "./pages/admin/AdminEconomy";
+import AdminReferralRewards from "./pages/admin/AdminReferralRewards";
 import AdminAbuse from "./pages/admin/AdminAbuse";
 import AdminTopDocuments from "./pages/admin/AdminTopDocuments";
 import AdminSeedAudio from "./pages/admin/AdminSeedAudio";
@@ -38,6 +40,7 @@ import AdminIngestion from "./pages/admin/AdminIngestion";
 import QuizBankLayout from "./pages/admin/quiz/QuizBankLayout";
 import Privacy from "./pages/legal/Privacy";
 import Terms from "./pages/legal/Terms";
+import ReferralTerms from "./pages/legal/ReferralTerms";
 import Support from "./pages/legal/Support";
 import QuizBankOverview from "./pages/admin/quiz/QuizBankOverview";
 import QuizQuestionBank from "./pages/admin/quiz/QuizQuestionBank";
@@ -69,6 +72,7 @@ const App = () => (
             <Route path="/plans" element={<Plans />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
+            <Route path="/referral-terms" element={<ReferralTerms />} />
             <Route path="/support" element={<Support />} />
 
             {/* Protected */}
@@ -79,6 +83,7 @@ const App = () => (
             <Route path="/lesson/:documentId" element={protect(<LessonPlayer />)} />
             <Route path="/library" element={protect(<LibraryPage />)} />
             <Route path="/profile" element={protect(<Profile />)} />
+            <Route path="/rewards" element={protect(<Rewards />)} />
             <Route path="/topup" element={protect(<TopUp />)} />
             <Route path="/payment/callback" element={protect(<PaymentCallback />)} />
 
@@ -107,6 +112,7 @@ const App = () => (
               <Route path="ingestion" element={<AdminIngestion />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="economy" element={<AdminEconomy />} />
+              <Route path="referral-rewards" element={<AdminReferralRewards />} />
               <Route path="abuse" element={<AdminAbuse />} />
               <Route path="errors" element={<AdminErrors />} />
             </Route>
