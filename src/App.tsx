@@ -38,6 +38,7 @@ import AdminIngestion from "./pages/admin/AdminIngestion";
 import QuizBankLayout from "./pages/admin/quiz/QuizBankLayout";
 import Privacy from "./pages/legal/Privacy";
 import Terms from "./pages/legal/Terms";
+import ReferralTerms from "./pages/legal/ReferralTerms";
 import Support from "./pages/legal/Support";
 import QuizBankOverview from "./pages/admin/quiz/QuizBankOverview";
 import QuizQuestionBank from "./pages/admin/quiz/QuizQuestionBank";
@@ -69,6 +70,7 @@ const App = () => (
             <Route path="/plans" element={<Plans />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
+            <Route path="/referral-terms" element={<ReferralTerms />} />
             <Route path="/support" element={<Support />} />
 
             {/* Protected */}

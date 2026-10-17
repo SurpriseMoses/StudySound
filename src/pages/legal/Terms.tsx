@@ -15,6 +15,7 @@ export default function Terms() {
         { title: "7. Availability", body: ["We work to keep BrainGrasp available but cannot promise it will always be uninterrupted or error-free. Some content may be marked \"not available yet\" while it is being prepared."] },
         { title: "8. Liability", body: ["To the extent allowed by law, AcademInnovate is not liable for indirect losses arising from use of BrainGrasp. Nothing in these terms limits your rights under the Consumer Protection Act."] },
         { title: "9. Changes and law", body: ["We may update these terms and will notify you of important changes. These terms are governed by the laws of the Republic of South Africa."] },
+        { title: "Referral programme (not yet active)", body: ["The proposed BrainGrasp Rewards programme is subject to separate draft referral terms at /referral-terms. It requires legal review and activation before referrals, discounts, commissions or credit rewards are offered."] },
         { title: "10. Contact", body: ["BrainGrasp is a product of AcademInnovate. For questions about these terms, email braingrasp.ai@gmail.com."] },
       ]}
     />
