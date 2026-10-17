@@ -2438,6 +2438,164 @@ export type Database = {
           },
         ]
       }
+      referral_attributions: {
+        Row: {
+          attributed_at: string
+          claim_id: string
+          code_id: string
+          id: string
+          qualified_at: string | null
+          reason_code: string | null
+          referred_user_id: string
+          referrer_user_id: string
+          status: string
+        }
+        Insert: {
+          attributed_at?: string
+          claim_id: string
+          code_id: string
+          id?: string
+          qualified_at?: string | null
+          reason_code?: string | null
+          referred_user_id: string
+          referrer_user_id: string
+          status?: string
+        }
+        Update: {
+          attributed_at?: string
+          claim_id?: string
+          code_id?: string
+          id?: string
+          qualified_at?: string | null
+          reason_code?: string | null
+          referred_user_id?: string
+          referrer_user_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_attributions_claim_id_fkey"
+            columns: ["claim_id"]
+            isOneToOne: true
+            referencedRelation: "referral_claims"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_attributions_code_id_fkey"
+            columns: ["code_id"]
+            isOneToOne: false
+            referencedRelation: "referral_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referral_claims: {
+        Row: {
+          code_id: string
+          consumed_at: string | null
+          consumed_by: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          token: string
+        }
+        Insert: {
+          code_id: string
+          consumed_at?: string | null
+          consumed_by?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          token?: string
+        }
+        Update: {
+          code_id?: string
+          consumed_at?: string | null
+          consumed_by?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_claims_code_id_fkey"
+            columns: ["code_id"]
+            isOneToOne: false
+            referencedRelation: "referral_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referral_codes: {
+        Row: {
+          code: string
+          created_at: string
+          disabled_at: string | null
+          id: string
+          user_id: string
+        }
+        Insert: {
+          code?: string
+          created_at?: string
+          disabled_at?: string | null
+          id?: string
+          user_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          disabled_at?: string | null
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      referral_programme_settings: {
+        Row: {
+          attribution_days: number
+          commission_basis: string
+          commission_basis_points: number
+          credits_per_rand: number | null
+          discount_basis_points: number
+          enabled: boolean
+          id: boolean
+          legal_review_confirmed: boolean
+          payment_flow_verified: boolean
+          timezone: string
+          updated_at: string
+          withdrawals_enabled: boolean
+        }
+        Insert: {
+          attribution_days?: number
+          commission_basis?: string
+          commission_basis_points?: number
+          credits_per_rand?: number | null
+          discount_basis_points?: number
+          enabled?: boolean
+          id?: boolean
+          legal_review_confirmed?: boolean
+          payment_flow_verified?: boolean
+          timezone?: string
+          updated_at?: string
+          withdrawals_enabled?: boolean
+        }
+        Update: {
+          attribution_days?: number
+          commission_basis?: string
+          commission_basis_points?: number
+          credits_per_rand?: number | null
+          discount_basis_points?: number
+          enabled?: boolean
+          id?: boolean
+          legal_review_confirmed?: boolean
+          payment_flow_verified?: boolean
+          timezone?: string
+          updated_at?: string
+          withdrawals_enabled?: boolean
+        }
+        Relationships: []
+      }
       scene_unlocks: {
         Row: {
           created_at: string
@@ -3402,6 +3560,10 @@ export type Database = {
         Args: { _stale_minutes?: number }
         Returns: number
       }
+      referral_bind_claim: { Args: { _token: string }; Returns: Json }
+      referral_create_claim: { Args: { _code: string }; Returns: Json }
+      referral_my_code: { Args: never; Returns: string }
+      referral_my_summary: { Args: never; Returns: Json }
       search_documents_fuzzy: {
         Args: { _limit?: number; _query: string; _threshold?: number }
         Returns: {
