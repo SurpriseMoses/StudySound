@@ -28,6 +28,7 @@ import AdminDocuments from "./pages/admin/AdminDocuments";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminErrors from "./pages/admin/AdminErrors";
 import AdminEconomy from "./pages/admin/AdminEconomy";
+import AdminReferralRewards from "./pages/admin/AdminReferralRewards";
 import AdminAbuse from "./pages/admin/AdminAbuse";
 import AdminTopDocuments from "./pages/admin/AdminTopDocuments";
 import AdminSeedAudio from "./pages/admin/AdminSeedAudio";
@@ -111,6 +112,7 @@ const App = () => (
               <Route path="ingestion" element={<AdminIngestion />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="economy" element={<AdminEconomy />} />
+              <Route path="referral-rewards" element={<AdminReferralRewards />} />
               <Route path="abuse" element={<AdminAbuse />} />
               <Route path="errors" element={<AdminErrors />} />
             </Route>

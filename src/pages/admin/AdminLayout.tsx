@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 const links = [
   { to: "/admin", label: "Overview", icon: BarChart3, end: true },
   { to: "/admin/economy", label: "Credit economy", icon: Coins, end: false },
+  { to: "/admin/referral-rewards", label: "Referral Rewards & AI Reserve", icon: Trophy, end: false },
   { to: "/admin/abuse", label: "Abuse", icon: ShieldAlert, end: false },
   { to: "/admin/pipeline", label: "Pipeline", icon: Workflow, end: false },
   { to: "/admin/ingestion", label: "Ingestion", icon: Inbox, end: false },

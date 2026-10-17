@@ -7,6 +7,7 @@
 - [x] Verify the public draft referral terms page; activation remains blocked on legal review and programme setup.
 - [x] Create private attribution/settings/code records and owner-only summary routines; verify grants and RLS.
 - [x] Add signed-in Rewards page with genuine disabled state and no fabricated financial balances; verify navigation.
+- [ ] Verify admin-only audited reward conversion setup; explicit user configuration required before issuance.
 - [ ] Implement attribution, server-side first-payment discount, qualification and monetary commission reversals.
 - [ ] Implement atomic milestone wallet awards and reviewed withdrawal workflow.
 - [ ] Implement learner Rewards dashboard, privacy-safe activity and programme terms.
