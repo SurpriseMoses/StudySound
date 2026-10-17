@@ -18,6 +18,7 @@ import Plans from "./pages/Plans";
 import TopUp from "./pages/TopUp";
 import PaymentCallback from "./pages/PaymentCallback";
 import Profile from "./pages/Profile";
+import Rewards from "./pages/Rewards";
 import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -81,6 +82,7 @@ const App = () => (
             <Route path="/lesson/:documentId" element={protect(<LessonPlayer />)} />
             <Route path="/library" element={protect(<LibraryPage />)} />
             <Route path="/profile" element={protect(<Profile />)} />
+            <Route path="/rewards" element={protect(<Rewards />)} />
             <Route path="/topup" element={protect(<TopUp />)} />
             <Route path="/payment/callback" element={protect(<PaymentCallback />)} />
 

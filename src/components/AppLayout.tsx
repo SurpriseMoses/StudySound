@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   BookOpen, Upload, Headphones, Image, Brain, Library,
-  CreditCard, User, Menu, X, Home, Shield, LogOut
+  CreditCard, User, Menu, X, Home, Shield, LogOut, Award
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,7 @@ const navItems = [
   { path: "/upload", label: "Upload", icon: Upload },
   { path: "/library", label: "Library", icon: Library },
   { path: "/plans", label: "Plans", icon: CreditCard },
+  { path: "/rewards", label: "BrainGrasp Rewards", icon: Award },
   { path: "/profile", label: "Profile", icon: User },
 ];
 
