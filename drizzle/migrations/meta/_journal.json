@@ -85,6 +85,13 @@
       "when": 1792273594263,
       "tag": "0011_restrict_referral_table_privileges",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792273694866,
+      "tag": "0012_referral_admin_configuration_audit",
+      "breakpoints": true
     }
   ]
 }

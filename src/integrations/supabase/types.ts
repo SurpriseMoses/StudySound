@@ -2438,6 +2438,36 @@ export type Database = {
           },
         ]
       }
+      referral_admin_audit: {
+        Row: {
+          action: string
+          admin_user_id: string
+          after_values: Json | null
+          before_values: Json | null
+          created_at: string
+          id: string
+          record_id: string
+        }
+        Insert: {
+          action: string
+          admin_user_id: string
+          after_values?: Json | null
+          before_values?: Json | null
+          created_at?: string
+          id?: string
+          record_id: string
+        }
+        Update: {
+          action?: string
+          admin_user_id?: string
+          after_values?: Json | null
+          before_values?: Json | null
+          created_at?: string
+          id?: string
+          record_id?: string
+        }
+        Relationships: []
+      }
       referral_attributions: {
         Row: {
           attributed_at: string
@@ -3560,6 +3590,11 @@ export type Database = {
         Args: { _stale_minutes?: number }
         Returns: number
       }
+      referral_admin_set_conversion: {
+        Args: { _credits_per_rand: number }
+        Returns: Json
+      }
+      referral_admin_settings: { Args: never; Returns: Json }
       referral_bind_claim: { Args: { _token: string }; Returns: Json }
       referral_create_claim: { Args: { _code: string }; Returns: Json }
       referral_my_code: { Args: never; Returns: string }
