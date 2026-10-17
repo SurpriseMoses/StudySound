@@ -95,7 +95,7 @@ export default function Rewards() {
               <p className="flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck className="h-4 w-4 shrink-0" /> Classmates’ private information stays private.</p>
               {summary.data.activity.length === 0 ? <p className="text-sm text-muted-foreground">No referral activity yet.</p> : <ul className="divide-y">
                 {summary.data.activity.map((activity) => <li key={activity.identifier} className="py-3 flex flex-wrap justify-between gap-2 text-sm">
-                  <span>{activity.identifier}</span><span className="text-muted-foreground">{activity.status.replaceAll("_", " ")}</span>
+                  <span>{activity.identifier}</span><span className="text-muted-foreground">{activity.status.replace(/_/g, " ")}</span>
                 </li>)}
               </ul>}
             </section>
