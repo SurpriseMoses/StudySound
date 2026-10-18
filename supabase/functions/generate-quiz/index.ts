@@ -1,6 +1,7 @@
 // Generates 6 multiple-choice quiz questions per document using Lovable AI.
 // Globally cached per document_id in quiz_assets — all users share & reuse for free.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { auditFetch as fetch, withCostAudit, setCostAuditIdentity } from "../_shared/ai-cost-audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -88,7 +89,7 @@ async function generateQuestions(
     .slice(0, 6);
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
@@ -125,6 +126,7 @@ Deno.serve(async (req) => {
     }
 
     // Check cache
+    setCostAuditIdentity(document_id, userData.user.id);
     const { data: cached } = await admin
       .from("quiz_assets")
       .select("id, quiz_json, difficulty")
@@ -192,4 +194,4 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-});
+}, "quiz"));

@@ -6,6 +6,7 @@
 // - Charge ONLY after successful generation/cache hit + access row insert
 // - Rate log written ONLY on accepted requests (not on throttled/failed)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { withCostAudit, setCostAuditIdentity } from "../_shared/ai-cost-audit.ts";
 import {
   CURRENT_TRANSLATION_VERSION,
   preprocessForTranslation,
@@ -316,7 +317,7 @@ async function translateWithAI(text: string, sourceLang: string, targetLang: str
   return { text: finalOutput, leaked: leak.leaked };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   let requestBody: Record<string, unknown> | null = null;
@@ -385,6 +386,7 @@ Deno.serve(async (req) => {
     let sourceText = lesson.content_text ?? "";
     let documentId = lesson.document_id;
     let sourceLang = "en";
+    setCostAuditIdentity(documentId, userId);
 
     if (documentId) {
       const { data: doc } = await admin
@@ -667,4 +669,4 @@ Deno.serve(async (req) => {
     }
     return jsonResponse({ error: msg, fallback: false }, 500);
   }
-});
+}, "translation"));

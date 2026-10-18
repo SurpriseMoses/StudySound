@@ -10,6 +10,7 @@
 //   5. English-leak detection — refuse to save dirty translations.
 
 export const CURRENT_TRANSLATION_VERSION = 2;
+import { auditFetch as fetch } from "./ai-cost-audit.ts";
 
 // ---------------- Translation providers (Gemini first, resilient fallbacks) ----------------
 

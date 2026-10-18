@@ -1,6 +1,7 @@
 // Generates 4 visual scenes per document using Lovable AI (Gemini 3.1 Flash Image).
 // Globally cached: scenes are keyed by document_id, so all users share & reuse them for free.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { auditFetch as fetch, withCostAudit, setCostAuditIdentity } from "../_shared/ai-cost-audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -126,7 +127,7 @@ async function generateImage(apiKey: string, prompt: string): Promise<Uint8Array
   return bytes;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
@@ -159,6 +160,7 @@ Deno.serve(async (req) => {
 
     const doc: any = (lesson as any).documents;
     if (!doc) throw new Error("Lesson has no source document");
+    setCostAuditIdentity(doc.id, user.id);
 
     const subjectType = doc.subject_type ?? "other";
     if (!HUMANITIES_TYPES.has(subjectType)) {
@@ -256,4 +258,4 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-});
+}, "image"));

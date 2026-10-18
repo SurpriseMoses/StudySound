@@ -6,6 +6,7 @@
 // Narration tone is decided automatically by subject_type (novel → story, else → study).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { isInvalidChunk } from "../_shared/clean-text.ts";
+import { auditFetch as fetch, withCostAudit, setCostAuditIdentity } from "../_shared/ai-cost-audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -512,7 +513,7 @@ async function ttsGemini(text: string, voiceName: string, apiKey: string): Promi
   throw err;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
@@ -586,6 +587,7 @@ Deno.serve(async (req) => {
       .eq("id", docId)
       .maybeSingle();
     if (!doc) throw new Error("Document not found");
+    setCostAuditIdentity(doc.id, user?.id);
     const isLiterature = isLiteratureContent(doc.subject_type, body?.subject ?? body?.category);
     const mode: "story" | "study" = isLiterature ? "story" : "study";
 
@@ -1271,4 +1273,4 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-});
+}, "audio"));
