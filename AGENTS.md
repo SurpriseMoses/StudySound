@@ -13,3 +13,4 @@
 - Record reserve funding through admin-authenticated atomic RPCs with stable transfer references; retain originals and linked reversals so corrections cannot duplicate funding or silently erase audit history.
 - Keep monetary commissions private and separate from the credit wallet; withdrawal RPCs lock the profile, allocate existing eligible commissions, and retain rejected reservations and payout evidence for reconciliation.
 - Treat processing payouts as unresolved until confirmed; never release a potentially transferred reservation through a generic rejection, and never connect commission accrual before atomic provider-verified payment posting exists.
+- Run synthetic financial mutations only in a disposable local database bootstrapped with test dependencies and the actual migrations; keep hosted access checks read-only to prevent fabricated production earnings or funding.
