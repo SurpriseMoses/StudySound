@@ -1576,6 +1576,7 @@ export type Database = {
           display_name: string | null
           flagged_reason: string | null
           free_credits_expires_at: string | null
+          free_credits_remaining: number
           grade: string | null
           id: string
           is_flagged: boolean
@@ -1602,6 +1603,7 @@ export type Database = {
           display_name?: string | null
           flagged_reason?: string | null
           free_credits_expires_at?: string | null
+          free_credits_remaining?: number
           grade?: string | null
           id?: string
           is_flagged?: boolean
@@ -1628,6 +1630,7 @@ export type Database = {
           display_name?: string | null
           flagged_reason?: string | null
           free_credits_expires_at?: string | null
+          free_credits_remaining?: number
           grade?: string | null
           id?: string
           is_flagged?: boolean
