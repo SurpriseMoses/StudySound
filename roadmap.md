@@ -1,5 +1,6 @@
 # Referral Rewards & AI Reserve
 
+- [ ] Complete invitation links and claim persistence through signup/verification/login, enforce verified new-account eligibility and concurrent/idempotent attribution in isolated tests; keep programme disabled.
 - [x] Install private commission/withdrawal foundations, server-locked reservations, reviewed manual payout workflow, owner-only balances and display-only milestone progress; preserve disabled activation gates. Migrations 0018–0019, signed-in/phone checks and all 77 tests (including isolated financial concurrency) passed; no production commissions, requests or payouts created.
 - [ ] Connect verified first-payment qualification and atomic milestone awards (blocked on reviewed payment flow, administrator conversion/cost approval and authoritative source/reserve reconciliation; no accrual endpoint connected).
 
