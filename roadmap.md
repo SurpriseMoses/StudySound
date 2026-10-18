@@ -1,6 +1,6 @@
 # Referral Rewards & AI Reserve
 
-- [ ] Produce read-only credit-economy review: prices/effective rates, deductions/expiry/settings, Gemini cost evidence, provisional reward proposal and missing measurements; do not configure conversion or enable issuance.
+- [x] Produce read-only credit-economy review: prices/effective rates, deductions/expiry/settings, Gemini cost evidence, provisional reward proposal and missing measurements; no conversion configured or issuance enabled. Actual provider cost reconciliation and free-wallet source/expiry protection remain approval blockers.
 
 - [x] Inspect live core schema, wallet routines and payment handlers; Cloud is healthy. Provider test-payment verification remains pending.
 - [x] Approve smallest additive migration and phased implementation plan.
