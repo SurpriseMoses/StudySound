@@ -127,6 +127,13 @@
       "when": 1792341570532,
       "tag": "0017_restrict_reserve_direct_writes",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792342210752,
+      "tag": "0018_referral_commission_withdrawal_foundation",
+      "breakpoints": true
     }
   ]
 }

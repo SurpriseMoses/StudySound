@@ -2745,6 +2745,162 @@ export type Database = {
         }
         Relationships: []
       }
+      referral_commission_reversals: {
+        Row: {
+          commission_id: string
+          created_at: string
+          id: string
+          provider_event_reference: string
+          reason: string
+        }
+        Insert: {
+          commission_id: string
+          created_at?: string
+          id?: string
+          provider_event_reference: string
+          reason: string
+        }
+        Update: {
+          commission_id?: string
+          created_at?: string
+          id?: string
+          provider_event_reference?: string
+          reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_commission_reversals_commission_id_fkey"
+            columns: ["commission_id"]
+            isOneToOne: true
+            referencedRelation: "referral_commissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referral_commissions: {
+        Row: {
+          amount_cents: number
+          attribution_id: string
+          available_at: string | null
+          basis_cents: number
+          created_at: string
+          currency: string
+          id: string
+          normal_price_cents: number
+          paid_amount_cents: number
+          provider_reference: string
+          purchase_id: string
+          rate_basis_points: number
+          status: string
+          user_id: string
+          verified_at: string
+        }
+        Insert: {
+          amount_cents: number
+          attribution_id: string
+          available_at?: string | null
+          basis_cents: number
+          created_at?: string
+          currency?: string
+          id?: string
+          normal_price_cents: number
+          paid_amount_cents: number
+          provider_reference: string
+          purchase_id: string
+          rate_basis_points: number
+          status?: string
+          user_id: string
+          verified_at: string
+        }
+        Update: {
+          amount_cents?: number
+          attribution_id?: string
+          available_at?: string | null
+          basis_cents?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          normal_price_cents?: number
+          paid_amount_cents?: number
+          provider_reference?: string
+          purchase_id?: string
+          rate_basis_points?: number
+          status?: string
+          user_id?: string
+          verified_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_commissions_attribution_id_fkey"
+            columns: ["attribution_id"]
+            isOneToOne: true
+            referencedRelation: "referral_attributions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_commissions_purchase_id_fkey"
+            columns: ["purchase_id"]
+            isOneToOne: true
+            referencedRelation: "credit_purchases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_commissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      referral_payout_confirmations: {
+        Row: {
+          admin_user_id: string
+          amount_cents: number
+          confirmed_at: string
+          evidence_reference: string
+          id: string
+          paid_at: string
+          reference: string
+          withdrawal_id: string
+        }
+        Insert: {
+          admin_user_id: string
+          amount_cents: number
+          confirmed_at?: string
+          evidence_reference: string
+          id?: string
+          paid_at: string
+          reference: string
+          withdrawal_id: string
+        }
+        Update: {
+          admin_user_id?: string
+          amount_cents?: number
+          confirmed_at?: string
+          evidence_reference?: string
+          id?: string
+          paid_at?: string
+          reference?: string
+          withdrawal_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_payout_confirmations_admin_user_id_fkey"
+            columns: ["admin_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "referral_payout_confirmations_withdrawal_id_fkey"
+            columns: ["withdrawal_id"]
+            isOneToOne: true
+            referencedRelation: "referral_withdrawals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       referral_programme_settings: {
         Row: {
           attribution_days: number
@@ -2804,6 +2960,128 @@ export type Database = {
           withdrawals_enabled?: boolean
         }
         Relationships: []
+      }
+      referral_withdrawal_allocations: {
+        Row: {
+          amount_cents: number
+          commission_id: string
+          withdrawal_id: string
+        }
+        Insert: {
+          amount_cents: number
+          commission_id: string
+          withdrawal_id: string
+        }
+        Update: {
+          amount_cents?: number
+          commission_id?: string
+          withdrawal_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_withdrawal_allocations_commission_id_fkey"
+            columns: ["commission_id"]
+            isOneToOne: false
+            referencedRelation: "referral_commissions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_withdrawal_allocations_withdrawal_id_fkey"
+            columns: ["withdrawal_id"]
+            isOneToOne: false
+            referencedRelation: "referral_withdrawals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referral_withdrawal_events: {
+        Row: {
+          action_key: string
+          admin_user_id: string
+          created_at: string
+          id: string
+          identity_verified: boolean
+          next_status: string
+          previous_status: string
+          reason: string
+          withdrawal_id: string
+        }
+        Insert: {
+          action_key: string
+          admin_user_id: string
+          created_at?: string
+          id?: string
+          identity_verified?: boolean
+          next_status: string
+          previous_status: string
+          reason: string
+          withdrawal_id: string
+        }
+        Update: {
+          action_key?: string
+          admin_user_id?: string
+          created_at?: string
+          id?: string
+          identity_verified?: boolean
+          next_status?: string
+          previous_status?: string
+          reason?: string
+          withdrawal_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_withdrawal_events_admin_user_id_fkey"
+            columns: ["admin_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "referral_withdrawal_events_withdrawal_id_fkey"
+            columns: ["withdrawal_id"]
+            isOneToOne: false
+            referencedRelation: "referral_withdrawals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referral_withdrawals: {
+        Row: {
+          amount_cents: number
+          id: string
+          request_key: string
+          requested_at: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_cents: number
+          id?: string
+          request_key: string
+          requested_at?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_cents?: number
+          id?: string
+          request_key?: string
+          requested_at?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_withdrawals_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
       }
       scene_unlocks: {
         Row: {
@@ -3788,15 +4066,37 @@ export type Database = {
         Args: { _funding_id: string; _reason: string }
         Returns: Json
       }
+      referral_admin_review_withdrawal: {
+        Args: {
+          _action_key: string
+          _evidence_reference?: string
+          _identity_verified?: boolean
+          _next_status: string
+          _paid_amount_cents?: number
+          _paid_at?: string
+          _payout_reference?: string
+          _reason: string
+          _transfer_confirmed?: boolean
+          _withdrawal_id: string
+        }
+        Returns: Json
+      }
       referral_admin_set_conversion: {
         Args: { _credits_per_rand: number }
         Returns: Json
       }
       referral_admin_settings: { Args: never; Returns: Json }
+      referral_admin_withdrawals: { Args: never; Returns: Json }
       referral_bind_claim: { Args: { _token: string }; Returns: Json }
       referral_create_claim: { Args: { _code: string }; Returns: Json }
+      referral_financial_totals: { Args: { _user_id: string }; Returns: Json }
       referral_my_code: { Args: never; Returns: string }
+      referral_my_financials: { Args: never; Returns: Json }
       referral_my_summary: { Args: never; Returns: Json }
+      referral_request_withdrawal: {
+        Args: { _amount_cents: number; _request_key: string }
+        Returns: Json
+      }
       search_documents_fuzzy: {
         Args: { _limit?: number; _query: string; _threshold?: number }
         Returns: {
