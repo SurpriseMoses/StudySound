@@ -617,57 +617,83 @@ export type Database = {
           amount_zar: number
           bonus_credits: number
           created_at: string
+          credit_transaction_id: string | null
           credited: boolean
           credits: number
           currency: string
+          expected_customer_email: string | null
+          expected_plan_code: string | null
           id: string
           kind: string
           pack_id: string
+          payment_environment: string | null
           paystack_payload: Json | null
           plan_id: string | null
           provider: string
+          provider_payment_id: string | null
           reference: string
           status: string
           updated_at: string
           user_id: string
+          verified_paid_at: string | null
         }
         Insert: {
           amount_zar: number
           bonus_credits?: number
           created_at?: string
+          credit_transaction_id?: string | null
           credited?: boolean
           credits: number
           currency?: string
+          expected_customer_email?: string | null
+          expected_plan_code?: string | null
           id?: string
           kind?: string
           pack_id: string
+          payment_environment?: string | null
           paystack_payload?: Json | null
           plan_id?: string | null
           provider?: string
+          provider_payment_id?: string | null
           reference: string
           status?: string
           updated_at?: string
           user_id: string
+          verified_paid_at?: string | null
         }
         Update: {
           amount_zar?: number
           bonus_credits?: number
           created_at?: string
+          credit_transaction_id?: string | null
           credited?: boolean
           credits?: number
           currency?: string
+          expected_customer_email?: string | null
+          expected_plan_code?: string | null
           id?: string
           kind?: string
           pack_id?: string
+          payment_environment?: string | null
           paystack_payload?: Json | null
           plan_id?: string | null
           provider?: string
+          provider_payment_id?: string | null
           reference?: string
           status?: string
           updated_at?: string
           user_id?: string
+          verified_paid_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "credit_purchases_credit_transaction_id_fkey"
+            columns: ["credit_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "credit_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       credit_transactions: {
         Row: {
@@ -4041,6 +4067,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      payment_post_verified: { Args: { _evidence: Json }; Returns: Json }
       quiz_bank_overview: { Args: never; Returns: Json }
       quiz_bump_served: { Args: { _ids: string[] }; Returns: undefined }
       reclaim_stale_ingestion_jobs: {

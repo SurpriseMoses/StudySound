@@ -1,7 +1,8 @@
+import { paymentEnvironment, checkoutCallback } from "../_shared/payment-evidence.ts";
 // Starts a Paystack checkout for a credit pack and records a pending purchase.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getPack } from "../_shared/credit-packs.ts";
-import { adminClient, corsHeaders, json } from "../_shared/paystack.ts";
+import { adminClient, corsHeaders, json, paystackSecret } from "../_shared/paystack.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -11,25 +12,27 @@ Deno.serve(async (req) => {
     if (!authHeader) return json({ error: "Missing authorization" }, 401);
 
     const userClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       { global: { headers: { Authorization: authHeader } } },
     );
     const { data: userData, error: userErr } = await userClient.auth.getUser();
     if (userErr || !userData?.user) return json({ error: "Invalid token" }, 401);
     const user = userData.user;
 
-    const secret = Deno.env.get("PAYSTACK_SECRET_KEY") ?? Deno.env.get("Patsack_Secret_Key");
+    const secret = paystackSecret();
     if (!secret) return json({ error: "Payments are not configured yet" }, 503);
 
+    if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+    if (!user.email) return json({ error: "An account email is required" }, 400);
+    const environment = paymentEnvironment(secret);
     const body = await req.json().catch(() => ({}));
     const pack = getPack(body?.pack_id);
     if (!pack) return json({ error: "Unknown credit pack" }, 400);
 
-    const callbackUrl = typeof body?.callback_url === "string" ? body.callback_url : null;
-    if (!callbackUrl || !/^https?:\/\//.test(callbackUrl)) {
-      return json({ error: "Invalid callback_url" }, 400);
-    }
+    let callbackUrl: string;
+    try { callbackUrl = checkoutCallback(body?.callback_url, req.headers.get("Origin")); }
+    catch { return json({ error: "Invalid checkout return address" }, 400); }
 
     const reference = `ss_${pack.id}_${crypto.randomUUID().replace(/-/g, "")}`;
 
@@ -42,6 +45,8 @@ Deno.serve(async (req) => {
       amount_zar: pack.amountZar,
       reference,
       status: "pending",
+      expected_customer_email: user.email.trim().toLowerCase(),
+      payment_environment: environment,
     });
     if (insertErr) throw new Error(insertErr.message);
 

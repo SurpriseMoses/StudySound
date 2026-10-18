@@ -39,7 +39,7 @@ export default function PaymentCallback() {
           kind: "failed",
           message:
             (data?.error as string) ||
-            "We could not confirm this payment. If money left your account, it will be credited shortly.",
+            "We could not confirm this payment. If money left your account, do not pay again; contact braingrasp.ai@gmail.com with your payment reference for review.",
         });
         return;
       }
@@ -113,7 +113,7 @@ export default function PaymentCallback() {
               <p className="text-sm text-muted-foreground mt-2">{state.message}</p>
               <div className="flex gap-2 justify-center mt-5">
                 <Link to="/topup">
-                  <Button>Try again</Button>
+                  <Button>Back to top-ups</Button>
                 </Link>
                 <Link to="/dashboard">
                   <Button variant="outline">Back to dashboard</Button>

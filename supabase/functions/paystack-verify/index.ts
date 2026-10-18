@@ -18,8 +18,8 @@ Deno.serve(async (req) => {
     if (!authHeader) return json({ error: "Missing authorization" }, 401);
 
     const userClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       { global: { headers: { Authorization: authHeader } } },
     );
     const { data: userData, error: userErr } = await userClient.auth.getUser();
@@ -28,7 +28,8 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const reference = typeof body?.reference === "string" ? body.reference : "";
-    if (!reference) return json({ error: "reference required" }, 400);
+    if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+    if (!/^[a-zA-Z0-9_.-]{1,200}$/.test(reference)) return json({ error: "Invalid reference" }, 400);
 
     const admin = adminClient();
     const { data: purchase } = await admin
