@@ -1,5 +1,7 @@
 # Referral Rewards & AI Reserve
 
+- [x] Complete invitation links and same-browser claim persistence through signup/verification/login; enforce verified new-account eligibility, concurrent/idempotent attribution and private activity labels. Migration 0020, 91 tests passed, inactive/invalid/signed-in/phone checks passed; programme remains disabled.
+- [ ] Verify active signup/verification attribution in hosted test mode and review public claim rate protection (blocked on reviewed activation gates; cross-device claim transfer is not supported).
 - [x] Install private commission/withdrawal foundations, server-locked reservations, reviewed manual payout workflow, owner-only balances and display-only milestone progress; preserve disabled activation gates. Migrations 0018–0019, signed-in/phone checks and all 77 tests (including isolated financial concurrency) passed; no production commissions, requests or payouts created.
 - [ ] Connect verified first-payment qualification and atomic milestone awards (blocked on reviewed payment flow, administrator conversion/cost approval and authoritative source/reserve reconciliation; no accrual endpoint connected).
 
@@ -22,7 +24,7 @@
 - [ ] Obtain explicit reward conversion configuration (blocked: administrator must choose credits per rand).
 - [x] Audit promotional conversion: no authoritative R1-to-1-credit rule exists; preserve 110/220 subscription allowances, report differing offer rates, keep issuance disabled and provider costs separate.
 - [x] Verify anonymous/signed-in direct attribution reads are denied and disabled programme cannot issue codes or client-created claims.
-- [ ] Implement attribution, server-side first-payment discount, qualification and monetary commission reversals (payment authenticity/atomic-posting prerequisites and Paystack sandbox verification outstanding).
+- [ ] Implement server-side first-payment discount, qualification and monetary commission reversals (payment authenticity/atomic-posting prerequisites and Paystack sandbox verification outstanding; invitation attribution is implemented but disabled).
 - [x] Implement reviewed withdrawal workflow: R50 minimum, no overlapping requests, oldest eligible commission allocations, rejection release, payout amount/date/reference evidence and idempotent audit history. Processing transfers require reconciliation before any release.
 - [ ] Implement atomic milestone wallet awards (blocked on approved conversion/cost model and source/reserve reconciliation).
 - [x] Implement learner Rewards dashboard, owner-only commission summaries, privacy-safe activity and draft programme terms. Exact award history/Ambassador badge remain pending atomic award records.

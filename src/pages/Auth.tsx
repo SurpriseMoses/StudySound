@@ -74,13 +74,14 @@ export default function Auth() {
       toast({ title: "Invalid input", description: firstError.error.issues[0].message, variant: "destructive" });
       return;
     }
+    if (!nameRes.success || !emailRes.success || !passRes.success) return;
 
     setSubmitting(true);
     const { error } = await supabase.auth.signUp({
-      email: emailRes.data!,
-      password: passRes.data!,
+      email: emailRes.data,
+      password: passRes.data,
       options: {
-        emailRedirectTo: `${window.location.origin}/dashboard`,
+        emailRedirectTo: `${window.location.origin}/auth`,
         data: { full_name: nameRes.data },
       },
     });
@@ -97,7 +98,7 @@ export default function Auth() {
     setSubmitting(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/dashboard` },
+      options: { redirectTo: `${window.location.origin}/auth` },
     });
     if (error) {
       setSubmitting(false);
@@ -114,7 +115,7 @@ export default function Auth() {
         </div>
 
         <Card>
-          <Tabs defaultValue="signin">
+          <Tabs defaultValue={new URLSearchParams(location.search).get("mode") === "signup" ? "signup" : "signin"}>
             <CardHeader>
               <TabsList className="grid grid-cols-2 w-full">
                 <TabsTrigger value="signin">Sign in</TabsTrigger>

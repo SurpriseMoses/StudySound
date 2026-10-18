@@ -50,6 +50,8 @@ import QuizReviewQueue from "./pages/admin/quiz/QuizReviewQueue";
 import QuizTemplates from "./pages/admin/quiz/QuizTemplates";
 import QuizSettingsPage from "./pages/admin/quiz/QuizSettingsPage";
 import NotFound from "./pages/NotFound";
+import ReferralInvitation from "./pages/ReferralInvitation";
+import ReferralClaimBinder from "./components/ReferralClaimBinder";
 
 const queryClient = new QueryClient();
 
@@ -62,11 +64,13 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <ReferralClaimBinder />
           <Routes>
             {/* Public */}
             <Route path="/" element={<Index />} />
             <Route path="/preview" element={<Preview />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/ref/:code" element={<ReferralInvitation />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/plans" element={<Plans />} />
