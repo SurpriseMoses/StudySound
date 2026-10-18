@@ -19,6 +19,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { cleanRawText, isInvalidChunk, type DocKind } from "../_shared/clean-text.ts";
+import { auditFetch as fetch, withCostAudit, setCostAuditIdentity } from "../_shared/ai-cost-audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -181,7 +182,7 @@ function inferKind(doc: DocRow): DocKind {
   return "novel";
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
@@ -251,6 +252,7 @@ Deno.serve(async (req) => {
     }
 
     // ---------- Re-clean if needed (or forced) ----------
+    setCostAuditIdentity(doc.id, userData.user.id);
     let cleanText = doc.clean_text;
     if (forceReclean || !cleanText || cleanText.length < 1000) {
       if (!doc.raw_text) {
@@ -490,4 +492,4 @@ Deno.serve(async (req) => {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-});
+}, "seed_audio"));

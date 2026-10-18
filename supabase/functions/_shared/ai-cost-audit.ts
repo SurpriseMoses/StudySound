@@ -12,7 +12,7 @@ async function persist(row: Record<string, unknown>) {
   if (!url || !key) return;
   try {
     const response = await nativeFetch(`${url}/rest/v1/ai_generation_cost_events?on_conflict=event_key`, {
-      method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify(row),
+      method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(row),
     });
     if (!response.ok) console.warn("[cost-audit] evidence write unavailable", response.status);
   } catch { console.warn("[cost-audit] evidence write unavailable"); }
@@ -37,6 +37,14 @@ export function withCostAudit(handler: (req: Request) => Promise<Response>, feat
 export function setCostAuditIdentity(documentId: string | null, userId?: string) {
   const ctx = contexts.getStore();
   if (ctx) { ctx.documentId = documentId; ctx.userId = userId; }
+}
+
+export async function recordBatchEvidence(batchName: string, position: number, model: string, feature: string, documentId: string | null, response: unknown, failed: boolean) {
+  // Provider batch + position identifies the same billable attempt on every poll.
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(batchName)));
+  const hex = Array.from(digest.slice(0, 16), n => n.toString(16).padStart(2, "0")).join("");
+  const jobId = `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
+  await persist({ event_key: `google-batch:${batchName}:${position}`, job_id: jobId, document_id: documentId, provider_request_id: batchName, feature, provider: "google", model, endpoint: "https://generativelanguage.googleapis.com/v1beta/models/:batchGenerateContent", billing_mode: "batch-result", cache_hit: false, outcome: failed ? "failed" : "succeeded", ...extractProviderUsage(response) });
 }
 
 export async function auditFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {

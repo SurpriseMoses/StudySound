@@ -28,6 +28,7 @@ import {
   type BatchRequestItem,
 } from "../_shared/gemini-batch.ts";
 import { requireInternalOrAdmin } from "../_shared/internal-guard.ts";
+import { recordBatchEvidence } from "../_shared/ai-cost-audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -213,6 +214,7 @@ async function pollInFlightBatches(admin: any, apiKey: string, cache: Map<string
 
       for (const row of rows ?? []) {
         const item = inlined[row.batch_index ?? -1];
+        if (item) await recordBatchEvidence(jobName, row.batch_index ?? -1, MODEL, "seed_translation", row.document_id, item.response, !!item.error);
         if (!item || item.error) {
           retryUpdates.push({
             id: row.id,

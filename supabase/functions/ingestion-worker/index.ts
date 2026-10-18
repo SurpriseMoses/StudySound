@@ -101,6 +101,7 @@ Deno.serve(withCostAudit(async (req) => {
     for (; steps < maxSteps; steps++) {
       if (["completed", "failed", "cancelled"].includes(job.state)) break;
       const prevState = job.state;
+      setCostAuditIdentity(job.document_id ?? null);
       try {
         const next = await advance(job);
         const progress = PROGRESS[next.state] ?? job.progress;
@@ -141,7 +142,7 @@ Deno.serve(withCostAudit(async (req) => {
   } catch (e) {
     return json({ error: String(e?.message ?? e) }, 500);
   }
-});
+}, "document_processing"));
 
 async function pickJob(jobId?: string) {
   if (jobId) {

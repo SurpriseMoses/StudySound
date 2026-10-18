@@ -24,6 +24,7 @@ import {
   type BatchRequestItem,
 } from "../_shared/gemini-batch.ts";
 import { requireInternalOrAdmin } from "../_shared/internal-guard.ts";
+import { recordBatchEvidence } from "../_shared/ai-cost-audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -127,6 +128,7 @@ async function pollAllRunning(admin: any, apiKey: string) {
         for (let i = 0; i < orderedDocs.length; i++) {
           const docId = orderedDocs[i];
           const item = status.inlinedResponses[i];
+          if (item) await recordBatchEvidence(jobName, i, BLUEPRINT_MODEL, "translation_blueprint", docId, item.response, !!item.error);
           if (!item || item.error) {
             await admin.from("translation_blueprints").update({
               batch_status: "failed",
