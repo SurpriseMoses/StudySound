@@ -1,5 +1,7 @@
 # Referral Rewards & AI Reserve
 
+- [ ] Payment-crediting fix approved: bind verified Paystack payments to server-recorded purchase details, post wallet/ledger/subscription atomically, test replays/concurrency/rollback in a disposable database; do not activate referrals or initiate real charges.
+
 - [ ] Requested live payment and reward activation (18 October 2026): do not mark payment/legal/cost checks complete without evidence; blocked on atomic verified payment posting, refund/renewal tests, implemented milestone/source accounting, explicit conversion/cost approval and genuine reserve coverage. Existing Paystack integration must be reused, not replaced.
 
 - [x] Complete invitation links and same-browser claim persistence through signup/verification/login; enforce verified new-account eligibility, concurrent/idempotent attribution and private activity labels. Migration 0020, 91 tests passed, inactive/invalid/signed-in/phone checks passed; programme remains disabled.
