@@ -3,7 +3,6 @@
 import {
   adminClient,
   corsHeaders,
-  ensureRenewalPurchase,
   grantCreditsForReference,
   json,
   markFailed,
@@ -32,51 +31,25 @@ async function syncSubscriptionEvent(event: string, data: Record<string, any>) {
   const subCode = data?.subscription_code ?? null;
   const emailToken = data?.email_token ?? null;
 
-  // Find the owning user via metadata, customer code, or the linked transaction.
-  let userId: string | null = data?.metadata?.user_id ?? null;
-  if (!userId && customerCode) {
-    const { data: row } = await admin
-      .from("subscriptions")
-      .select("user_id")
-      .eq("paystack_customer_code", customerCode)
-      .maybeSingle();
-    userId = row?.user_id ?? null;
-  }
-  if (!userId && customerCode) {
-    const { data: purchase } = await admin
-      .from("credit_purchases")
-      .select("user_id")
-      .eq("kind", "subscription")
-      .eq("status", "success")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    userId = purchase?.user_id ?? null;
-  }
-  if (!userId) return;
-
-  if (event === "subscription.create" || event === "subscription.enable") {
-    const planId = data?.plan?.name?.toLowerCase().includes("premium")
-      ? "premium"
-      : "essential";
-    await admin.from("subscriptions").upsert(
-      {
-        user_id: userId,
-        plan: planId,
-        status: "active",
-        paystack_subscription_code: subCode,
-        paystack_customer_code: customerCode,
-        paystack_email_token: emailToken,
-        current_period_end: data?.next_payment_date
-          ? new Date(data.next_payment_date).toISOString()
-          : null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" },
-    );
-    await admin.from("profiles").update({ plan: planId }).eq("user_id", userId);
+  // Lifecycle events never grant credits or activate a plan. Bind to an already-paid
+  // customer; never guess an owner from metadata or the latest unrelated purchase.
+  if (!customerCode || !subCode) return;
+  const { data: subscription, error } = await admin.from("subscriptions")
+    .select("user_id, paystack_subscription_code, current_period_end")
+    .eq("paystack_customer_code", customerCode).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!subscription) return;
+  const userId = subscription.user_id;
+  if (event === "subscription.create") {
+    if (subscription.paystack_subscription_code && subscription.paystack_subscription_code !== subCode) return;
+    const { error: updateError } = await admin.from("subscriptions").update({
+      paystack_subscription_code: subCode, paystack_email_token: emailToken,
+      updated_at: new Date().toISOString(),
+    }).eq("user_id", userId);
+    if (updateError) throw new Error(updateError.message);
     return;
   }
+  if (subscription.paystack_subscription_code !== subCode) return;
 
   if (event === "subscription.disable" || event === "subscription.not_renew") {
     await admin
@@ -86,7 +59,7 @@ async function syncSubscriptionEvent(event: string, data: Record<string, any>) {
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId);
-    if (event === "subscription.disable") {
+    if (event === "subscription.disable" && subscription.current_period_end && Date.parse(subscription.current_period_end) <= Date.now()) {
       await admin.from("profiles").update({ plan: "free" }).eq("user_id", userId);
     }
   }
@@ -96,6 +69,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
     const secret = paystackSecret();
     if (!secret) return json({ error: "not configured" }, 503);
 
@@ -122,14 +96,7 @@ Deno.serve(async (req) => {
       // Re-verify with Paystack before crediting.
       const tx = await paystackVerify(reference);
       if (tx?.status === "success") {
-        let result = await grantCreditsForReference(reference, tx);
-        if (result.status === "unknown") {
-          // Monthly renewal: no purchase row exists yet, create one then credit.
-          if (await ensureRenewalPurchase(reference, tx)) {
-            result = await grantCreditsForReference(reference, tx);
-          }
-        }
-        console.log("paystack-webhook credited", reference, result.status);
+        await grantCreditsForReference(reference, tx);
       } else {
         await markFailed(reference, tx);
       }
