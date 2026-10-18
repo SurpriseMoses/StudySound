@@ -12,6 +12,14 @@ export function paymentEnvironment(secret: string): "test" | "live" {
   throw new Error("Unrecognised payment credential environment");
 }
 
+export function checkoutCallback(value: unknown, origin: string | null): string {
+  if (typeof value !== "string" || !origin) throw new Error("Invalid checkout return address");
+  const url = new URL(value);
+  if (url.origin !== origin || url.pathname !== "/payment/callback" || url.username || url.password
+    || (url.protocol !== "https:" && !(url.protocol === "http:" && url.hostname === "localhost"))) throw new Error("Invalid checkout return address");
+  return url.toString();
+}
+
 export function verifiedPaymentEvidence(reference: string, tx: any, environment: "test" | "live"): PaymentEvidence {
   if (!/^[a-zA-Z0-9_.-]{1,200}$/.test(reference) || tx?.reference !== reference) throw new Error("Payment reference mismatch");
   if (tx?.status !== "success") throw new Error("Payment is not successful");
