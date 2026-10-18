@@ -20,3 +20,7 @@
 - [ ] Integrate budget controls across existing generation entry points while preserving cached access.
 - [ ] Run rule tests, database concurrency/access tests and signed-in end-to-end test-payment flows.
 - [ ] Report external payout/payment/provider setup and legal review requirements.
+
+# Deferred
+
+- [ ] Native-accent narration seeding (administrator deferred): only Afrikaans and isiZulu have genuine provider voices; re-check the provider voice list before queueing and report unavailable languages honestly instead of substituting an English narrator.

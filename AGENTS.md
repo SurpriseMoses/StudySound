@@ -7,3 +7,4 @@
 - Expose learner referral activity only through owner-scoped summary RPCs, never direct attribution reads; private attribution identifiers and referred-account data must not reach the learner client.
 - Treat missing referral settings as disabled and keep the programme unavailable until reviewed activation gates are met; learner pages must report missing financial infrastructure rather than fabricate monetary balances.
 - Configure referral conversion only through an admin-validated audited RPC; configuration is not activation, credit issuance, payout or provider funding.
+- Route narration only to voices confirmed present in the provider's published voice list, and report a language as unsupported instead of silently substituting another accent; assumed locale support produces failed or accent-inaccurate lessons.
