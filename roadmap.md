@@ -1,5 +1,7 @@
 # Referral Rewards & AI Reserve
 
+- [ ] Continue remaining programme build: install private commission/withdrawal foundations and reviewed manual payout workflow, then connect verified payment qualification and atomic milestone awards; preserve disabled activation gates.
+
 - [x] Add admin-only audited reserve funding confirmations, duplicate-reference protection and linked reversals; net funding excludes reversals, corrections clear cost approval, and direct writes are denied. Signed-in unconfirmed-transfer rejection verified; no fictitious funding saved. 62 tests pass.
 - [ ] Verify successful funding confirmations, duplicate retries and reversals end-to-end (blocked: dedicated test database with RPC execution privileges or genuine confirmed funding; rollback-only test retained and skipped on the restricted project connection).
 
