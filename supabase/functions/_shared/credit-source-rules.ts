@@ -68,3 +68,10 @@ export function allocateOperationCost(costMinorUnits: number, allocations: reado
   }
   return parts.map(({ remainder: _remainder, index: _index, ...part }) => part);
 }
+// Mirrors public.expire_free_credits: spending consumes free credits first,
+// so only min(freeRemaining, balance) can expire; all other credits are kept.
+export function weeklyFreeRefill(balance: number, freeRemaining: number, grant = 20) {
+  const b = Math.max(0, balance);
+  const kept = b - Math.min(Math.max(0, freeRemaining), b);
+  return { balance: kept + grant, freeRemaining: grant };
+}
