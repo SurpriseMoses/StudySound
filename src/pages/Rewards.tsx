@@ -87,10 +87,10 @@ export default function Rewards() {
               <p className="text-sm text-muted-foreground">Every 50 qualifying lifetime referrals: R79 worth of study credits, up to seven standard awards per year. At 300: a permanent Ambassador badge and a separate once-only R149 credit bonus.</p>
               <div className="space-y-2 max-w-xl">
                 <p className="text-sm">Next referral threshold: {(Math.floor(summary.data.lifetime_successful / 50) + 1) * 50}</p>
-                <Progress value={(summary.data.lifetime_successful % 50) * 2} aria-label="Progress towards the next 50-referral threshold" />
+                <Progress className="bg-muted" value={(summary.data.lifetime_successful % 50) * 2} aria-label="Progress towards the next 50-referral threshold" />
                 <p className="text-sm text-muted-foreground">{summary.data.lifetime_successful % 50} of 50 referrals towards the next threshold. This progress is not an issued reward.</p>
                 <p className="text-sm">Ambassador threshold: {Math.min(summary.data.lifetime_successful, 300)} / 300</p>
-                <Progress value={Math.min(100, summary.data.lifetime_successful / 3)} aria-label="Progress towards the Ambassador referral threshold" />
+                <Progress className="bg-muted" value={Math.min(100, summary.data.lifetime_successful / 3)} aria-label="Progress towards the Ambassador referral threshold" />
               </div>
               <p className="text-sm">Awards and credit conversion are not active yet.</p>
             </section>
