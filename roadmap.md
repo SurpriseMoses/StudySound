@@ -23,4 +23,4 @@
 
 # Deferred
 
-- [ ] Native-accent narration seeding (administrator deferred): only Afrikaans and isiZulu have genuine provider voices; re-check the provider voice list before queueing and report unavailable languages honestly instead of substituting an English narrator.
+- [ ] Native-accent narration seeding (administrator deferred): Afrikaans and isiZulu via Azure; Sepedi, Sesotho and siSwati only on a newer Gemini narration model (the pinned 2.5 preview model supports 24 languages) — prove with a real test clip first. No native voice exists for isiXhosa, Setswana, Xitsonga, Tshivenda or isiNdebele; report those honestly instead of substituting an English narrator.
