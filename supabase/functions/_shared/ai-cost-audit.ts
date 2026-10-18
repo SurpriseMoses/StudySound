@@ -20,19 +20,7 @@ async function persist(row: Record<string, unknown>) {
 
 export function withCostAudit(handler: (req: Request) => Promise<Response>, feature: string) {
   return async (req: Request) => {
-    let body: Record<string, unknown> = {};
-    try { if (req.method !== "OPTIONS") body = await req.clone().json(); } catch { /* Preserve original validation. */ }
-    let documentId = typeof body.document_id === "string" ? body.document_id : null;
-    if (!documentId && typeof body.lesson_id === "string") {
-      const url = Deno.env.get("SUPABASE_URL"); const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-      if (url && key && /^[0-9a-f-]{36}$/i.test(body.lesson_id)) {
-        try {
-          const r = await nativeFetch(`${url}/rest/v1/lessons?id=eq.${body.lesson_id}&select=document_id&limit=1`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
-          if (r.ok) documentId = (await r.json())?.[0]?.document_id ?? null;
-        } catch { /* Unresolved identifiers stay unknown. */ }
-      }
-    }
-    return contexts.run({ jobId: crypto.randomUUID(), documentId, feature, attempt: 0, calls: 0 }, async () => {
+    return contexts.run({ jobId: crypto.randomUUID(), documentId: null, feature, attempt: 0, calls: 0 }, async () => {
       const response = await handler(req);
       const ctx = contexts.getStore();
       if (!ctx || req.method === "OPTIONS") return response;
@@ -59,13 +47,15 @@ export async function auditFetch(input: RequestInfo | URL, init?: RequestInit): 
   ctx.calls++;
   let payload: Record<string, unknown> = {};
   try { if (typeof init?.body === "string") payload = JSON.parse(init.body); } catch { /* SSML is not JSON. */ }
-  const model = typeof payload.model === "string" ? payload.model : typeof payload.model_id === "string" ? payload.model_id : url.pathname.match(/models\/([^:]+)/)?.[1] ?? (provider.startsWith("azure") ? "configured-service" : "unknown");
+  const voice = typeof init?.body === "string" ? init.body.match(/<voice\s+name=["']([^"']+)/)?.[1] : undefined;
+  const model = typeof payload.model === "string" ? payload.model : typeof payload.model_id === "string" ? payload.model_id : url.pathname.match(/models\/([^:]+)/)?.[1] ?? voice ?? (provider.startsWith("azure") ? "configured-service" : "unknown");
   const attempt = ++ctx.attempt;
   const row = { event_key: `${ctx.jobId}:${attempt}`, job_id: ctx.jobId, document_id: ctx.documentId, user_id: ctx.userId ?? null, feature: ctx.feature, provider, model, endpoint: `${url.origin}${url.pathname}`, billing_mode: url.pathname.includes("batch") ? "batch-control-unreconciled" : url.pathname.includes("cachedContents") ? "context-cache-storage" : "online", attempt, cache_hit: false };
   let response: Response;
   try { response = await nativeFetch(input, init); }
   catch (error) { await persist({ ...row, outcome: "unknown" }); throw error; }
   const base = { ...row, http_status: response.status, outcome: response.ok ? "succeeded" : "failed", provider_request_id: response.headers.get("request-id") ?? response.headers.get("x-request-id") };
+  await persist(base);
   if (response.headers.get("content-type")?.includes("json")) {
     // Observe the caller's existing parse: no duplicated image/audio payload.
     const parse = response.json.bind(response);
@@ -73,7 +63,6 @@ export async function auditFetch(input: RequestInfo | URL, init?: RequestInit): 
       try { const data = await parse(); await persist({ ...base, ...extractProviderUsage(data) }); return data; }
       catch (error) { await persist(base); throw error; }
     };
-    if (!response.ok) await persist(base);
   } else {
     await persist({ ...base, usage_units: { provider_reported_characters: response.headers.get("x-character-count") ? Number(response.headers.get("x-character-count")) : null, content_length_bytes: response.headers.get("content-length") ? Number(response.headers.get("content-length")) : null } });
   }
