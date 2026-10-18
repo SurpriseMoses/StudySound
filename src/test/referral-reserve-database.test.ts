@@ -2,12 +2,31 @@ import { describe, it, expect } from "vitest";
 import postgres from "postgres";
 
 // Every mutation is inside a transaction deliberately rolled back; never create
-// fictitious funding in production. Run with SUPABASE_DB_URL available.
+// fictitious funding in production. Full mutation tests require a dedicated
+// test database whose connection has EXECUTE privileges for these RPCs.
 const databaseUrl = process.env.SUPABASE_DB_URL;
-describe.skipIf(!databaseUrl)("reserve funding database rules", () => {
-  it("requires admin confirmation, prevents duplicate funding and retains reversals without issuing rewards", async () => {
+describe.skipIf(!databaseUrl)("reserve funding access rules", () => {
+  it("allows signed-in RPC access but forbids direct funding writes and anonymous access", async () => {
     if (!databaseUrl) return;
-    const sql = postgres(databaseUrl, { max: 1, prepare: false });
+    const sql = postgres(databaseUrl, { max: 1 });
+    try {
+      const [access] = await sql`select
+        has_function_privilege('anon','public.referral_admin_record_funding(text,numeric,text,boolean)','EXECUTE') anon_write,
+        has_function_privilege('authenticated','public.referral_admin_record_funding(text,numeric,text,boolean)','EXECUTE') auth_rpc,
+        has_table_privilege('authenticated','public.ai_reward_reserve_funding','INSERT') direct_write,
+        has_table_privilege('authenticated','public.ai_reward_reserve_reversals','DELETE') direct_delete`;
+      expect(access).toEqual({ anon_write: false, auth_rpc: true, direct_write: false, direct_delete: false });
+      const rows = await sql`select relrowsecurity from pg_class where oid in ('public.ai_reward_reserve_funding'::regclass,'public.ai_reward_reserve_reversals'::regclass)`;
+      expect(rows).toHaveLength(2);
+      expect(rows.every(row => row.relrowsecurity)).toBe(true);
+    } finally { await sql.end(); }
+  });
+});
+describe.skipIf(!process.env.REFERRAL_TEST_DB_URL)("reserve funding database rules", () => {
+  it("requires admin confirmation, prevents duplicate funding and retains reversals without issuing rewards", async () => {
+    const testUrl = process.env.REFERRAL_TEST_DB_URL;
+    if (!testUrl) return;
+    const sql = postgres(testUrl, { max: 1, prepare: false });
     const rollback = new Error("deliberate rollback");
     try {
       await sql.begin(async tx => {
