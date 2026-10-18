@@ -14,7 +14,7 @@ type Summary = {
   lifetime_successful: number;
   annual_successful: number;
   financials_available: boolean;
-  activity: { identifier: string; status: string; attributed_at: string; reason_code: string | null }[];
+  activity: { identifier: string; status: string; attributed_at: string }[];
 };
 
 export default function Rewards() {
