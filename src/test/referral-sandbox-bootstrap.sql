@@ -7,7 +7,7 @@ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(
 CREATE TYPE public.app_role AS ENUM ('admin','user');
 CREATE TYPE public.subscription_plan AS ENUM ('free','essential','premium');
 CREATE TABLE auth.users(id uuid PRIMARY KEY,created_at timestamptz DEFAULT now(),email_confirmed_at timestamptz);
-CREATE TABLE public.profiles(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid UNIQUE NOT NULL,credits_balance integer NOT NULL DEFAULT 20,plan public.subscription_plan DEFAULT 'free',updated_at timestamptz DEFAULT now());
+CREATE TABLE public.profiles(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid UNIQUE NOT NULL,credits_balance integer NOT NULL DEFAULT 20,plan public.subscription_plan DEFAULT 'free',free_credits_expires_at timestamptz,updated_at timestamptz DEFAULT now());
 CREATE TABLE public.user_roles(user_id uuid,role public.app_role);
 CREATE FUNCTION public.has_role(_user_id uuid,_role public.app_role) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS(SELECT 1 FROM public.user_roles WHERE user_id=_user_id AND role=_role) $$;
 CREATE TABLE public.documents(id uuid PRIMARY KEY);
