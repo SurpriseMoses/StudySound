@@ -148,6 +148,13 @@
       "when": 1792342932110,
       "tag": "0020_referral_verified_claim_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792345223772,
+      "tag": "0021_atomic_verified_paystack_posting",
+      "breakpoints": true
     }
   ]
 }
