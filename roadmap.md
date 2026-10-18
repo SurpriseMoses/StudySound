@@ -1,5 +1,7 @@
 # Referral Rewards & AI Reserve
 
+- [ ] Implement evidence-only AI cost capture, admin cohort/reserve review and an audited fail-closed cost-model approval gate; preserve generation behaviour and all wallet/payment values. No reward issuance or payouts in this audit.
+
 - [x] Produce read-only credit-economy review: prices/effective rates, deductions/expiry/settings, Gemini cost evidence, provisional reward proposal and missing measurements; no conversion configured or issuance enabled. Actual provider cost reconciliation and free-wallet source/expiry protection remain approval blockers.
 
 - [x] Inspect live core schema, wallet routines and payment handlers; Cloud is healthy. Provider test-payment verification remains pending.
