@@ -186,3 +186,21 @@ Live checks: authenticated admin screen loaded; calculator accepted synthetic as
 7. Obtain administrator conversion/cost approval and legal/payment/payout reviews; perform transactional concurrency/idempotency/access testing before any activation.
 
 No new provider key is required for passive measurement: it reuses existing integrations and managed server credentials. Provider account reports/merchant settlement evidence and legal review remain external inputs. Approval is blocked until they and wallet/source reconciliation establish a defensible model.
+
+## Measured narration durations (2026-10-18)
+
+First real duration measurements of the seeded library; `audio_assets.duration_seconds` was previously NULL for every row and is now backfilled (migration `0014_backfill_audio_durations`).
+
+Method: all 28 ElevenLabs MP3s were downloaded through short-lived admin-signed URLs (new admin-only `sign-audio-urls` function; signs only paths that exist in `audio_assets`, never generates audio or charges credits) and measured with ffprobe. All 263 Gemini WAVs are 24 kHz 16-bit mono PCM, so duration = (bytes − 44) / 48,000 exactly; this byte rate was verified against 7 independent ffprobe measurements (match to 0.001 s).
+
+Results:
+
+| Provider | Chunks | Avg chars | Avg duration | Range | Chars/sec | Sec per 1,000 chars | Total audio |
+|---|---|---|---|---|---|---|---|
+| Gemini (WAV) | 263 | 1,729 | 107.7 s | 55.9–154.7 s | 16.06 | 62.3 s | 7.87 h |
+| ElevenLabs (MP3) | 28 | 1,777 | 122.2 s | 49.6–318.8 s | 14.21 | 70.4 s | 0.95 h |
+| All | 291 | — | 109.1 s | — | 15.86 | 63.1 s | 8.82 h |
+
+Standard chunk size confirmed at ~1,700–1,800 characters (one 4,089-char ElevenLabs outlier at 318.8 s). The earlier planning unit of "1 credit ≈ 1,000 characters" is conservative: a real chunk carries ~1,700+ characters per credit.
+
+Cost implication (still an estimate from published prices, not provider-reported): at Gemini 2.5 Flash TTS $10/1M audio tokens (~25 tokens/sec) plus $0.50/1M text input, a measured 102 s / ~1,700-char chunk costs ~2,550 audio tokens ≈ $0.0255 + ~$0.0002 input ≈ **$0.026 ≈ R0.48 per chunk**, i.e. **~R0.28 per 1,000 characters** at R18.50/USD. This is ~4× lower than the earlier conservative planning figure (R1.12/chunk), which had assumed 6,000 audio tokens per 1,000 characters versus the measured ~1,530. ElevenLabs bills per character and was not cost-estimated here. These figures remain labelled estimates until provider-reported usage flows through the cost-events instrumentation; sample is English-only.
