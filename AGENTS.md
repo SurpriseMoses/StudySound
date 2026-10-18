@@ -11,3 +11,6 @@
 - Capture provider-returned usage with request-scoped passive observers in `_shared/ai-cost-audit.ts`; never infer actual costs from tokens, alter generation requests or add a second wallet, and keep missing transaction attribution explicit.
 - Keep scenario calculations in `src/lib/reward-cost-model.ts` non-authoritative; database constraints and audited admin approval enforce the referral cost safety gate independently of conversion configuration.
 - Record reserve funding through admin-authenticated atomic RPCs with stable transfer references; retain originals and linked reversals so corrections cannot duplicate funding or silently erase audit history.
+- Keep monetary commissions private and separate from the credit wallet; withdrawal RPCs lock the profile, allocate existing eligible commissions, and retain rejected reservations and payout evidence for reconciliation.
+- Treat processing payouts as unresolved until confirmed; never release a potentially transferred reservation through a generic rejection, and never connect commission accrual before atomic provider-verified payment posting exists.
+- Run synthetic financial mutations only in a disposable local database bootstrapped with test dependencies and the actual migrations; keep hosted access checks read-only to prevent fabricated production earnings or funding.

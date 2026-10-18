@@ -128,6 +128,27 @@ export function validateWithdrawal(availableCents: number, requestedCents: numbe
   if (requestedCents > availableCents) throw new Error("Insufficient available commission");
 }
 
+export type WithdrawalStatus = "requested" | "under_review" | "approved" | "processing" | "paid" | "rejected";
+
+// Quotes only; the database independently enforces this transition graph.
+export function withdrawalNextStates(status: WithdrawalStatus): WithdrawalStatus[] {
+  switch (status) {
+    case "requested": return ["under_review", "rejected"];
+    case "under_review": return ["approved", "rejected"];
+    case "approved": return ["processing", "rejected"];
+    case "processing": return ["paid"];
+    default: return [];
+  }
+}
+
+export function commissionTotals(input: {
+  availableEarnedCents: number; pendingCents: number; reservedCents: number; paidCents: number; reversedCents: number;
+}) {
+  Object.entries(input).forEach(([name, value]) => integer(value, name));
+  const net = input.availableEarnedCents - input.reservedCents - input.paidCents;
+  return { ...input, availableCents: Math.max(0, net), recoveryCents: Math.max(0, -net) };
+}
+
 export function reserveForecast(input: {
   attributedUsedCostCents: number;
   outstandingCredits: number;

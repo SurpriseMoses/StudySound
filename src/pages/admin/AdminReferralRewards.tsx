@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ReferralCostAudit from "@/components/admin/ReferralCostAudit";
+import ReferralWithdrawals from "@/components/admin/ReferralWithdrawals";
 
 type Settings = { credits_per_rand: number | null; enabled: boolean; legal_review_confirmed: boolean; payment_flow_verified: boolean };
 
@@ -68,11 +69,13 @@ export default function AdminReferralRewards() {
             <li className="flex gap-2"><ShieldCheck className="h-4 w-4 text-primary shrink-0" /> Private attribution records and owner-only summaries are installed.</li>
             <li>Legal review: {settings.data.legal_review_confirmed ? "Recorded" : "Required"}</li>
             <li>Discounted first payment and regular-price renewal verification: {settings.data.payment_flow_verified ? "Recorded" : "Required"}</li>
-            <li>Commission, milestone issuance and withdrawal operations: not connected yet.</li>
+            <li>Private commission records and manual withdrawal review: installed; verified payment qualification is not connected.</li>
+            <li>Milestone credit issuance: not connected; awards remain disabled.</li>
             <li>Payout identity requirements, processing times and fees: not configured.</li>
           </ul>
           <Button asChild variant="link" className="px-0"><Link to="/referral-terms">Review draft referral terms</Link></Button>
         </section>
+        <ReferralWithdrawals />
         <ReferralCostAudit />
       </>}
     </div>

@@ -6,6 +6,8 @@ import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import ReferralFinancials from "@/components/ReferralFinancials";
+import { Progress } from "@/components/ui/progress";
 
 type Summary = {
   enabled: boolean;
@@ -83,13 +85,16 @@ export default function Rewards() {
             <section className="space-y-3 border-t pt-6">
               <h2 className="font-display text-xl font-semibold">Milestones & Ambassador</h2>
               <p className="text-sm text-muted-foreground">Every 50 qualifying lifetime referrals: R79 worth of study credits, up to seven standard awards per year. At 300: a permanent Ambassador badge and a separate once-only R149 credit bonus.</p>
+              <div className="space-y-2 max-w-xl">
+                <p className="text-sm">Next referral threshold: {(Math.floor(summary.data.lifetime_successful / 50) + 1) * 50}</p>
+                <Progress className="bg-muted" value={(summary.data.lifetime_successful % 50) * 2} aria-label="Progress towards the next 50-referral threshold" />
+                <p className="text-sm text-muted-foreground">{summary.data.lifetime_successful % 50} of 50 referrals towards the next threshold. This progress is not an issued reward.</p>
+                <p className="text-sm">Ambassador threshold: {Math.min(summary.data.lifetime_successful, 300)} / 300</p>
+                <Progress className="bg-muted" value={Math.min(100, summary.data.lifetime_successful / 3)} aria-label="Progress towards the Ambassador referral threshold" />
+              </div>
               <p className="text-sm">Awards and credit conversion are not active yet.</p>
             </section>
-            <section className="border-t pt-6 space-y-2">
-              <h2 className="font-display text-xl font-semibold">Commission & withdrawals</h2>
-              <p className="text-sm text-muted-foreground">Proposed first-payment commission: R3.95 for Essential or R7.45 for Premium. Minimum withdrawal: R50 of available commission.</p>
-              <p className="text-sm">Financial records and withdrawals are not available yet. No payout has been initiated.</p>
-            </section>
+            {user && <ReferralFinancials userId={user.id} />}
             <section className="border-t pt-6 space-y-3">
               <h2 className="font-display text-xl font-semibold">Referral activity</h2>
               <p className="flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck className="h-4 w-4 shrink-0" /> Classmates’ private information stays private.</p>

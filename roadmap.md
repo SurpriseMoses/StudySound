@@ -1,7 +1,10 @@
 # Referral Rewards & AI Reserve
 
+- [x] Install private commission/withdrawal foundations, server-locked reservations, reviewed manual payout workflow, owner-only balances and display-only milestone progress; preserve disabled activation gates. Migrations 0018–0019, signed-in/phone checks and all 77 tests (including isolated financial concurrency) passed; no production commissions, requests or payouts created.
+- [ ] Connect verified first-payment qualification and atomic milestone awards (blocked on reviewed payment flow, administrator conversion/cost approval and authoritative source/reserve reconciliation; no accrual endpoint connected).
+
 - [x] Add admin-only audited reserve funding confirmations, duplicate-reference protection and linked reversals; net funding excludes reversals, corrections clear cost approval, and direct writes are denied. Signed-in unconfirmed-transfer rejection verified; no fictitious funding saved. 62 tests pass.
-- [ ] Verify successful funding confirmations, duplicate retries and reversals end-to-end (blocked: dedicated test database with RPC execution privileges or genuine confirmed funding; rollback-only test retained and skipped on the restricted project connection).
+- [x] Verify successful funding confirmations, duplicate retries and reversals in a disposable local database using the real migrations; originals retained, approval cleared and wallet unchanged. Real provider funding remains unconfirmed; no production funding invented.
 
 - [x] Add initial passive provider usage/cache capture, admin cohort/reserve scenarios and an audited fail-closed cost-model approval gate; preserve generation and wallet/payment values. Deliver audit with 63 passing rule/observer tests and verified cached replay; no rewards/payouts activated.
 - [ ] Validate real per-credit costs/cohort contribution/reserve coverage (blocked: no paid cohort, invoice-reconciled provider costs, confirmed funding or authoritative source-linked debit history). Report missing linkage/legacy path coverage explicitly; do not approve from empty evidence.
@@ -19,13 +22,15 @@
 - [ ] Obtain explicit reward conversion configuration (blocked: administrator must choose credits per rand).
 - [x] Audit promotional conversion: no authoritative R1-to-1-credit rule exists; preserve 110/220 subscription allowances, report differing offer rates, keep issuance disabled and provider costs separate.
 - [x] Verify anonymous/signed-in direct attribution reads are denied and disabled programme cannot issue codes or client-created claims.
-- [ ] Implement attribution, server-side first-payment discount, qualification and monetary commission reversals.
-- [ ] Implement atomic milestone wallet awards and reviewed withdrawal workflow.
-- [ ] Implement learner Rewards dashboard, privacy-safe activity and programme terms.
-- [ ] Implement source-aware spending and reconciled AI-cost/reserve administration.
-- [ ] Integrate budget controls across existing generation entry points while preserving cached access.
-- [ ] Run rule tests, database concurrency/access tests and signed-in end-to-end test-payment flows.
-- [ ] Report external payout/payment/provider setup and legal review requirements.
+- [ ] Implement attribution, server-side first-payment discount, qualification and monetary commission reversals (payment authenticity/atomic-posting prerequisites and Paystack sandbox verification outstanding).
+- [x] Implement reviewed withdrawal workflow: R50 minimum, no overlapping requests, oldest eligible commission allocations, rejection release, payout amount/date/reference evidence and idempotent audit history. Processing transfers require reconciliation before any release.
+- [ ] Implement atomic milestone wallet awards (blocked on approved conversion/cost model and source/reserve reconciliation).
+- [x] Implement learner Rewards dashboard, owner-only commission summaries, privacy-safe activity and draft programme terms. Exact award history/Ambassador badge remain pending atomic award records.
+- [ ] Implement source-aware spending and reconciled AI-cost/reserve administration (authoritative transaction linkage and provider-cost/reserve evidence outstanding).
+- [ ] Integrate budget controls across existing generation entry points while preserving cached access (administrator spending-policy/budget decisions and source-linked operation reservations outstanding).
+- [x] Run rule tests, hosted financial access tests and isolated withdrawal concurrency/idempotency/rejection/paid/reversal tests. Signed-in disabled learner/admin flow and signed-out protection verified.
+- [ ] Run signed-in end-to-end test-payment flows (blocked on verified Paystack sandbox setup and reviewed discounted first-payment/full-price renewal flow).
+- [x] Report external payout/payment/provider setup, missing evidence and legal review requirements in docs/referral-financial-workflow.md; no new secrets required for this phase.
 
 # Deferred
 
