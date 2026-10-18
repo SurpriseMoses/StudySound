@@ -1,5 +1,7 @@
 # Referral Rewards & AI Reserve
 
+- [ ] Produce read-only credit-economy review: prices/effective rates, deductions/expiry/settings, Gemini cost evidence, provisional reward proposal and missing measurements; do not configure conversion or enable issuance.
+
 - [x] Inspect live core schema, wallet routines and payment handlers; Cloud is healthy. Provider test-payment verification remains pending.
 - [x] Approve smallest additive migration and phased implementation plan.
 - [x] Implement independently testable server-side pricing, milestone, withdrawal validation and reserve forecast rules.
