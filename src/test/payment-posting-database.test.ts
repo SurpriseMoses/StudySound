@@ -9,7 +9,7 @@ describe.skipIf(!url)("isolated atomic payment posting", () => {
     if (endpoint.hostname !== "127.0.0.1" || endpoint.port !== "55439") throw new Error("Disposable local database required");
     const sql = postgres(url, { max: 5, prepare: false });
     const user = crypto.randomUUID();
-    let id = 800000;
+    let id = Math.floor(Date.now() * 100 + Math.random() * 90);
     const create = async (kind = "credits", plan: string | null = null) => {
       const reference = "sandbox_" + crypto.randomUUID();
       await sql`insert into public.credit_purchases(user_id,reference,expected_customer_email,payment_environment,expected_plan_code,kind,plan_id,credits,amount_zar)
