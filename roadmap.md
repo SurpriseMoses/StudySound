@@ -1,6 +1,7 @@
 # Referral Rewards & AI Reserve
 
-- [ ] Add admin-only audited reserve funding confirmations, duplicate protection and reversible corrections; verify without recording fictitious production funding. Rewards and payouts stay disabled.
+- [x] Add admin-only audited reserve funding confirmations, duplicate-reference protection and linked reversals; net funding excludes reversals, corrections clear cost approval, and direct writes are denied. Signed-in unconfirmed-transfer rejection verified; no fictitious funding saved. 62 tests pass.
+- [ ] Verify successful funding confirmations, duplicate retries and reversals end-to-end (blocked: dedicated test database with RPC execution privileges or genuine confirmed funding; rollback-only test retained and skipped on the restricted project connection).
 
 - [x] Add initial passive provider usage/cache capture, admin cohort/reserve scenarios and an audited fail-closed cost-model approval gate; preserve generation and wallet/payment values. Deliver audit with 63 passing rule/observer tests and verified cached replay; no rewards/payouts activated.
 - [ ] Validate real per-credit costs/cohort contribution/reserve coverage (blocked: no paid cohort, invoice-reconciled provider costs, confirmed funding or authoritative source-linked debit history). Report missing linkage/legacy path coverage explicitly; do not approve from empty evidence.
