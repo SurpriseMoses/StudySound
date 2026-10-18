@@ -1,5 +1,7 @@
 # Referral Rewards & AI Reserve
 
+- [ ] Requested live payment and reward activation (18 October 2026): do not mark payment/legal/cost checks complete without evidence; blocked on atomic verified payment posting, refund/renewal tests, implemented milestone/source accounting, explicit conversion/cost approval and genuine reserve coverage. Existing Paystack integration must be reused, not replaced.
+
 - [x] Complete invitation links and same-browser claim persistence through signup/verification/login; enforce verified new-account eligibility, concurrent/idempotent attribution and private activity labels. Migration 0020, 91 tests passed, inactive/invalid/signed-in/phone checks passed; programme remains disabled.
 - [ ] Verify active signup/verification attribution in hosted test mode and review public claim rate protection (blocked on reviewed activation gates; cross-device claim transfer is not supported).
 - [x] Install private commission/withdrawal foundations, server-locked reservations, reviewed manual payout workflow, owner-only balances and display-only milestone progress; preserve disabled activation gates. Migrations 0018–0019, signed-in/phone checks and all 77 tests (including isolated financial concurrency) passed; no production commissions, requests or payouts created.
