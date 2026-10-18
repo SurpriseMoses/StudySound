@@ -1,5 +1,8 @@
 # Referral Rewards & AI Reserve
 
+- [x] Add initial passive provider usage/cache capture, admin cohort/reserve scenarios and an audited fail-closed cost-model approval gate; preserve generation and wallet/payment values. Deliver audit with 63 passing rule/observer tests and verified cached replay; no rewards/payouts activated.
+- [ ] Validate real per-credit costs/cohort contribution/reserve coverage (blocked: no paid cohort, invoice-reconciled provider costs, confirmed funding or authoritative source-linked debit history). Report missing linkage/legacy path coverage explicitly; do not approve from empty evidence.
+
 - [x] Produce read-only credit-economy review: prices/effective rates, deductions/expiry/settings, Gemini cost evidence, provisional reward proposal and missing measurements; no conversion configured or issuance enabled. Actual provider cost reconciliation and free-wallet source/expiry protection remain approval blockers.
 
 - [x] Inspect live core schema, wallet routines and payment handlers; Cloud is healthy. Provider test-payment verification remains pending.

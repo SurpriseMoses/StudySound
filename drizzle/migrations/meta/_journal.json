@@ -92,6 +92,13 @@
       "when": 1792273694866,
       "tag": "0012_referral_admin_configuration_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792329552732,
+      "tag": "0013_ai_cost_evidence_safety_gate",
+      "breakpoints": true
     }
   ]
 }

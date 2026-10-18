@@ -3,6 +3,7 @@
 // for the admin review queue. Safe to call repeatedly.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { pollBatch, extractText } from "../_shared/gemini-batch.ts";
+import { recordBatchEvidence } from "../_shared/ai-cost-audit.ts";
 import {
   NEAR_DUPLICATE_THRESHOLD, questionHash, questionOriginFor, similarity, subjectKindFor,
   validateQuestion, type QuizSettings,
@@ -106,6 +107,7 @@ Deno.serve(async (req) => {
 
       for (const item of (items ?? []) as any[]) {
         const entry = responses[item.batch_position];
+        if (entry) await recordBatchEvidence(job.batch_name, item.batch_position, job.model ?? settings.model_pricing.model ?? "gemini-2.5-flash", "seed_quiz", item.document_id, entry.response, !!entry.error);
         if (!entry) {
           await admin.from("quiz_seed_job_items").update({ status: "failed", error: "no batch response" }).eq("id", item.id);
           failedItems++;

@@ -7,6 +7,7 @@
 // align when the player requests the same chunk later.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { auditFetch as fetch, withCostAudit, setCostAuditIdentity } from "../_shared/ai-cost-audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -357,6 +358,7 @@ async function processClaimedChunk(
     return { result: "error", detail: "out of range" };
   }
   const doc = { id: queueRow.document_id, title: docEntry.title };
+  setCostAuditIdentity(doc.id);
   const text = docEntry.chunks[queueRow.chunk_index];
 
   const expectedHash = await sha256Hex(text);
@@ -525,7 +527,7 @@ async function processClaimedChunk(
   }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const startedAt = Date.now();
 
@@ -703,4 +705,4 @@ Deno.serve(async (req) => {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-});
+}, "seed_audio"));

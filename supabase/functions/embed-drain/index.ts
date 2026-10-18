@@ -6,6 +6,7 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireInternalOrAdmin } from "../_shared/internal-guard.ts";
+import { auditFetch as fetch, withCostAudit, setCostAuditIdentity } from "../_shared/ai-cost-audit.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -20,7 +21,7 @@ const UPDATE_PARALLEL = 4;
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-Deno.serve(async (req) => {
+Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const denied = await requireInternalOrAdmin(req);
   if (denied) return denied;
@@ -44,6 +45,7 @@ Deno.serve(async (req) => {
 
     outer:
     for (const docId of docIds) {
+      setCostAuditIdentity(docId);
       while (Date.now() - startedAt < budget) {
         const { data: rows, error } = await admin.from("document_chunks")
           .select("id,text").eq("document_id", docId).is("embedding", null)
@@ -123,7 +125,7 @@ Deno.serve(async (req) => {
   } catch (e: any) {
     return j({ error: String(e?.message ?? e) }, 500);
   }
-});
+}, "embedding"));
 
 async function embedBatch(inputs: string[]): Promise<number[][]> {
   let lastErr: unknown;

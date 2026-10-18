@@ -5,6 +5,7 @@
 // Used by both the live `ingestion-worker` and the `backfill-pipeline`.
 
 export const MIN_TEXTBOOK_CHARS = 100_000;
+import { auditFetch as fetch } from "./ai-cost-audit.ts";
 export const MIN_CHAPTERS = 5;
 
 const DEFAULT_MAX_PAGES = 120;

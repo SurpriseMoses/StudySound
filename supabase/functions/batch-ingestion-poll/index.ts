@@ -7,6 +7,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { pollBatch, extractText } from "../_shared/gemini-batch.ts";
 import { requireInternalOrAdmin } from "../_shared/internal-guard.ts";
+import { recordBatchEvidence } from "../_shared/ai-cost-audit.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -68,6 +69,7 @@ async function handleSuccess(batch: any, inlined: any[]) {
 
   for (const item of items ?? []) {
     const res = inlined[item.position];
+    if (res) await recordBatchEvidence(batch.gemini_batch_name, item.position, "gemini-2.5-flash", "document_processing", null, res.response, !!res.error);
     if (!res) {
       await markItem(item.id, item.ingestion_job_id, "failed", "no result at position");
       failed++; continue;
@@ -136,6 +138,7 @@ async function handleRecleanSuccess(batch: any, inlined: any[]) {
       .select("id,document_id").eq("id", item.ingestion_job_id).maybeSingle();
     const docId = shadow?.document_id;
     const res = inlined[item.position];
+    if (res) await recordBatchEvidence(batch.gemini_batch_name, item.position, "gemini-2.5-flash", "document_reclean", docId ?? null, res.response, !!res.error);
     if (!res || res.error || !docId) {
       await markItem(item.id, item.ingestion_job_id, "failed", res?.error?.message ?? "no result / no document");
       failed++; continue;
