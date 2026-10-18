@@ -37,3 +37,15 @@ Hosted checks verify financial-table grants/RLS, no direct learner writes, no an
 6. Legal/privacy/tax/payment review, secure payout identity workflow, fees/timings and genuine confirmed reserve funding.
 
 No new secrets are required for the installed private workflow. Existing payment/provider secrets are unchanged. Rewards, payouts and referral invitations stay disabled.
+
+## Invitation phase — 18 October 2026
+
+Migration 0020 strengthens authenticated claim binding: email verification is required, profile and claim locks prevent competing attribution, the same consumed claim replays idempotently, and existing accounts/customers, self-referrals and expired/used claims remain ineligible. Owner summaries now return a non-identifying activity label rather than a fragment of a private attribution ID; private reason codes are omitted.
+
+`/ref/:code` now opens a genuine invitation page. The code-only public `referral-invitation` function delegates claim creation to the existing service-only routine and returns only status, opaque token and server expiry. It cannot qualify a referral, create a commission or issue credits. Missing/disabled settings return disabled without creating claims. Strict request validation, a small accepted body and no-store responses are enforced; gateway abuse protection and an explicit claim-creation rate policy still require review before public activation.
+
+The first valid invitation is stored locally with the server's unchanged expiry. Reloading cannot extend the window. A central authenticated binder covers signup, verification returns and later sign-in, including the separate onboarding signup path, without editing auth lifecycle triggers. Pending profile/verification checks retain the claim with bounded retries; terminal outcomes clear it. Email and Google returns from the Auth page now use its public same-origin sign-in URL. Storage is never treated as authoritative eligibility. Cross-device verification does not carry the browser's stored claim; returning to the original browser within the window is required. Signup/provider settings and an active hosted signup-to-attribution flow were not verified in this phase.
+
+Verification: **91 project tests passed**, none skipped, including eleven new isolated database tests and three invitation-storage tests. Synthetic referrals stayed in a disposable local database; no hosted referrals, earnings, funding or wallet changes were created. Browser checks verified inactive anonymous links, invalid links, create-account tab selection, existing-account rejection, disabled sharing and phone layout without overflow; no runtime errors observed and preview build clean. The active capture/bind transaction was tested locally, not by enabling the hosted programme.
+
+Remaining work is unchanged: verified sandbox payment posting and renewal consent, refund/fraud reconciliation, approved conversion and measured cost model, atomic milestone/source-ledger integration, generation budget controls, genuine reserve evidence and legal/payout review. No additional secrets or prices/allowances changes were introduced.
