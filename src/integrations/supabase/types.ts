@@ -14,6 +14,135 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_generation_cost_events: {
+        Row: {
+          attempt: number
+          billing_mode: string
+          cache_hit: boolean
+          cached_input_tokens: number | null
+          credit_transaction_id: string | null
+          currency: string | null
+          document_id: string | null
+          endpoint: string
+          estimated_cost: number | null
+          event_key: string
+          feature: string
+          http_status: number | null
+          id: string
+          input_tokens: number | null
+          job_id: string
+          model: string
+          occurred_at: string
+          outcome: string
+          output_tokens: number | null
+          pricing_reference: string | null
+          provider: string
+          provider_request_id: string | null
+          refund_amount: number | null
+          reported_cost: number | null
+          usage_units: Json
+          user_id: string | null
+        }
+        Insert: {
+          attempt?: number
+          billing_mode: string
+          cache_hit?: boolean
+          cached_input_tokens?: number | null
+          credit_transaction_id?: string | null
+          currency?: string | null
+          document_id?: string | null
+          endpoint: string
+          estimated_cost?: number | null
+          event_key: string
+          feature: string
+          http_status?: number | null
+          id?: string
+          input_tokens?: number | null
+          job_id: string
+          model: string
+          occurred_at?: string
+          outcome: string
+          output_tokens?: number | null
+          pricing_reference?: string | null
+          provider: string
+          provider_request_id?: string | null
+          refund_amount?: number | null
+          reported_cost?: number | null
+          usage_units?: Json
+          user_id?: string | null
+        }
+        Update: {
+          attempt?: number
+          billing_mode?: string
+          cache_hit?: boolean
+          cached_input_tokens?: number | null
+          credit_transaction_id?: string | null
+          currency?: string | null
+          document_id?: string | null
+          endpoint?: string
+          estimated_cost?: number | null
+          event_key?: string
+          feature?: string
+          http_status?: number | null
+          id?: string
+          input_tokens?: number | null
+          job_id?: string
+          model?: string
+          occurred_at?: string
+          outcome?: string
+          output_tokens?: number | null
+          pricing_reference?: string | null
+          provider?: string
+          provider_request_id?: string | null
+          refund_amount?: number | null
+          reported_cost?: number | null
+          usage_units?: Json
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_generation_cost_events_credit_transaction_id_fkey"
+            columns: ["credit_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "credit_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_generation_cost_events_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_reward_reserve_funding: {
+        Row: {
+          amount_zar: number
+          confirmed_at: string
+          confirmed_by: string
+          evidence_reference: string
+          id: string
+          reference: string
+        }
+        Insert: {
+          amount_zar: number
+          confirmed_at?: string
+          confirmed_by: string
+          evidence_reference: string
+          id?: string
+          reference: string
+        }
+        Update: {
+          amount_zar?: number
+          confirmed_at?: string
+          confirmed_by?: string
+          evidence_reference?: string
+          id?: string
+          reference?: string
+        }
+        Relationships: []
+      }
       assessment_patterns: {
         Row: {
           cognitive_demand: string | null
@@ -2586,12 +2715,17 @@ export type Database = {
           attribution_days: number
           commission_basis: string
           commission_basis_points: number
+          cost_model_approved: boolean
+          cost_model_approved_at: string | null
+          cost_model_approved_by: string | null
+          cost_model_evidence: Json | null
           credits_per_rand: number | null
           discount_basis_points: number
           enabled: boolean
           id: boolean
           legal_review_confirmed: boolean
           payment_flow_verified: boolean
+          safety_margin_basis_points: number
           timezone: string
           updated_at: string
           withdrawals_enabled: boolean
@@ -2600,12 +2734,17 @@ export type Database = {
           attribution_days?: number
           commission_basis?: string
           commission_basis_points?: number
+          cost_model_approved?: boolean
+          cost_model_approved_at?: string | null
+          cost_model_approved_by?: string | null
+          cost_model_evidence?: Json | null
           credits_per_rand?: number | null
           discount_basis_points?: number
           enabled?: boolean
           id?: boolean
           legal_review_confirmed?: boolean
           payment_flow_verified?: boolean
+          safety_margin_basis_points?: number
           timezone?: string
           updated_at?: string
           withdrawals_enabled?: boolean
@@ -2614,12 +2753,17 @@ export type Database = {
           attribution_days?: number
           commission_basis?: string
           commission_basis_points?: number
+          cost_model_approved?: boolean
+          cost_model_approved_at?: string | null
+          cost_model_approved_by?: string | null
+          cost_model_evidence?: Json | null
           credits_per_rand?: number | null
           discount_basis_points?: number
           enabled?: boolean
           id?: boolean
           legal_review_confirmed?: boolean
           payment_flow_verified?: boolean
+          safety_margin_basis_points?: number
           timezone?: string
           updated_at?: string
           withdrawals_enabled?: boolean
@@ -3590,6 +3734,11 @@ export type Database = {
         Args: { _stale_minutes?: number }
         Returns: number
       }
+      referral_admin_approve_cost_model: {
+        Args: { _evidence: Json }
+        Returns: Json
+      }
+      referral_admin_cost_evidence: { Args: never; Returns: Json }
       referral_admin_set_conversion: {
         Args: { _credits_per_rand: number }
         Returns: Json
