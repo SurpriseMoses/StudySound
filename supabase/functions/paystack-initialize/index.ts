@@ -1,4 +1,4 @@
-import { paymentEnvironment } from "../_shared/payment-evidence.ts";
+import { paymentEnvironment, checkoutCallback } from "../_shared/payment-evidence.ts";
 // Starts a Paystack checkout for a credit pack and records a pending purchase.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getPack } from "../_shared/credit-packs.ts";
@@ -30,10 +30,9 @@ Deno.serve(async (req) => {
     const pack = getPack(body?.pack_id);
     if (!pack) return json({ error: "Unknown credit pack" }, 400);
 
-    const callbackUrl = typeof body?.callback_url === "string" ? body.callback_url : null;
-    if (!callbackUrl || !/^https?:\/\//.test(callbackUrl)) {
-      return json({ error: "Invalid callback_url" }, 400);
-    }
+    let callbackUrl: string;
+    try { callbackUrl = checkoutCallback(body?.callback_url, req.headers.get("Origin")); }
+    catch { return json({ error: "Invalid checkout return address" }, 400); }
 
     const reference = `ss_${pack.id}_${crypto.randomUUID().replace(/-/g, "")}`;
 

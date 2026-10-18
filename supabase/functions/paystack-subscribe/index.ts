@@ -1,4 +1,4 @@
-import { paymentEnvironment } from "../_shared/payment-evidence.ts";
+import { paymentEnvironment, checkoutCallback } from "../_shared/payment-evidence.ts";
 // Starts a Paystack monthly subscription checkout for a BrainGrasp plan.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getPlan } from "../_shared/plans.ts";
@@ -37,10 +37,9 @@ Deno.serve(async (req) => {
     const plan = getPlan(body?.plan_id);
     if (!plan) return json({ error: "Unknown plan" }, 400);
 
-    const callbackUrl = typeof body?.callback_url === "string" ? body.callback_url : null;
-    if (!callbackUrl || !/^https?:\/\//.test(callbackUrl)) {
-      return json({ error: "Invalid callback_url" }, 400);
-    }
+    let callbackUrl: string;
+    try { callbackUrl = checkoutCallback(body?.callback_url, req.headers.get("Origin")); }
+    catch { return json({ error: "Invalid checkout return address" }, 400); }
 
     const planCode = await ensurePlanCode(plan);
     const reference = `ss_plan_${plan.id}_${crypto.randomUUID().replace(/-/g, "")}`;
