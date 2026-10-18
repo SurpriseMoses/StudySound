@@ -49,3 +49,19 @@ The first valid invitation is stored locally with the server's unchanged expiry.
 Verification: **91 project tests passed**, none skipped, including eleven new isolated database tests and three invitation-storage tests. Synthetic referrals stayed in a disposable local database; no hosted referrals, earnings, funding or wallet changes were created. Browser checks verified inactive anonymous links, invalid links, create-account tab selection, existing-account rejection, disabled sharing and phone layout without overflow; no runtime errors observed and preview build clean. The active capture/bind transaction was tested locally, not by enabling the hosted programme.
 
 Remaining work is unchanged: verified sandbox payment posting and renewal consent, refund/fraud reconciliation, approved conversion and measured cost model, atomic milestone/source-ledger integration, generation budget controls, genuine reserve evidence and legal/payout review. No additional secrets or prices/allowances changes were introduced.
+
+## Live activation request — 18 October 2026
+
+Live activation was requested, but it has not been performed. The hosted programme settings query returned no rows: no reward conversion, payment-flow verification, legal confirmation or cost-model approval is recorded. A request to activate does not supply these missing facts or choose a credit conversion.
+
+The existing Paystack integration and its legacy-named secret are present. Secret presence does not establish whether the provider account is in test or live mode, whether its credentials work, or whether checkout and callbacks have been verified. No new provider was connected and no charge was initiated.
+
+Source inspection identified concrete payment blockers:
+
+- Callback and webhook success handling do not compare provider-confirmed amount, currency, customer, reference and environment with the expected purchase before granting credits.
+- The purchase is marked credited before separate wallet, subscription and ledger writes finish. Partial failure can leave a payment marked credited without its credits, and concurrent purchases can overwrite balance updates. A locked, atomic posting operation is required.
+- Subscription-event handling has an unsafe latest-successful-purchase fallback that does not bind that purchase to the incoming customer. It must not be used to select an account.
+- No payment-specific tests or verified test-provider end-to-end evidence were found. Discounted first payment, full-price renewal consent, refunds and chargebacks remain unverified.
+- Commission qualification and atomic milestone/source-ledger awards are not connected. Enabling a setting cannot create these missing operations.
+
+Next implementation priority is atomic verified payment posting shared by the callback and webhook, with mismatch, duplicate, concurrency and rollback tests in a disposable database, followed by provider test checkout. Live testing must follow—not replace—these checks and the outstanding reward conversion, cost/reserve and legal approvals. Existing prices, balances, settings and credentials were not changed during this review.
