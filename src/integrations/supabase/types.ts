@@ -143,6 +143,38 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_reward_reserve_reversals: {
+        Row: {
+          funding_id: string
+          id: string
+          reason: string
+          reversed_at: string
+          reversed_by: string
+        }
+        Insert: {
+          funding_id: string
+          id?: string
+          reason: string
+          reversed_at?: string
+          reversed_by: string
+        }
+        Update: {
+          funding_id?: string
+          id?: string
+          reason?: string
+          reversed_at?: string
+          reversed_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_reward_reserve_reversals_funding_id_fkey"
+            columns: ["funding_id"]
+            isOneToOne: true
+            referencedRelation: "ai_reward_reserve_funding"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assessment_patterns: {
         Row: {
           cognitive_demand: string | null
@@ -3742,6 +3774,20 @@ export type Database = {
         Returns: Json
       }
       referral_admin_cost_evidence: { Args: never; Returns: Json }
+      referral_admin_funding_summary: { Args: never; Returns: Json }
+      referral_admin_record_funding: {
+        Args: {
+          _amount_zar: number
+          _evidence_reference: string
+          _reference: string
+          _transfer_confirmed: boolean
+        }
+        Returns: Json
+      }
+      referral_admin_reverse_funding: {
+        Args: { _funding_id: string; _reason: string }
+        Returns: Json
+      }
       referral_admin_set_conversion: {
         Args: { _credits_per_rand: number }
         Returns: Json

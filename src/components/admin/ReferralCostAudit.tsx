@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { cohortScenario, rewardExposure } from "@/lib/reward-cost-model";
+import ReferralReserveFunding from "@/components/admin/ReferralReserveFunding";
 
 type Evidence = {
   retrieved_at: string; window_start: string; paid_subscription_records: number; credit_ledger_records: number;
@@ -92,10 +93,11 @@ export default function ReferralCostAudit() {
     <div className="space-y-3"><h3 className="font-display font-semibold">Unresolved approval risks</h3><ul className="list-disc pl-5 text-sm space-y-2">
       <li>No representative paid Essential/Premium cohorts or invoice-reconciled provider costs. Average cost per credit, upload, feature and size distribution remain unknown.</li>
       <li>Historical 602 usage rows / 173 credits lack reliable feature and cache attribution; translations are logged as audio. Do not use them as an audio cost average.</li>
-      <li>Free-plan expiry can reset the entire wallet. Purchased/reward-source protection and atomic debits remain unresolved.</li>
+      <li>Weekly free-credit refill now preserves the non-free portion of the wallet. Legacy source attribution and atomic source-aware debits still require verification.</li>
       <li>Audio can deduct before generation; fallback, failed requests and concurrent cache misses can add exposure. Audit preserves this behaviour and does not claim refunds occurred.</li>
       <li>Background batch-result usage, source allocation, processing outcomes, storage/delivery attribution, merchant fees, FX, taxes and fixed costs still require reconciliation.</li>
     </ul></div>
+    <ReferralReserveFunding />
     <div className="space-y-3"><h3 className="font-display font-semibold">Authorised cost-model review</h3><Label htmlFor="cost-review-reference">Reconciled review reference</Label><Input id="cost-review-reference" value={review} onChange={ev => setReview(ev.target.value)} placeholder="Evidence report or invoice reconciliation reference" />
       {Object.entries(checks).map(([key,value]) => <label key={key} className="flex gap-3 items-start text-sm"><Checkbox checked={value} onCheckedChange={v => setChecks(c => ({ ...c, [key]: v === true }))} /><span>{({source_expiry_verified:"Source-aware wallet and expiry protection reviewed",representative_cohorts_verified:"Representative paid cohorts and costs reconciled",fees_and_variable_costs_verified:"Fees and material variable costs verified",reserve_coverage_verified:"Reward reserve coverage evidenced"} as Record<string,string>)[key]}</span></label>)}
       <Button onClick={approve} disabled={!eligible || saving}><ShieldCheck />{saving ? "Recording review…" : "Approve cost model only"}</Button><p className="text-xs text-muted-foreground">The server rejects approval without confirmed conversion, linked provider costs and collected subscription records. Approval never issues credits, activates referrals or transfers funds.</p>

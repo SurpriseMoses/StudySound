@@ -10,3 +10,4 @@
 - Route narration only to voices confirmed present in the provider's published voice list, and report a language as unsupported instead of silently substituting another accent; assumed locale support produces failed or accent-inaccurate lessons.
 - Capture provider-returned usage with request-scoped passive observers in `_shared/ai-cost-audit.ts`; never infer actual costs from tokens, alter generation requests or add a second wallet, and keep missing transaction attribution explicit.
 - Keep scenario calculations in `src/lib/reward-cost-model.ts` non-authoritative; database constraints and audited admin approval enforce the referral cost safety gate independently of conversion configuration.
+- Record reserve funding through admin-authenticated atomic RPCs with stable transfer references; retain originals and linked reversals so corrections cannot duplicate funding or silently erase audit history.
