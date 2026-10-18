@@ -141,6 +141,13 @@
       "when": 1792342312148,
       "tag": "0019_restrict_referral_financial_direct_access",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792342932110,
+      "tag": "0020_referral_verified_claim_binding",
+      "breakpoints": true
     }
   ]
 }
