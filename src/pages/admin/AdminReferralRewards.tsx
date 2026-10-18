@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import ReferralCostAudit from "@/components/admin/ReferralCostAudit";
 
 type Settings = { credits_per_rand: number | null; enabled: boolean; legal_review_confirmed: boolean; payment_flow_verified: boolean };
 
@@ -72,11 +73,7 @@ export default function AdminReferralRewards() {
           </ul>
           <Button asChild variant="link" className="px-0"><Link to="/referral-terms">Review draft referral terms</Link></Button>
         </section>
-        <section className="border-t pt-6 space-y-2">
-          <h2 className="font-display font-semibold text-lg">AI reserve reconciliation</h2>
-          <p className="text-sm text-muted-foreground">Provider usage records, reward-funded generation tracking and confirmed reserve funding are not connected yet. No expenditure, reserve balance or funded transfer is reported here.</p>
-          <p className="text-sm">Calculation and source-allocation rules are tested; forecasts are not operational spending controls.</p>
-        </section>
+        <ReferralCostAudit />
       </>}
     </div>
   );
