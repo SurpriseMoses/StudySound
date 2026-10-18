@@ -19,6 +19,8 @@ The commission table is a foundation, not an active payment integration. No accr
 
 ## Verification
 
+Complete project test suite: **77 passed**, including isolated financial transaction and concurrency tests; preview build clean with no observed browser runtime errors.
+
 All migrations applied to a disposable localhost database with minimal test dependencies. Synthetic data stayed there. Actual withdrawal operations verified concurrent competing requests, concurrent duplicate-key retries, conflicting retries, R50 validation, invalid/skipped transitions, rejection restoring available earnings, confirmed payout replay, immutable payout count, paid commission reversal and unchanged study wallet.
 
 The existing reserve-funding transaction test also passed in this isolated database: confirmation/replay/conflicting references/reversal/net-funded reconciliation/audit count and unchanged wallet. This verifies database behaviour, not a real provider transfer or funded provider account.
