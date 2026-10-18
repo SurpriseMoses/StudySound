@@ -15,9 +15,9 @@ describe.skipIf(!url)("isolated atomic payment posting", () => {
       await sql`insert into public.credit_purchases(user_id,reference,expected_customer_email,payment_environment,expected_plan_code,kind,plan_id,credits,amount_zar)
         values(${user},${reference},'payer@example.test','test',${plan ? 'PLN_'+plan : null},${kind},${plan},${plan === 'essential' ? 110 : plan === 'premium' ? 220 : 40},${plan === 'essential' ? 79 : plan === 'premium' ? 149 : 50})`;
       return { reference, payment_id: String(++id), status: "success", amount_cents: plan === "essential" ? 7900 : plan === "premium" ? 14900 : 5000,
-        currency: "ZAR", environment: "test", customer_email: "payer@example.test", customer_code: "CUS_sandbox"+user.replaceAll('-',''), plan_code: plan ? 'PLN_'+plan : null, paid_at: "2026-01-01T12:00:00Z" };
+        currency: "ZAR", environment: "test", customer_email: "payer@example.test", customer_code: "CUS_sandbox"+user.replace(/-/g,''), plan_code: plan ? 'PLN_'+plan : null, paid_at: "2026-01-01T12:00:00Z" };
     };
-    const post = async (evidence: object) => { const [row] = await sql`select public.payment_post_verified(${sql.json(evidence)}) result`; return row.result; };
+    const post = async (evidence: Record<string, string | number | null>) => { const [row] = await sql`select public.payment_post_verified(${sql.json(evidence)}) result`; return row.result; };
     try {
       await sql`insert into public.profiles(user_id) values(${user})`;
       const first = await create();
