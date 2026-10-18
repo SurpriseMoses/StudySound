@@ -44,6 +44,14 @@ export default function AdminReferralRewards() {
         <section className="border-y py-6 space-y-4">
           <h2 className="font-display font-semibold text-lg">Reward credit conversion</h2>
           <p className="text-sm text-muted-foreground">Subscription and top-up offers have different rates. Confirm a separate reward conversion before any R79 milestone or R149 Ambassador credit award is issued.</p>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <div><dt className="text-muted-foreground">Essential — R79/month</dt><dd>110 study credits</dd></div>
+            <div><dt className="text-muted-foreground">Premium — R149/month</dt><dd>220 study credits</dd></div>
+            <div><dt className="text-muted-foreground">R50 top-up</dt><dd>40 study credits</dd></div>
+            <div><dt className="text-muted-foreground">R100 top-up</dt><dd>100 + 10 bonus study credits</dd></div>
+            <div><dt className="text-muted-foreground">R200 top-up</dt><dd>220 study credits</dd></div>
+          </dl>
+          <p className="text-sm text-muted-foreground">The R1-per-credit revenue-reporting assumption does not establish a promotional reward conversion. Reward value is separate from provider generation expenditure.</p>
           <p className="text-sm">Confirmed rate: <strong>{settings.data.credits_per_rand === null ? "Not configured" : `${settings.data.credits_per_rand} credits per rand`}</strong></p>
           <div className="space-y-2 max-w-sm">
             <Label htmlFor="reward-conversion">Study credits per rand of reward value</Label>
