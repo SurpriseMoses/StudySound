@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
+import LessonVideos from "@/components/LessonVideos";
 
 const HUMANITIES = new Set(["novel", "history"]);
 const SCENE_COST = 2;
@@ -182,6 +183,8 @@ export default function StoryModeTab({
 
   if (scenes.length === 0) {
     return (
+      <div className="space-y-4">
+      <LessonVideos documentId={documentId} />
       <Card className="border-dashed">
         <CardContent className="p-10 text-center">
           <Film className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
@@ -198,6 +201,7 @@ export default function StoryModeTab({
           </p>
         </CardContent>
       </Card>
+      </div>
     );
   }
 
@@ -207,6 +211,7 @@ export default function StoryModeTab({
 
   return (
     <div className="space-y-4">
+      <LessonVideos documentId={documentId} />
       {/* Cinematic viewer — full-bleed dark stage */}
       <div className="relative -mx-4 sm:mx-0 sm:rounded-2xl overflow-hidden bg-black aspect-[16/10] sm:aspect-[16/9] shadow-2xl">
         <AnimatePresence mode="wait">
