@@ -16,3 +16,4 @@
 - Treat processing payouts as unresolved until confirmed; never release a potentially transferred reservation through a generic rejection, and never connect commission accrual before atomic provider-verified payment posting exists.
 - Run synthetic financial mutations only in a disposable local database bootstrapped with test dependencies and the actual migrations; keep hosted access checks read-only to prevent fabricated production earnings or funding.
 - Capture invitations through a public code-only edge endpoint and bind opaque expiring claims centrally after authentication; browser storage is convenience only, while verified new-account eligibility, one-referrer identity and replay handling remain database-authoritative.
+- Lesson videos: admins upload finished videos (e.g. MagicLight) per book; they play free in Story Mode for signed-in learners. Files are private and opened with short-lived signed links.
