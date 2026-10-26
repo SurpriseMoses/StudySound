@@ -8,6 +8,7 @@ import { toast } from "@/hooks/use-toast";
 import { Loader2, Upload, Trash2, ImageIcon, FileStack, X, CheckCircle2, AlertCircle } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import LessonVideosPanel from "@/components/admin/LessonVideosPanel";
 
 const TOTAL_SCENES = 12; // scene_index 0..11 (0 is free preview, 1..11 paid)
 const MAX_SCENE_INDEX = TOTAL_SCENES - 1;
@@ -152,10 +153,15 @@ export default function AdminVisuals() {
           <TabsTrigger value="single">Single book</TabsTrigger>
           <TabsTrigger value="batch"><FileStack className="w-4 h-4 mr-1.5" /> Batch upload</TabsTrigger>
           <TabsTrigger value="prompts">Generate prompts</TabsTrigger>
+          <TabsTrigger value="videos">Lesson videos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="prompts" className="mt-4">
           <GeneratePromptsPanel docs={docs} />
+        </TabsContent>
+
+        <TabsContent value="videos" className="mt-4">
+          <LessonVideosPanel docs={docs} />
         </TabsContent>
 
 
