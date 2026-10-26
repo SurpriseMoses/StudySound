@@ -1536,6 +1536,50 @@ export type Database = {
         }
         Relationships: []
       }
+      lesson_videos: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          document_id: string
+          id: string
+          size_bytes: number | null
+          sort_order: number
+          source: string
+          storage_path: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          document_id: string
+          id?: string
+          size_bytes?: number | null
+          sort_order?: number
+          source?: string
+          storage_path: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          document_id?: string
+          id?: string
+          size_bytes?: number | null
+          sort_order?: number
+          source?: string
+          storage_path?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lesson_videos_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lessons: {
         Row: {
           audio_duration_seconds: number | null
