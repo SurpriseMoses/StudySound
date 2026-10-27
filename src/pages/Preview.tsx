@@ -160,6 +160,26 @@ export default function Preview() {
           />
         </section>
 
+        {/* WATCH THE STORY — admin-uploaded finished videos */}
+        {videos.length > 0 && (
+          <section className="space-y-4">
+            <div>
+              <h2 className="font-display font-semibold text-lg">Watch the story</h2>
+              <p className="text-sm text-muted-foreground">A finished video preview — free, no sign-up needed.</p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {videos.map((v) => (
+                <Card key={v.id}>
+                  <CardContent className="p-4 space-y-2">
+                    <video src={v.url} controls preload="metadata" className="w-full rounded-md bg-muted aspect-video" />
+                    <p className="text-sm font-medium">{v.title}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* SCENE PROGRESSION */}
         <section>
           <div className="flex items-end justify-between mb-4">
