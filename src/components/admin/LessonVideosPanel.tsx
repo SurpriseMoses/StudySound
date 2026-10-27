@@ -50,7 +50,8 @@ export default function LessonVideosPanel({ docs }: { docs: DocOpt[] }) {
 
   const upload = async () => {
     if (!docId || !file) return;
-    if (!ALLOWED.includes(file.type)) {
+    const extOk = /\.(mp4|m4v|webm|mov)$/i.test(file.name);
+    if (!ALLOWED.includes(file.type) && !extOk) {
       toast({ title: "Unsupported file", description: "Use MP4, WebM or MOV.", variant: "destructive" });
       return;
     }
@@ -64,7 +65,7 @@ export default function LessonVideosPanel({ docs }: { docs: DocOpt[] }) {
       const path = `${docId}/${crypto.randomUUID()}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("lesson-videos")
-        .upload(path, file, { contentType: file.type, upsert: false });
+        .upload(path, file, { contentType: file.type || (ext === "webm" ? "video/webm" : ext === "mov" ? "video/quicktime" : "video/mp4"), upsert: false });
       if (upErr) throw upErr;
       const { data: { user } } = await supabase.auth.getUser();
       const { error: insErr } = await supabase.from("lesson_videos").insert({
