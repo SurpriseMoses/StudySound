@@ -82,11 +82,11 @@ export default function LessonVideosPanel({ docs, destination = "story" }: { doc
       const ext = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "mp4";
       const path = `${docId}/${crypto.randomUUID()}.${ext}`;
       const { error: upErr } = await supabase.storage
-        .from("lesson-videos")
+        .from(cfg.bucket)
         .upload(path, file, { contentType: file.type || (ext === "webm" ? "video/webm" : ext === "mov" ? "video/quicktime" : "video/mp4"), upsert: false });
       if (upErr) throw upErr;
       const { data: { user } } = await supabase.auth.getUser();
-      const { error: insErr } = await supabase.from("lesson_videos").insert({
+      const { error: insErr } = await supabase.from(cfg.table).insert({
         document_id: docId,
         title: (title.trim() || file.name).slice(0, 200),
         storage_path: path,
@@ -95,10 +95,10 @@ export default function LessonVideosPanel({ docs, destination = "story" }: { doc
         created_by: user?.id ?? null,
       });
       if (insErr) {
-        await supabase.storage.from("lesson-videos").remove([path]);
+        await supabase.storage.from(cfg.bucket).remove([path]);
         throw insErr;
       }
-      toast({ title: "Video uploaded", description: "Now showing in Story Mode." });
+      toast({ title: "Video uploaded", description: cfg.done });
       setTitle(""); setFile(null);
       await load(docId);
     } catch (e) {
