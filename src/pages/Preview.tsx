@@ -171,18 +171,6 @@ export default function Preview() {
           </section>
         )}
 
-        {/* SCENE PROGRESSION */}
-        <section>
-          <div className="flex items-end justify-between mb-4">
-            <div>
-              <h2 className="font-display font-semibold text-lg">Scene progression</h2>
-              <p className="text-sm text-muted-foreground">1 of 10+ scenes available in preview</p>
-            </div>
-            <span className="text-xs text-muted-foreground">25% explored</span>
-          </div>
-          <SceneStrip />
-        </section>
-
         {/* AUDIO + UNLOCK */}
         <section ref={playerRef} className="grid lg:grid-cols-5 gap-6">
           <div className="lg:col-span-3 space-y-6">
