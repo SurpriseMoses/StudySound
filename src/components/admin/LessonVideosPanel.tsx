@@ -50,7 +50,8 @@ export default function LessonVideosPanel({ docs }: { docs: DocOpt[] }) {
 
   const upload = async () => {
     if (!docId || !file) return;
-    if (!ALLOWED.includes(file.type)) {
+    const extOk = /\.(mp4|m4v|webm|mov)$/i.test(file.name);
+    if (!ALLOWED.includes(file.type) && !extOk) {
       toast({ title: "Unsupported file", description: "Use MP4, WebM or MOV.", variant: "destructive" });
       return;
     }

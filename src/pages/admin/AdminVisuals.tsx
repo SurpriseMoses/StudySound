@@ -142,19 +142,13 @@ export default function AdminVisuals() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-display font-bold">Visual scenes</h1>
+        <h1 className="text-2xl font-display font-bold">Lesson videos</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Upload custom illustrations per book. Cached globally; learners pay credits to unlock each scene.
+          Upload finished story videos per book. Learners watch them free in Story Mode.
         </p>
       </div>
 
-      <Tabs defaultValue="single">
-        <TabsList>
-          <TabsTrigger value="single">Single book</TabsTrigger>
-          <TabsTrigger value="batch"><FileStack className="w-4 h-4 mr-1.5" /> Batch upload</TabsTrigger>
-          <TabsTrigger value="prompts">Generate prompts</TabsTrigger>
-          <TabsTrigger value="videos">Lesson videos</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="videos">
 
         <TabsContent value="prompts" className="mt-4">
           <GeneratePromptsPanel docs={docs} />
