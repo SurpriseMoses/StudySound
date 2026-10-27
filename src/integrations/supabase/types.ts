@@ -1667,6 +1667,47 @@ export type Database = {
         }
         Relationships: []
       }
+      preview_videos: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          document_id: string
+          id: string
+          size_bytes: number | null
+          sort_order: number
+          storage_path: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          document_id: string
+          id?: string
+          size_bytes?: number | null
+          sort_order?: number
+          storage_path: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          document_id?: string
+          id?: string
+          size_bytes?: number | null
+          sort_order?: number
+          storage_path?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "preview_videos_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null

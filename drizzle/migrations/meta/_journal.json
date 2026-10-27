@@ -162,6 +162,13 @@
       "when": 1793021491745,
       "tag": "0022_lesson_videos",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793089438330,
+      "tag": "0023_visitor_video_previews",
+      "breakpoints": true
     }
   ]
 }
