@@ -12,7 +12,25 @@ interface VideoRow { id: string; title: string; storage_path: string; sort_order
 const MAX_BYTES = 500 * 1024 * 1024;
 const ALLOWED = ["video/mp4", "video/webm", "video/quicktime"];
 
-export default function LessonVideosPanel({ docs }: { docs: DocOpt[] }) {
+type Destination = "story" | "preview";
+
+const CONFIG: Record<Destination, { table: "lesson_videos" | "preview_videos"; bucket: string; blurb: string; done: string }> = {
+  story: {
+    table: "lesson_videos",
+    bucket: "lesson-videos",
+    blurb: "Upload finished lesson videos (for example from MagicLight). Learners watch them free in Story Mode. Check each video for accuracy before uploading.",
+    done: "Now showing in Story Mode.",
+  },
+  preview: {
+    table: "preview_videos",
+    bucket: "preview-videos",
+    blurb: "Upload a finished video visitors can watch before signing up. It appears on the public Free Preview page for the chosen book. Check it for accuracy first.",
+    done: "Now showing on the visitor preview page.",
+  },
+};
+
+export default function LessonVideosPanel({ docs, destination = "story" }: { docs: DocOpt[]; destination?: Destination }) {
+  const cfg = CONFIG[destination];
   const [search, setSearch] = useState("");
   const [docId, setDocId] = useState("");
   const [videos, setVideos] = useState<VideoRow[]>([]);
@@ -30,14 +48,14 @@ export default function LessonVideosPanel({ docs }: { docs: DocOpt[] }) {
     if (!id) { setVideos([]); return; }
     setLoading(true);
     const { data } = await supabase
-      .from("lesson_videos")
+      .from(cfg.table)
       .select("id, title, storage_path, sort_order, size_bytes")
       .eq("document_id", id)
       .order("sort_order");
     const rows = (data ?? []) as VideoRow[];
     if (rows.length) {
       const { data: signed } = await supabase.storage
-        .from("lesson-videos")
+        .from(cfg.bucket)
         .createSignedUrls(rows.map((r) => r.storage_path), 3600);
       const map = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
       rows.forEach((r) => { r.signedUrl = map.get(r.storage_path) ?? undefined; });
@@ -64,11 +82,11 @@ export default function LessonVideosPanel({ docs }: { docs: DocOpt[] }) {
       const ext = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "mp4";
       const path = `${docId}/${crypto.randomUUID()}.${ext}`;
       const { error: upErr } = await supabase.storage
-        .from("lesson-videos")
+        .from(cfg.bucket)
         .upload(path, file, { contentType: file.type || (ext === "webm" ? "video/webm" : ext === "mov" ? "video/quicktime" : "video/mp4"), upsert: false });
       if (upErr) throw upErr;
       const { data: { user } } = await supabase.auth.getUser();
-      const { error: insErr } = await supabase.from("lesson_videos").insert({
+      const { error: insErr } = await supabase.from(cfg.table).insert({
         document_id: docId,
         title: (title.trim() || file.name).slice(0, 200),
         storage_path: path,
@@ -77,10 +95,10 @@ export default function LessonVideosPanel({ docs }: { docs: DocOpt[] }) {
         created_by: user?.id ?? null,
       });
       if (insErr) {
-        await supabase.storage.from("lesson-videos").remove([path]);
+        await supabase.storage.from(cfg.bucket).remove([path]);
         throw insErr;
       }
-      toast({ title: "Video uploaded", description: "Now showing in Story Mode." });
+      toast({ title: "Video uploaded", description: cfg.done });
       setTitle(""); setFile(null);
       await load(docId);
     } catch (e) {
@@ -92,18 +110,16 @@ export default function LessonVideosPanel({ docs }: { docs: DocOpt[] }) {
 
   const remove = async (v: VideoRow) => {
     if (!confirm(`Delete "${v.title}"?`)) return;
-    const { error } = await supabase.from("lesson_videos").delete().eq("id", v.id);
+    const { error } = await supabase.from(cfg.table).delete().eq("id", v.id);
     if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; }
-    await supabase.storage.from("lesson-videos").remove([v.storage_path]);
+    await supabase.storage.from(cfg.bucket).remove([v.storage_path]);
     await load(docId);
   };
 
   return (
     <div className="space-y-4">
       <Card className="p-4 space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Upload finished lesson videos (for example from MagicLight). Learners watch them free in Story Mode. Check each video for accuracy before uploading.
-        </p>
+        <p className="text-sm text-muted-foreground">{cfg.blurb}</p>
         <Input placeholder="Search book title…" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select
           className="w-full rounded-md border bg-background px-3 py-2 text-sm"

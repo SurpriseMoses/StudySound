@@ -37,6 +37,30 @@ export default function Preview() {
   const [progress, setProgress] = useState([0]);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [videos, setVideos] = useState<{ id: string; title: string; url: string }[]>([]);
+
+  useEffect(() => {
+    // Visitor preview videos are admin-uploaded finished videos (e.g. MagicLight)
+    // stored in a private bucket; anonymous visitors get short-lived signed links.
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("preview_videos")
+        .select("id, title, storage_path")
+        .eq("document_id", docId)
+        .order("sort_order");
+      const rows = data ?? [];
+      if (!rows.length || cancelled) { if (!cancelled) setVideos([]); return; }
+      const { data: signed } = await supabase.storage
+        .from("preview-videos")
+        .createSignedUrls(rows.map((r) => r.storage_path), 3600);
+      const map = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
+      if (!cancelled) {
+        setVideos(rows.map((r) => ({ id: r.id, title: r.title, url: map.get(r.storage_path) ?? "" })).filter((v) => v.url));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [docId]);
 
   useEffect(() => {
     // Free preview uses a pre-recorded real narration clip — no live generation
@@ -135,6 +159,26 @@ export default function Preview() {
             caption={SCENE_CAPTION}
           />
         </section>
+
+        {/* WATCH THE STORY — admin-uploaded finished videos */}
+        {videos.length > 0 && (
+          <section className="space-y-4">
+            <div>
+              <h2 className="font-display font-semibold text-lg">Watch the story</h2>
+              <p className="text-sm text-muted-foreground">A finished video preview — free, no sign-up needed.</p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {videos.map((v) => (
+                <Card key={v.id}>
+                  <CardContent className="p-4 space-y-2">
+                    <video src={v.url} controls preload="metadata" className="w-full rounded-md bg-muted aspect-video" />
+                    <p className="text-sm font-medium">{v.title}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* SCENE PROGRESSION */}
         <section>
