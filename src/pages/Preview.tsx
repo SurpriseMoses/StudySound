@@ -6,8 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import PreviewHero from "@/components/preview/PreviewHero";
 import PreviewAudioPlayer from "@/components/preview/PreviewAudioPlayer";
-import PreviewScene from "@/components/preview/PreviewScene";
-import SceneStrip from "@/components/preview/SceneStrip";
 import UnlockSection from "@/components/preview/UnlockSection";
 import QuizTeaser from "@/components/preview/QuizTeaser";
 import PreviewFinalCta from "@/components/preview/PreviewFinalCta";
@@ -20,9 +18,6 @@ const sampleText = `The fellow pointed to his joke with immense significance, as
 “What now? Are you a subject for the mad hospital?” said the wine-shop keeper, crossing the road, and obliterating the jest with a handful of mud, picked up for the purpose, and smeared over it. “Why do you write in the public streets? Is there--tell me thou--is there no other place to write such words in?”
 
 In his expostulation he dropped his cleaner hand (perhaps accidentally, perhaps not) upon the joker’s heart.`;
-
-const SCENE_CAPTION =
-  "The fog crept through the streets of London like a living thing, wrapping itself around lampposts and doorways.";
 
 export default function Preview() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -151,15 +146,6 @@ export default function Preview() {
         {/* HERO */}
         <PreviewHero title="A Tale of Two Cities" onPlay={scrollToPlayer} />
 
-        {/* VISUAL SCENE — main focus */}
-        <section>
-          <PreviewScene
-            sceneNumber={1}
-            sceneTitle="London fog"
-            caption={SCENE_CAPTION}
-          />
-        </section>
-
         {/* WATCH THE STORY — admin-uploaded finished videos */}
         {videos.length > 0 && (
           <section className="space-y-4">
@@ -179,18 +165,6 @@ export default function Preview() {
             </div>
           </section>
         )}
-
-        {/* SCENE PROGRESSION */}
-        <section>
-          <div className="flex items-end justify-between mb-4">
-            <div>
-              <h2 className="font-display font-semibold text-lg">Scene progression</h2>
-              <p className="text-sm text-muted-foreground">1 of 10+ scenes available in preview</p>
-            </div>
-            <span className="text-xs text-muted-foreground">25% explored</span>
-          </div>
-          <SceneStrip />
-        </section>
 
         {/* AUDIO + UNLOCK */}
         <section ref={playerRef} className="grid lg:grid-cols-5 gap-6">
