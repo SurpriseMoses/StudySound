@@ -151,15 +151,6 @@ export default function Preview() {
         {/* HERO */}
         <PreviewHero title="A Tale of Two Cities" onPlay={scrollToPlayer} />
 
-        {/* VISUAL SCENE — main focus */}
-        <section>
-          <PreviewScene
-            sceneNumber={1}
-            sceneTitle="London fog"
-            caption={SCENE_CAPTION}
-          />
-        </section>
-
         {/* WATCH THE STORY — admin-uploaded finished videos */}
         {videos.length > 0 && (
           <section className="space-y-4">
