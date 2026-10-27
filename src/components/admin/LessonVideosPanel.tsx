@@ -12,7 +12,25 @@ interface VideoRow { id: string; title: string; storage_path: string; sort_order
 const MAX_BYTES = 500 * 1024 * 1024;
 const ALLOWED = ["video/mp4", "video/webm", "video/quicktime"];
 
-export default function LessonVideosPanel({ docs }: { docs: DocOpt[] }) {
+type Destination = "story" | "preview";
+
+const CONFIG: Record<Destination, { table: "lesson_videos" | "preview_videos"; bucket: string; blurb: string; done: string }> = {
+  story: {
+    table: "lesson_videos",
+    bucket: "lesson-videos",
+    blurb: "Upload finished lesson videos (for example from MagicLight). Learners watch them free in Story Mode. Check each video for accuracy before uploading.",
+    done: "Now showing in Story Mode.",
+  },
+  preview: {
+    table: "preview_videos",
+    bucket: "preview-videos",
+    blurb: "Upload a finished video visitors can watch before signing up. It appears on the public Free Preview page for the chosen book. Check it for accuracy first.",
+    done: "Now showing on the visitor preview page.",
+  },
+};
+
+export default function LessonVideosPanel({ docs, destination = "story" }: { docs: DocOpt[]; destination?: Destination }) {
+  const cfg = CONFIG[destination];
   const [search, setSearch] = useState("");
   const [docId, setDocId] = useState("");
   const [videos, setVideos] = useState<VideoRow[]>([]);
