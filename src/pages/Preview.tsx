@@ -6,8 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import PreviewHero from "@/components/preview/PreviewHero";
 import PreviewAudioPlayer from "@/components/preview/PreviewAudioPlayer";
-import PreviewScene from "@/components/preview/PreviewScene";
-import SceneStrip from "@/components/preview/SceneStrip";
 import UnlockSection from "@/components/preview/UnlockSection";
 import QuizTeaser from "@/components/preview/QuizTeaser";
 import PreviewFinalCta from "@/components/preview/PreviewFinalCta";
@@ -20,9 +18,6 @@ const sampleText = `The fellow pointed to his joke with immense significance, as
 “What now? Are you a subject for the mad hospital?” said the wine-shop keeper, crossing the road, and obliterating the jest with a handful of mud, picked up for the purpose, and smeared over it. “Why do you write in the public streets? Is there--tell me thou--is there no other place to write such words in?”
 
 In his expostulation he dropped his cleaner hand (perhaps accidentally, perhaps not) upon the joker’s heart.`;
-
-const SCENE_CAPTION =
-  "The fog crept through the streets of London like a living thing, wrapping itself around lampposts and doorways.";
 
 export default function Preview() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
