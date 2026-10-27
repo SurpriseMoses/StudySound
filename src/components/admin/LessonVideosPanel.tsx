@@ -110,18 +110,16 @@ export default function LessonVideosPanel({ docs, destination = "story" }: { doc
 
   const remove = async (v: VideoRow) => {
     if (!confirm(`Delete "${v.title}"?`)) return;
-    const { error } = await supabase.from("lesson_videos").delete().eq("id", v.id);
+    const { error } = await supabase.from(cfg.table).delete().eq("id", v.id);
     if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; }
-    await supabase.storage.from("lesson-videos").remove([v.storage_path]);
+    await supabase.storage.from(cfg.bucket).remove([v.storage_path]);
     await load(docId);
   };
 
   return (
     <div className="space-y-4">
       <Card className="p-4 space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Upload finished lesson videos (for example from MagicLight). Learners watch them free in Story Mode. Check each video for accuracy before uploading.
-        </p>
+        <p className="text-sm text-muted-foreground">{cfg.blurb}</p>
         <Input placeholder="Search book title…" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select
           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
