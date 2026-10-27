@@ -48,14 +48,14 @@ export default function LessonVideosPanel({ docs, destination = "story" }: { doc
     if (!id) { setVideos([]); return; }
     setLoading(true);
     const { data } = await supabase
-      .from("lesson_videos")
+      .from(cfg.table)
       .select("id, title, storage_path, sort_order, size_bytes")
       .eq("document_id", id)
       .order("sort_order");
     const rows = (data ?? []) as VideoRow[];
     if (rows.length) {
       const { data: signed } = await supabase.storage
-        .from("lesson-videos")
+        .from(cfg.bucket)
         .createSignedUrls(rows.map((r) => r.storage_path), 3600);
       const map = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
       rows.forEach((r) => { r.signedUrl = map.get(r.storage_path) ?? undefined; });
