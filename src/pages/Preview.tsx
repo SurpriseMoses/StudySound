@@ -6,7 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import PreviewHero from "@/components/preview/PreviewHero";
 import PreviewAudioPlayer from "@/components/preview/PreviewAudioPlayer";
-import UnlockSection from "@/components/preview/UnlockSection";
 import QuizTeaser from "@/components/preview/QuizTeaser";
 import PreviewFinalCta from "@/components/preview/PreviewFinalCta";
 import { macbethPreview } from "@/lib/macbeth-preview";
@@ -203,7 +202,6 @@ export default function Preview() {
           </div>
 
           <div className="lg:col-span-2 space-y-6">
-            <UnlockSection />
             <QuizTeaser />
           </div>
         </section>
