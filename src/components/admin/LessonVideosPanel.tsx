@@ -86,16 +86,17 @@ export default function LessonVideosPanel({ docs, destination = "story" }: { doc
         .upload(path, file, { contentType: file.type || (ext === "webm" ? "video/webm" : ext === "mov" ? "video/quicktime" : "video/mp4"), upsert: false });
       if (upErr) throw upErr;
       const { data: { user } } = await supabase.auth.getUser();
-      const doc = docs.find((d) => d.id === docId);
-      const { error: insErr } = await supabase.from(cfg.table).insert({
+      const payload = {
         document_id: docId,
         title: (title.trim() || file.name).slice(0, 200),
-        book_title: doc?.title ?? null,
         storage_path: path,
         sort_order: videos.length,
         size_bytes: file.size,
         created_by: user?.id ?? null,
-      });
+      };
+      const { error: insErr } = destination === "preview"
+        ? await supabase.from("preview_videos").insert({ ...payload, book_title: doc?.title ?? null })
+        : await supabase.from("lesson_videos").insert(payload);
       if (insErr) {
         await supabase.storage.from(cfg.bucket).remove([path]);
         throw insErr;
