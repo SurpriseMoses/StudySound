@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, Upload, Trash2, Film } from "lucide-react";
+import { Loader2, Upload, Trash2, Film, Pencil, Check, X } from "lucide-react";
 
 interface DocOpt { id: string; title: string; subject_type: string; }
 interface VideoRow { id: string; title: string; storage_path: string; sort_order: number; size_bytes: number | null; signedUrl?: string; }
@@ -38,6 +38,9 @@ export default function LessonVideosPanel({ docs, destination = "story" }: { doc
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editedTitle, setEditedTitle] = useState("");
+  const [savingTitle, setSavingTitle] = useState(false);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -120,6 +123,27 @@ export default function LessonVideosPanel({ docs, destination = "story" }: { doc
     await load(docId);
   };
 
+  const saveTitle = async (v: VideoRow) => {
+    const nextTitle = editedTitle.trim();
+    if (!nextTitle || savingTitle) return;
+    setSavingTitle(true);
+    try {
+      const { data, error } = await supabase.from(cfg.table)
+        .update({ title: nextTitle })
+        .eq("id", v.id)
+        .select("id, title")
+        .single();
+      if (error) throw error;
+      setVideos((rows) => rows.map((row) => row.id === data.id ? { ...row, title: data.title } : row));
+      setEditingId(null);
+      toast({ title: "Video title updated" });
+    } catch (e) {
+      toast({ title: "Title update failed", description: e instanceof Error ? e.message : "Please try again.", variant: "destructive" });
+    } finally {
+      setSavingTitle(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card className="p-4 space-y-3">
@@ -159,10 +183,23 @@ export default function LessonVideosPanel({ docs, destination = "story" }: { doc
               {v.signedUrl && <video src={v.signedUrl} controls preload="metadata" className="w-full rounded-md bg-muted aspect-video" />}
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{v.title}</p>
+                  {editingId === v.id ? (
+                    <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); void saveTitle(v); }}>
+                      <Input autoFocus aria-label="Edit video title" value={editedTitle} maxLength={200} disabled={savingTitle} onChange={(e) => setEditedTitle(e.target.value)} />
+                      <Button type="submit" variant="ghost" size="icon" disabled={!editedTitle.trim() || savingTitle} aria-label="Save video title" title="Save title">
+                        {savingTitle ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" disabled={savingTitle} onClick={() => setEditingId(null)} aria-label="Cancel title edit" title="Cancel">
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </form>
+                  ) : <p className="text-sm font-medium break-words">{v.title}</p>}
                   {v.size_bytes != null && <p className="text-xs text-muted-foreground">{(v.size_bytes / 1048576).toFixed(1)} MB</p>}
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => remove(v)} aria-label={`Delete ${v.title}`}>
+                {editingId !== v.id && <Button variant="ghost" size="icon" onClick={() => { setEditingId(v.id); setEditedTitle(v.title); }} aria-label={`Edit ${v.title}`} title="Edit title">
+                  <Pencil className="w-4 h-4" />
+                </Button>}
+                <Button variant="ghost" size="icon" disabled={savingTitle} onClick={() => remove(v)} aria-label={`Delete ${v.title}`} title="Delete video">
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </div>
