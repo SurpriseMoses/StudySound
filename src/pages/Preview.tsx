@@ -71,7 +71,7 @@ export default function Preview() {
     // Free preview uses a pre-recorded real narration clip — no live generation
     // (avoids provider cost and failures for anonymous visitors).
     setAudioSrc("/preview-audio.mp3");
-    setPreviewLabel("A Tale of Two Cities — audio preview");
+    setPreviewLabel("Sample narration — audio preview");
     setAudioError(null);
     setIsLoadingAudio(false);
   }, [docId]);
