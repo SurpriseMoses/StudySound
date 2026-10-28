@@ -1669,6 +1669,7 @@ export type Database = {
       }
       preview_videos: {
         Row: {
+          book_title: string | null
           created_at: string
           created_by: string | null
           document_id: string
@@ -1679,6 +1680,7 @@ export type Database = {
           title: string
         }
         Insert: {
+          book_title?: string | null
           created_at?: string
           created_by?: string | null
           document_id: string
@@ -1689,6 +1691,7 @@ export type Database = {
           title: string
         }
         Update: {
+          book_title?: string | null
           created_at?: string
           created_by?: string | null
           document_id?: string
