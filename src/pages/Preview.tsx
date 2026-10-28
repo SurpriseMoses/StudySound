@@ -33,25 +33,35 @@ export default function Preview() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [videos, setVideos] = useState<{ id: string; title: string; url: string }[]>([]);
+  const [bookTitle, setBookTitle] = useState<string>("A Tale of Two Cities");
 
   useEffect(() => {
     // Visitor preview videos are admin-uploaded finished videos (e.g. MagicLight)
     // stored in a private bucket; anonymous visitors get short-lived signed links.
+    // Feature the ?doc= book when it has videos; otherwise feature the book with
+    // the most recently uploaded preview video.
     let cancelled = false;
     (async () => {
       const { data } = await supabase
         .from("preview_videos")
-        .select("id, title, storage_path")
-        .eq("document_id", docId)
-        .order("sort_order");
+        .select("id, document_id, title, book_title, storage_path")
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: false });
       const rows = data ?? [];
       if (!rows.length || cancelled) { if (!cancelled) setVideos([]); return; }
+      const fallbackDoc = rows[0].document_id as string;
+      const featuredDoc = rows.some((r) => r.document_id === docId) ? docId : fallbackDoc;
+      const featured = rows.filter((r) => r.document_id === featuredDoc);
+      const featuredTitle = featured.find((r) => r.book_title)?.book_title;
+      if (!cancelled && featuredTitle) setBookTitle(featuredTitle);
       const { data: signed } = await supabase.storage
         .from("preview-videos")
-        .createSignedUrls(rows.map((r) => r.storage_path), 3600);
+        .createSignedUrls(featured.map((r) => r.storage_path), 3600);
       const map = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
       if (!cancelled) {
-        setVideos(rows.map((r) => ({ id: r.id, title: r.title, url: map.get(r.storage_path) ?? "" })).filter((v) => v.url));
+        setVideos(featured
+          .map((r) => ({ id: r.id, title: r.title, url: map.get(r.storage_path) ?? "" }))
+          .filter((v) => v.url));
       }
     })();
     return () => { cancelled = true; };
@@ -61,7 +71,7 @@ export default function Preview() {
     // Free preview uses a pre-recorded real narration clip — no live generation
     // (avoids provider cost and failures for anonymous visitors).
     setAudioSrc("/preview-audio.mp3");
-    setPreviewLabel("A Tale of Two Cities — audio preview");
+    setPreviewLabel("Sample narration — audio preview");
     setAudioError(null);
     setIsLoadingAudio(false);
   }, [docId]);
@@ -144,7 +154,7 @@ export default function Preview() {
 
       <main className="max-w-6xl mx-auto px-4 py-12 md:py-16 space-y-14 md:space-y-20">
         {/* HERO */}
-        <PreviewHero title="A Tale of Two Cities" onPlay={scrollToPlayer} />
+        <PreviewHero title={bookTitle} onPlay={scrollToPlayer} />
 
         {/* WATCH THE STORY — admin-uploaded finished videos */}
         {videos.length > 0 && (
