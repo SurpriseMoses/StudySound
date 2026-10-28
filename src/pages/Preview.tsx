@@ -9,21 +9,13 @@ import PreviewAudioPlayer from "@/components/preview/PreviewAudioPlayer";
 import UnlockSection from "@/components/preview/UnlockSection";
 import QuizTeaser from "@/components/preview/QuizTeaser";
 import PreviewFinalCta from "@/components/preview/PreviewFinalCta";
-
-// Default seeded document for the public Free Preview ("A Tale of Two Cities — Ch. 1").
-const DEFAULT_PREVIEW_DOC_ID = "11111111-1111-1111-1111-111111111111";
-
-const sampleText = `The fellow pointed to his joke with immense significance, as is often the way with his tribe. It missed its mark, and completely failed, as is often the way with his tribe too.
-
-“What now? Are you a subject for the mad hospital?” said the wine-shop keeper, crossing the road, and obliterating the jest with a handful of mud, picked up for the purpose, and smeared over it. “Why do you write in the public streets? Is there--tell me thou--is there no other place to write such words in?”
-
-In his expostulation he dropped his cleaner hand (perhaps accidentally, perhaps not) upon the joker’s heart.`;
+import { macbethPreview } from "@/lib/macbeth-preview";
 
 export default function Preview() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playerRef = useRef<HTMLDivElement | null>(null);
   const [params] = useSearchParams();
-  const docId = params.get("doc") ?? DEFAULT_PREVIEW_DOC_ID;
+  const docId = params.get("doc") ?? macbethPreview.documentId;
   const [audioSrc, setAudioSrc] = useState<string>("");
   const [previewLabel, setPreviewLabel] = useState<string>("Loading…");
   const [isLoadingAudio, setIsLoadingAudio] = useState<boolean>(true);
@@ -33,7 +25,6 @@ export default function Preview() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [videos, setVideos] = useState<{ id: string; title: string; url: string }[]>([]);
-  const [bookTitle, setBookTitle] = useState<string>("A Tale of Two Cities");
 
   useEffect(() => {
     // Visitor preview videos are admin-uploaded finished videos (e.g. MagicLight)
@@ -52,15 +43,13 @@ export default function Preview() {
       const fallbackDoc = rows[0].document_id as string;
       const featuredDoc = rows.some((r) => r.document_id === docId) ? docId : fallbackDoc;
       const featured = rows.filter((r) => r.document_id === featuredDoc);
-      const featuredTitle = featured.find((r) => r.book_title)?.book_title;
-      if (!cancelled && featuredTitle) setBookTitle(featuredTitle);
       const { data: signed } = await supabase.storage
         .from("preview-videos")
         .createSignedUrls(featured.map((r) => r.storage_path), 3600);
       const map = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
       if (!cancelled) {
         setVideos(featured
-          .map((r) => ({ id: r.id, title: r.title, url: map.get(r.storage_path) ?? "" }))
+          .map((r) => ({ id: r.id, title: r.book_title ? `${r.book_title} — ${r.title}` : r.title, url: map.get(r.storage_path) ?? "" }))
           .filter((v) => v.url));
       }
     })();
@@ -70,8 +59,8 @@ export default function Preview() {
   useEffect(() => {
     // Free preview uses a pre-recorded real narration clip — no live generation
     // (avoids provider cost and failures for anonymous visitors).
-    setAudioSrc("/preview-audio.mp3");
-    setPreviewLabel("Sample narration — audio preview");
+    setAudioSrc(macbethPreview.audioUrl);
+    setPreviewLabel("Macbeth · English");
     setAudioError(null);
     setIsLoadingAudio(false);
   }, [docId]);
@@ -85,13 +74,19 @@ export default function Preview() {
     };
     const onLoaded = () => setDuration(audio.duration || 0);
     const onEnded = () => setIsPlaying(false);
+    const onError = () => {
+      setIsPlaying(false);
+      setAudioError("The Macbeth narration could not load. Please refresh and try again.");
+    };
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("loadedmetadata", onLoaded);
     audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", onError);
     return () => {
       audio.removeEventListener("timeupdate", onTime);
       audio.removeEventListener("loadedmetadata", onLoaded);
       audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onError);
     };
   }, []);
 
@@ -154,7 +149,7 @@ export default function Preview() {
 
       <main className="max-w-6xl mx-auto px-4 py-12 md:py-16 space-y-14 md:space-y-20">
         {/* HERO */}
-        <PreviewHero title={bookTitle} onPlay={scrollToPlayer} />
+        <PreviewHero title={macbethPreview.title} onPlay={scrollToPlayer} />
 
         {/* WATCH THE STORY — admin-uploaded finished videos */}
         {videos.length > 0 && (
@@ -197,11 +192,13 @@ export default function Preview() {
             <Card>
               <CardContent className="p-6">
                 <h3 className="font-display font-semibold mb-3 text-sm uppercase tracking-wide text-muted-foreground">
-                  Chapter excerpt
+                  {macbethPreview.scene}
                 </h3>
+                <p className="text-sm text-muted-foreground mb-4">William Shakespeare · Three witches arrange to meet Macbeth after the battle.</p>
                 <div className="prose prose-sm max-w-none text-foreground/85 leading-relaxed whitespace-pre-line">
-                  {sampleText}
+                  {macbethPreview.excerpt}
                 </div>
+                <p className="mt-4 text-xs text-muted-foreground">Public-domain text · Project Gutenberg, ebook 1533</p>
               </CardContent>
             </Card>
           </div>
