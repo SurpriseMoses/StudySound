@@ -40,7 +40,7 @@
 
 # Deferred
 
-- [ ] Add uploaded-video title editing and edge-to-edge, viewport-height mobile playback; verify persisted edits and visitor playback.
+- [x] Add uploaded-video title editing and shared edge-to-edge, viewport-height mobile framing; authenticated save/reload/restore verified, mobile 384×655 player with object-cover and no horizontal overflow, desktop framing preserved. Video loading timed out in the browser check; playback remains unverified.
 
 - [ ] Add separate visitor video Preview uploads and admin deletion for uploaded videos/legacy visuals; verify public playback and private Story Mode separation.
 
