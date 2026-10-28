@@ -25,10 +25,10 @@ export default function QuizTeaser() {
         <div className="relative rounded-lg border border-dashed border-border bg-muted/20 p-5 overflow-hidden">
           <div className="select-none blur-sm pointer-events-none">
             <p className="text-sm font-medium mb-3">
-              What atmospheric element wraps itself around lampposts and doorways in the opening?
+              Where do the witches agree to meet Macbeth?
             </p>
             <div className="space-y-2">
-              {["Snow", "Fog", "Smoke", "Rain"].map((opt) => (
+              {["Upon the heath", "In the castle", "At the camp", "In the forest"].map((opt) => (
                 <div key={opt} className="text-sm px-3 py-2 rounded-md border border-border bg-background">
                   {opt}
                 </div>
