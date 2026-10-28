@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Film } from "lucide-react";
+import UploadedVideoPlayer from "@/components/UploadedVideoPlayer";
+import { Button } from "@/components/ui/button";
 
 type Video = { id: string; title: string; storage_path: string; signedUrl?: string };
 
@@ -31,33 +33,29 @@ export default function LessonVideos({ documentId }: { documentId: string }) {
 
   if (videos.length === 0) return null;
   const current = videos[active];
+  if (!current) return null;
 
   return (
     <section className="space-y-3" aria-label="Lesson videos">
       <h3 className="text-sm font-display font-semibold flex items-center gap-2">
         <Film className="w-4 h-4 text-primary" /> Watch the story
       </h3>
-      <video
-        key={current.id}
-        src={current.signedUrl}
-        controls
-        playsInline
-        preload="metadata"
-        className="w-full rounded-2xl bg-muted aspect-video"
-      />
+      <UploadedVideoPlayer key={current.id} src={current.signedUrl} title={current.title} />
       <p className="text-sm font-medium">{current.title}</p>
       {videos.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
           {videos.map((v, i) => (
-            <button
+            <Button
               key={v.id}
               onClick={() => setActive(i)}
+              variant="outline"
+              size="sm"
               className={`shrink-0 rounded-full border px-3 py-1 text-xs transition ${
                 i === active ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted"
               }`}
             >
               {i + 1}. {v.title}
-            </button>
+            </Button>
           ))}
         </div>
       )}

@@ -10,6 +10,7 @@ import UnlockSection from "@/components/preview/UnlockSection";
 import QuizTeaser from "@/components/preview/QuizTeaser";
 import PreviewFinalCta from "@/components/preview/PreviewFinalCta";
 import { macbethPreview } from "@/lib/macbeth-preview";
+import UploadedVideoPlayer from "@/components/UploadedVideoPlayer";
 
 export default function Preview() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -160,12 +161,10 @@ export default function Preview() {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {videos.map((v) => (
-                <Card key={v.id}>
-                  <CardContent className="p-4 space-y-2">
-                    <video src={v.url} controls preload="metadata" className="w-full rounded-md bg-muted aspect-video" />
-                    <p className="text-sm font-medium">{v.title}</p>
-                  </CardContent>
-                </Card>
+                <div key={v.id} className="min-w-0 space-y-2">
+                  <UploadedVideoPlayer src={v.url} title={v.title} />
+                  <p className="text-sm font-medium break-words">{v.title}</p>
+                </div>
               ))}
             </div>
           </section>
