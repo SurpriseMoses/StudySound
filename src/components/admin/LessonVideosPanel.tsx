@@ -86,9 +86,11 @@ export default function LessonVideosPanel({ docs, destination = "story" }: { doc
         .upload(path, file, { contentType: file.type || (ext === "webm" ? "video/webm" : ext === "mov" ? "video/quicktime" : "video/mp4"), upsert: false });
       if (upErr) throw upErr;
       const { data: { user } } = await supabase.auth.getUser();
+      const doc = docs.find((d) => d.id === docId);
       const { error: insErr } = await supabase.from(cfg.table).insert({
         document_id: docId,
         title: (title.trim() || file.name).slice(0, 200),
+        book_title: doc?.title ?? null,
         storage_path: path,
         sort_order: videos.length,
         size_bytes: file.size,

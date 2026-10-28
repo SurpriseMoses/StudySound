@@ -154,7 +154,7 @@ export default function Preview() {
 
       <main className="max-w-6xl mx-auto px-4 py-12 md:py-16 space-y-14 md:space-y-20">
         {/* HERO */}
-        <PreviewHero title="A Tale of Two Cities" onPlay={scrollToPlayer} />
+        <PreviewHero title={bookTitle} onPlay={scrollToPlayer} />
 
         {/* WATCH THE STORY — admin-uploaded finished videos */}
         {videos.length > 0 && (
