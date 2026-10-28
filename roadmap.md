@@ -45,3 +45,4 @@
 - [ ] Add separate visitor video Preview uploads and admin deletion for uploaded videos/legacy visuals; verify public playback and private Story Mode separation.
 
 - [ ] Native-accent narration seeding (administrator deferred): Afrikaans and isiZulu via Azure; Sepedi, Sesotho and siSwati only on a newer Gemini narration model (the pinned 2.5 preview model supports 24 languages) — prove with a real test clip first. No native voice exists for isiXhosa, Setswana, Xitsonga, Tshivenda or isiNdebele; report those honestly instead of substituting an English narrator.
+- [x] Security: tightened lesson/preview video read rules (only registered, book-linked videos are readable).

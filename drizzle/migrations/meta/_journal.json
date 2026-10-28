@@ -176,6 +176,13 @@
       "when": 1793164274709,
       "tag": "0024_preview_video_book_title",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793197702897,
+      "tag": "0025_tighten_video_read_rules",
+      "breakpoints": true
     }
   ]
 }
