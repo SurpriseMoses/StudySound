@@ -94,6 +94,7 @@ export default function LessonVideosPanel({ docs, destination = "story" }: { doc
         size_bytes: file.size,
         created_by: user?.id ?? null,
       };
+      const doc = docs.find((d) => d.id === docId);
       const { error: insErr } = destination === "preview"
         ? await supabase.from("preview_videos").insert({ ...payload, book_title: doc?.title ?? null })
         : await supabase.from("lesson_videos").insert(payload);
