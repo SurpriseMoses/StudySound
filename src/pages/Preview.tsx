@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Sparkles, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +10,7 @@ import QuizTeaser from "@/components/preview/QuizTeaser";
 import PreviewFinalCta from "@/components/preview/PreviewFinalCta";
 import { macbethPreview } from "@/lib/macbeth-preview";
 import UploadedVideoPlayer from "@/components/UploadedVideoPlayer";
+import LandingFooter from "@/components/landing/LandingFooter";
 
 export default function Preview() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -136,7 +137,7 @@ export default function Preview() {
       <nav className="sticky top-0 z-50 bg-background/85 backdrop-blur border-b">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" />
+            <img src="/icon-192.png" alt="BrainGrasp logo" className="w-6 h-6 rounded" />
             <span className="font-display font-bold">BrainGrasp</span>
           </Link>
           <Link to="/onboarding">
@@ -209,6 +210,7 @@ export default function Preview() {
         {/* FINAL CTA */}
         <PreviewFinalCta />
       </main>
+      <LandingFooter />
     </div>
   );
 }

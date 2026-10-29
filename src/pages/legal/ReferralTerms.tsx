@@ -4,7 +4,7 @@ export default function ReferralTerms() {
   return (
     <LegalPage
       title="Referral Programme Terms — Draft"
-      updated="17 October 2026"
+      updated="29 October 2026"
       sections={[
         { title: "1. Programme status and eligibility", body: [
           "These draft terms describe the proposed BrainGrasp Rewards programme. The programme is not yet active. South African consumer, privacy, tax and payment legal review is required before launch. No commission, discount, credit reward or payout is currently promised under this draft.",
@@ -44,7 +44,7 @@ export default function ReferralTerms() {
         { title: "9. Changes, interruptions and contact", body: [
           "BrainGrasp may change or suspend the programme with appropriate notice and compliance with applicable law. Changes must not introduce undisclosed retroactive forfeiture of earned rewards. Eligibility and calculations must remain auditable.",
           "AI generation may be queued or paused when capacity or spending limits are reached. Already-generated eligible cached material remains available under existing access rules; referral rewards do not guarantee unlimited new generation.",
-          "BrainGrasp — a product of AcademInnovate. Questions about these draft terms: braingrasp.ai@gmail.com. These terms are subject to South African law and do not limit statutory consumer rights.",
+          "BrainGrasp registration number: 2026/809427/07. Questions about these draft terms: braingrasp.ai@gmail.com. These terms are subject to South African law and do not limit statutory consumer rights.",
         ] },
       ]}
     />

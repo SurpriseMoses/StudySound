@@ -40,6 +40,8 @@
 
 # Deferred
 
+- [x] Update BrainGrasp registration and remove AcademInnovate attribution from public branding/legal pages; replace preview brand stars with the existing favicon mark.
+
 - [x] Add uploaded-video title editing and shared edge-to-edge, viewport-height mobile framing; authenticated save/reload/restore verified, mobile 384×655 player with object-cover and no horizontal overflow, desktop framing preserved. Video loading timed out in the browser check; playback remains unverified.
 
 - [ ] Add separate visitor video Preview uploads and admin deletion for uploaded videos/legacy visuals; verify public playback and private Story Mode separation.
