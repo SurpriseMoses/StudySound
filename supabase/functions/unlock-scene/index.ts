@@ -1,3 +1,4 @@
+import { requirePrelaunchAccess } from "../_shared/prelaunch-guard.ts";
 // Unlock a single visual scene (2 credits) or the full-story bundle (15 credits).
 // Idempotent: if already unlocked, returns success without charging.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -15,6 +16,8 @@ const TOTAL_SCENES = 12;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const prelaunchDenied = await requirePrelaunchAccess(req);
+  if (prelaunchDenied) return prelaunchDenied;
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

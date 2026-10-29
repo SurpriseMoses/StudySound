@@ -40,6 +40,8 @@
 
 # Deferred
 
+- [x] Restrict pre-launch access to administrators: live registration lifecycle block, Data API gate, restrictive table/storage rules and deployed learner endpoint gates; admin browser access and anonymous hosted rejection verified. Frontend closed screen is ready; Publish → Update required for the published website. Accounts and balances preserved.
+
 - [x] Add public Macbeth Act I quiz with five curated questions, answer explanations, scoring and retry; no sign-in, generation or credits required.
 
 - [x] Update BrainGrasp registration and remove AcademInnovate attribution from public branding/legal pages; replace preview brand stars with the existing favicon mark.

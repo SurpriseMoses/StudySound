@@ -1,5 +1,7 @@
 # Architecture rules
 
+- Enforce the temporary pre-launch admin gate at the Data API pre-request boundary, restrictive table/storage policies, signup lifecycle trigger and learner edge endpoints; a matching app-wide screen hides previews, while service workers and verified payment reconciliation retain their distinct trusted paths. Remove these gates only on explicit launch approval.
+
 - Keep pure referral pricing, milestone eligibility and reserve forecast calculations in `supabase/functions/_shared/referral-rules.ts`; shared server rules allow concrete tests without making client calculations authoritative.
 - Referral rule outputs are quotes/candidates only; persistent attribution, financial eligibility, idempotency, reservations and wallet changes require authenticated atomic database operations before activation.
 - Reuse the existing profile wallet and payment/credit ledgers; separate monetary commission records from educational credit accounting to avoid duplicate currencies or competing balances.

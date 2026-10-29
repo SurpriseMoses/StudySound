@@ -1,3 +1,4 @@
+import { requirePrelaunchAccess } from "../_shared/prelaunch-guard.ts";
 // extract-document edge function
 // Receives a storage path to an uploaded file in the 'uploads' bucket,
 // extracts text (PDF/DOCX/TXT), normalizes & hashes it (SHA-256),
@@ -58,6 +59,8 @@ async function extractDocx(bytes: Uint8Array): Promise<{ text: string; pageCount
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const prelaunchDenied = await requirePrelaunchAccess(req);
+  if (prelaunchDenied) return prelaunchDenied;
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

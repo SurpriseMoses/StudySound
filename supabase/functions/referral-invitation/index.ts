@@ -1,3 +1,4 @@
+import { requirePrelaunchAccess } from "../_shared/prelaunch-guard.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { z } from "npm:zod@3";
@@ -12,6 +13,8 @@ const response = (body: unknown, status = 200) => new Response(JSON.stringify(bo
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const prelaunchDenied = await requirePrelaunchAccess(req);
+  if (prelaunchDenied) return prelaunchDenied;
   if (req.method !== "POST") return response({ error: "Method not allowed" }, 405);
   try {
     const text = await req.text();
