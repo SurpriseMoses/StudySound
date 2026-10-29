@@ -19,3 +19,4 @@
 - Lesson videos: admins upload finished videos (e.g. MagicLight) per book; they play free in Story Mode for signed-in learners. Files are private and opened with short-lived signed links.
 - Use one UploadedVideoPlayer for visitor previews and learner playback so mobile edge-to-edge framing stays consistent without changing admin thumbnail sizing.
 - Keep the public lesson excerpt and its curated pre-recorded narration together in one sample module; a CDN-hosted clipped recording avoids anonymous generation costs and does not expose private audio libraries.
+- Keep the public preview quiz curated alongside its lesson sample, separate from the private reviewed quiz bank; anonymous practice must not invoke generation or wallet operations.
