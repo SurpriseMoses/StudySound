@@ -7,10 +7,23 @@ const mocks = vi.hoisted(() => ({ rpc: vi.fn(), auth: { user: null as null | { i
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => mocks.auth }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { rpc: mocks.rpc } }));
 afterEach(() => { cleanup(); vi.resetAllMocks(); mocks.auth.user = null; });
-const open = () => render(<MemoryRouter initialEntries={["/preview"]}><PrelaunchGate><div data-testid="private-content" /></PrelaunchGate></MemoryRouter>);
+const open = (path = "/dashboard") => render(<MemoryRouter initialEntries={[path]}><PrelaunchGate><div data-testid="private-content" /></PrelaunchGate></MemoryRouter>);
 
 describe("prelaunch app access", () => {
-  it("does not mount preview content for visitors", () => {
+  it("allows anonymous Free Preview", () => {
+    open("/preview");
+    expect(screen.getByTestId("private-content")).toBeInTheDocument();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it("allows the public home page", () => {
+    open("/");
+    expect(screen.getByTestId("private-content")).toBeInTheDocument();
+  });
+  it("blocks registration attempts", () => {
+    open("/onboarding");
+    expect(screen.queryByTestId("private-content")).toBeNull();
+  });
+  it("does not mount inside pages for visitors", () => {
     open();
     expect(screen.queryByTestId("private-content")).toBeNull();
     expect(mocks.rpc).not.toHaveBeenCalled();
