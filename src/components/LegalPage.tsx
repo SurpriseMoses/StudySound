@@ -8,12 +8,13 @@ export default function LegalPage({ title, updated, sections }: { title: string;
     <main className="min-h-screen bg-background">
       <div className="max-w-3xl mx-auto px-4 py-10">
         <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-6">
-          <ArrowLeft className="w-4 h-4" /> Back to BrainGrasp
+          <ArrowLeft className="w-4 h-4" />
+          <img src="/icon-192.png" alt="" className="w-6 h-6 rounded" /> Back to BrainGrasp
         </Link>
         <h1 className="font-display text-3xl font-bold mb-2">{title}</h1>
         <p className="text-sm text-muted-foreground mb-2">Last updated: {updated}</p>
         <p className="text-xs rounded-md border bg-muted px-3 py-2 text-muted-foreground mb-8">
-          Operated by AcademInnovate. Additional statutory details will be added when available.
+          BrainGrasp · Registration number: 2026/809427/07
         </p>
         {sections.map((s) => (
           <section key={s.title} className="mb-6">

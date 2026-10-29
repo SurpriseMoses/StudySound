@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { Play, Pause, SkipBack, SkipForward, Sparkles, Loader2, AlertCircle } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Loader2, AlertCircle } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -36,7 +36,7 @@ const PreviewAudioPlayer = forwardRef<HTMLAudioElement, Props>(function PreviewA
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-primary" />
+              <img src="/icon-192.png" alt="BrainGrasp logo" className="w-6 h-6 rounded" />
             </div>
             <div>
               <p className="text-sm font-semibold leading-none">AI Narration</p>
