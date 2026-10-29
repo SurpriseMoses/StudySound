@@ -40,6 +40,8 @@
 
 # Deferred
 
+- [ ] Restrict pre-launch access to administrators; stop new registrations and block existing learner access without deleting accounts.
+
 - [x] Add public Macbeth Act I quiz with five curated questions, answer explanations, scoring and retry; no sign-in, generation or credits required.
 
 - [x] Update BrainGrasp registration and remove AcademInnovate attribution from public branding/legal pages; replace preview brand stars with the existing favicon mark.
