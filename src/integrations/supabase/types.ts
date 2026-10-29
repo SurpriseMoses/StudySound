@@ -4147,6 +4147,7 @@ export type Database = {
         Returns: number
       }
       count_translations_today: { Args: { _user_id: string }; Returns: number }
+      enforce_prelaunch_api_access: { Args: never; Returns: undefined }
       expire_free_credits: { Args: { _user_id: string }; Returns: undefined }
       has_role: {
         Args: {
@@ -4156,6 +4157,7 @@ export type Database = {
         Returns: boolean
       }
       payment_post_verified: { Args: { _evidence: Json }; Returns: Json }
+      prelaunch_access_allowed: { Args: never; Returns: boolean }
       quiz_bank_overview: { Args: never; Returns: Json }
       quiz_bump_served: { Args: { _ids: string[] }; Returns: undefined }
       reclaim_stale_ingestion_jobs: {
