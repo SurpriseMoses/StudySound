@@ -1,3 +1,4 @@
+import { requirePrelaunchAccess } from "../_shared/prelaunch-guard.ts";
 // Generate audio for a single chunk of a document.
 // Strategy: On-demand chunking. Client requests (lesson_id, chunk_index).
 // We chunk the document deterministically server-side (~1800 chars at sentence boundaries),
@@ -515,6 +516,8 @@ async function ttsGemini(text: string, voiceName: string, apiKey: string): Promi
 
 Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const prelaunchDenied = await requirePrelaunchAccess(req);
+  if (prelaunchDenied) return prelaunchDenied;
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

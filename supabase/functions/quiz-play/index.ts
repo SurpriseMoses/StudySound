@@ -1,3 +1,4 @@
+import { requirePrelaunchAccess } from "../_shared/prelaunch-guard.ts";
 // Learner quiz endpoint: assemble a quiz from the published bank, charge the
 // existing BrainGrasp credit wallet atomically, record the attempt with locked
 // question versions, grade answers and update adaptive performance data.
@@ -86,6 +87,8 @@ function answerIsCorrect(q: BankQuestion, given: string): boolean {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const prelaunchDenied = await requirePrelaunchAccess(req);
+  if (prelaunchDenied) return prelaunchDenied;
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

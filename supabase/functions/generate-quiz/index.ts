@@ -1,3 +1,4 @@
+import { requirePrelaunchAccess } from "../_shared/prelaunch-guard.ts";
 // Generates 6 multiple-choice quiz questions per document using Lovable AI.
 // Globally cached per document_id in quiz_assets — all users share & reuse for free.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -91,6 +92,8 @@ async function generateQuestions(
 
 Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const prelaunchDenied = await requirePrelaunchAccess(req);
+  if (prelaunchDenied) return prelaunchDenied;
 
   try {
     const { document_id, difficulty = "medium" } = await req.json();

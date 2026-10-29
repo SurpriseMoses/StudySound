@@ -1,3 +1,4 @@
+import { requirePrelaunchAccess } from "../_shared/prelaunch-guard.ts";
 // Generates 4 visual scenes per document using Lovable AI (Gemini 3.1 Flash Image).
 // Globally cached: scenes are keyed by document_id, so all users share & reuse them for free.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -129,6 +130,8 @@ async function generateImage(apiKey: string, prompt: string): Promise<Uint8Array
 
 Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const prelaunchDenied = await requirePrelaunchAccess(req);
+  if (prelaunchDenied) return prelaunchDenied;
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

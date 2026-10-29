@@ -1,3 +1,4 @@
+import { requirePrelaunchAccess } from "../_shared/prelaunch-guard.ts";
 // Generate a translation for a single chunk of a document.
 // Anti-abuse layer:
 // - Tier-based daily caps (free: 20, paid: 100 sections/day) — based on translation_rate_log
@@ -319,6 +320,8 @@ async function translateWithAI(text: string, sourceLang: string, targetLang: str
 
 Deno.serve(withCostAudit(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const prelaunchDenied = await requirePrelaunchAccess(req);
+  if (prelaunchDenied) return prelaunchDenied;
 
   let requestBody: Record<string, unknown> | null = null;
 

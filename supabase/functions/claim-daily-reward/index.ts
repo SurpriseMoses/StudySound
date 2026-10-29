@@ -1,3 +1,4 @@
+import { requirePrelaunchAccess } from "../_shared/prelaunch-guard.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { dailyCreditBonus } from "../_shared/perks.ts";
 
@@ -29,6 +30,8 @@ function daysBetween(a: string, b: string): number {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const prelaunchDenied = await requirePrelaunchAccess(req);
+  if (prelaunchDenied) return prelaunchDenied;
 
   try {
     const authHeader = req.headers.get("Authorization");
