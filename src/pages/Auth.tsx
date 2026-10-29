@@ -115,18 +115,17 @@ export default function Auth() {
         </div>
 
         <Card>
-          <Tabs defaultValue={new URLSearchParams(location.search).get("mode") === "signup" ? "signup" : "signin"}>
+          <Tabs value="signin">
             <CardHeader>
-              <TabsList className="grid grid-cols-2 w-full">
+              <TabsList className="grid grid-cols-1 w-full">
                 <TabsTrigger value="signin">Sign in</TabsTrigger>
-                <TabsTrigger value="signup">Create account</TabsTrigger>
               </TabsList>
             </CardHeader>
 
             <CardContent className="space-y-4">
               <TabsContent value="signin" className="space-y-4 mt-0">
-                <CardTitle>Welcome back</CardTitle>
-                <CardDescription>Sign in to continue learning.</CardDescription>
+                <CardTitle>Administrator sign in</CardTitle>
+                <CardDescription>Registrations and learner access are closed until launch.</CardDescription>
                 <form onSubmit={handleSignIn} className="space-y-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="signin-email">Email</Label>

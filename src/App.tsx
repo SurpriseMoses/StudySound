@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import PrelaunchGate from "@/components/PrelaunchGate";
 import AdminRoute from "@/components/AdminRoute";
 import Index from "./pages/Index";
 import Preview from "./pages/Preview";
@@ -64,6 +65,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <PrelaunchGate>
           <ReferralClaimBinder />
           <Routes>
             {/* Public */}
@@ -123,6 +125,7 @@ const App = () => (
 
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </PrelaunchGate>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
