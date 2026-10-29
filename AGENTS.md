@@ -1,6 +1,6 @@
 # Architecture rules
 
-- Enforce the temporary pre-launch admin gate at the Data API pre-request boundary, restrictive table/storage policies, signup lifecycle trigger and learner edge endpoints; a matching app-wide screen hides previews, while service workers and verified payment reconciliation retain their distinct trusted paths. Remove these gates only on explicit launch approval.
+- Keep pre-launch inside pages administrator-only through the Data API boundary, restrictive table/storage policies, signup trigger and learner endpoints. Public home/legal pages and Free Preview remain open; only GET/HEAD preview metadata and listed preview files allow anonymous data access. Registration stays blocked until explicit launch approval; trusted payment reconciliation remains distinct.
 
 - Keep pure referral pricing, milestone eligibility and reserve forecast calculations in `supabase/functions/_shared/referral-rules.ts`; shared server rules allow concrete tests without making client calculations authoritative.
 - Referral rule outputs are quotes/candidates only; persistent attribution, financial eligibility, idempotency, reservations and wallet changes require authenticated atomic database operations before activation.

@@ -31,8 +31,8 @@ export default function PrelaunchGate({ children }: { children: React.ReactNode 
     return () => { cancelled = true; clearInterval(timer); window.removeEventListener("focus", check); };
   }, [user?.id]);
 
-  // Keep existing administrator login/recovery available, but hide all lessons and previews.
-  if (["/auth", "/forgot-password", "/reset-password"].includes(location.pathname)) return <>{children}</>;
+  // Public samples never grant access to learner data or account creation.
+  if (["/", "/preview", "/auth", "/forgot-password", "/reset-password", "/privacy", "/terms", "/referral-terms", "/support"].includes(location.pathname)) return <>{children}</>;
   if (loading || (user && checkedUser !== user.id)) return (
     <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
   );
@@ -42,7 +42,8 @@ export default function PrelaunchGate({ children }: { children: React.ReactNode 
       <div className="max-w-sm space-y-6">
         <img src="/icon-192.png" alt="BrainGrasp" className="h-16 w-16 mx-auto rounded-lg" />
         <h1 className="font-display text-3xl font-bold">BrainGrasp</h1>
-        <p className="text-muted-foreground">We’re preparing for launch. Registrations and learner access are temporarily closed.</p>
+        <p className="text-muted-foreground">{location.pathname === "/onboarding" ? "No sign-ups are currently accepted. We’re preparing for launch." : "We’re preparing for launch. Registrations and learner access are temporarily closed."}</p>
+        <Button variant="outline" asChild><Link to="/preview">Free Preview</Link></Button>
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><LockKeyhole className="h-4 w-4" />Administrator access only</div>
         {user ? <Button variant="outline" onClick={() => void signOut()}>Sign out</Button> : <Button variant="outline" asChild><Link to="/auth">Administrator sign in</Link></Button>}
       </div>
